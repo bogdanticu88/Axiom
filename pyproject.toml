@@ -1,0 +1,44 @@
+[project]
+name = "axiom"
+version = "0.1.0.dev0"
+description = "Evidence-backed vulnerability management platform (backend)"
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+license = { text = "Proprietary - distribution licence undecided (see docs/DECISIONS.md)" }
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "pydantic",
+  "pydantic-settings",
+  "psycopg[binary]",
+  "psycopg-pool",
+  "pyjwt[crypto]",
+  "boto3",
+]
+
+[dependency-groups]
+dev = [
+  "pytest",
+  "httpx",
+]
+
+[tool.uv]
+# Supply-chain cooldown: resolve only releases at least ~one week old at lock time.
+# Update deliberately with: uv lock --upgrade --exclude-newer <date>
+exclude-newer = "2026-10-14T00:00:00Z"
+package = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["backend/axiom"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "db: requires a live PostgreSQL provisioned by scripts/dev/test-db.sh",
+  "s3: requires an S3-compatible endpoint",
+]
+addopts = "-ra --strict-markers"
