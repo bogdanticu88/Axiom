@@ -5,3 +5,4 @@ heartbeat deadline guard removed (LEAST cap remains): NOT CAUGHT (1 passed, 23 d
 heartbeat lease not capped at deadline: CAUGHT (1 failed, 23 deselected in 1.80s)
 effect-boundary revalidation removed: CAUGHT (1 failed, 23 deselected in 0.92s)
 finish not fenced: CAUGHT (1 failed, 23 deselected, 1 warning in 2.41s)
+ingestion TERMINAL_RUN reverted to guessed statuses: CAUGHT (1 failed, 3 deselected in 1.67s)

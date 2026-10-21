@@ -73,6 +73,18 @@ parked and dead-lettered runs; metrics (queue depth, oldest due run, lease expir
 marker that workers refuse to start without; the full kill/fault suite in CI. Every external integration must accept
 an idempotency key or fencing token, or be marked lookup-only with operator parking.
 
+### Status of the conditions (2026-10-22, commit after 5a6b898)
+| Condition | State | Evidence |
+|---|---|---|
+| Step timeout independent of the heartbeat | done: the lease is capped at `step_deadline_at` at claim and on every heartbeat, so a hung step loses its lease even while its heartbeat thread runs | job::test_hung_step_loses_lease_at_deadline...; mutation removing the cap is caught |
+| Claim counter dead-letters poison jobs | done | job::test_poison_job_dead_letters_after_max_claims... |
+| Tenant-safe claiming | done differently from the relay: no cross-tenant role at all; the worker lists tenants through `axiom_auth.active_tenant_workers()` and claims inside each tenant's RLS-bound transaction. Cost: one pass is O(tenants) | job::test_per_tenant_running_cap, ::test_jobs_are_tenant_isolated |
+| Operator tooling for parked and dead-lettered jobs | done as a service (`JobOperations`: list, cancel, resolve effect adopt/not_applied/abandon, drain status, version migration; privileged `job.operate`, audited). **No API endpoint or UI yet** | job::test_lost_ack_without_lookup_parks..., ::test_version_pinning... |
+| Restore marker | done: database fingerprint (system identifier, timeline, database OID); workers refuse to run until an operator acknowledges a new fingerprint (`provisioning acknowledge-recovery`); jobs and intents carried across a restore park when the integration has no lookup | job::test_restore_is_detected_and_no_lookup_effects_park (real pg_dump/pg_restore) |
+| Metrics | **not done** | |
+| Kill/fault suite in CI | **not done**: the suite runs locally (real SIGKILL); there is no CI yet (DEP-08) | |
+| Integrations accept idempotency keys or fencing, or are lookup-only with parking | enforced by the `EffectAdapter` contract; no real integration exists yet | |
+
 ## Revisit triggers (choose Temporal, or Temporal Cloud subject to residency and commercial review, if any occurs)
 * Investigation or remediation workflows need more than a few durable steps with compensation or fan-out.
 * The owned runner's incident rate or maintenance cost exceeds an agreed threshold.

@@ -83,7 +83,7 @@ for i in $(seq 1 40); do
 done
 [ "$ST" = "completed complete 30" ] || fail "import via worker: $ST"
 NC=$(curl -sf "${H[@]}" "$B/cases?limit=200" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["items"]))')
-echo "ok   Trivy import via API + ingest-worker: $ST; cases visible: $NC"
+echo "ok   Trivy import via API + job-worker: $ST; cases visible: $NC"
 dc up -d --no-build --force-recreate db-init app-init >/dev/null 2>&1
 for i in $(seq 1 60); do   # wait for the recreated one-shot container to finish (no fixed sleep)
   [ "$(dc ps -a app-init --format '{{.State}}')" = "exited" ] && break; sleep 2

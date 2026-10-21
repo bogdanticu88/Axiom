@@ -123,6 +123,8 @@ class IngestionService:
                                                      "authority": authority.as_json()})
             outbox.enqueue(conn, ctx, topic="ingestion.run_requested", aggregate_type="ingestion_run",
                            aggregate_id=run_id, payload={"run_id": str(run_id)})
+            from .jobs import enqueue_run   # local import: jobs imports this module
+            enqueue_run(conn, ctx, run_id)
             return row
 
     def get_run(self, ctx: TenantContext, run_id: UUID) -> dict:

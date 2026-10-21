@@ -177,3 +177,27 @@ ba8416fc7142030c52bd582448648b9143b42e762ac19c1f90e74a730687a9ab  axiom-phaseb-2
 165 files, no `.env`, keys, virtual environments or data directories. From the extracted copy with a fresh
 SeaweedFS: **126 passed, 0 skipped**, 1 warning, 43.65s. (This entry was added after the archive was built, so the
 archive's own copy of this file stops at run 10.)
+
+### Run 12: job runner and ingestion on jobs (2026-10-22 ~23:00Z to 23:08Z)
+* `tests/integration/test_jobs.py` first run: 22 passed, **2 failed**: `drain_status` used `NOT IN %s` with a tuple
+  (psycopg 3 does not adapt tuples; now `<> ALL(%s)`), and the provisioning CLI could not read effect intents to
+  report a restore (now a read-only column grant and policy for `axiom_provisioner`). Then 24 passed.
+* Ingestion handler bug found while writing its tests: I had guessed the run's terminal statuses instead of using the
+  schema's (`completed`, `failed`, `cancelled`), so a run finished by a fenced-out step would have left its job waiting
+  forever. Fixed; `ingjob::test_run_finished_by_a_fenced_out_step...` fails when the guessed values are restored.
+* Mutation checks (`docs/verification/2026-10-22-phase-b/jobs-mutation-checks.log`): caught when removing the job
+  fingerprint check, lookup-before-create, the poison claim limit, the lease cap at the step deadline,
+  effect-boundary revalidation, fencing of the final write, and the ingestion terminal statuses. **Not caught:**
+  removing the heartbeat's `step_deadline_at > now()` condition; the lease cap (`LEAST(..., step_deadline_at)`)
+  enforces the same deadline, so that condition is redundant rather than untested.
+* `scripts/verify/foundation.sh` (fresh cluster, fresh SeaweedFS): migrations `applied: 0001, 0002, 0003, 0004`,
+  re-run `applied: none`, second database `applied: 0001, 0002, 0003, 0004`; **154 passed, 1 warning in 60.32s**
+  (includes job 24, ingestion-jobs 4, S3 2). Structural audit: 43 tables with forced RLS; 3 global tables without
+  (`permissions`, `role_permissions`, and the new installation-level `recovery_acknowledgements`, which the runtime
+  can only read and which is append-only); `axiom_app` not superuser, not BYPASSRLS, not an owner member.
+  Log: `docs/verification/2026-10-22-jobs/foundation-verify.log`.
+* Compose smoke, first attempt: **failed** (`import via worker: queued unknown None`) because I ran it without
+  `BUILD=1`, so the stale image had no `axiom.workers.jobs` module. Log kept as `compose-smoke-stale-image.log`.
+  With `BUILD=1`: `SMOKE PASS (axiom-smoke-230723)`, including
+  `Trivy import via API + job-worker: completed complete 30`. Log: `docs/verification/2026-10-22-jobs/compose-smoke.log`.
+* Not covered: database-server crash with the product runner (only in the experiment), load, CI.

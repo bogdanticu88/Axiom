@@ -20,14 +20,16 @@ Capability states used here:
 | Atomic audit, events and outbox; leased relay; inbox dedupe | verified | B12/A19 tests, evo::test_outbox..., ::test_concurrent_relays... |
 | Evidence upload, finalisation, classified audited reads, tamper detection | verified | evo::, s3:: |
 | HTTP API (/api/v1) | verified for implemented endpoints | api:: tests and Compose smoke |
-| Compose single-host install | **incomplete** | PostgreSQL, SeaweedFS, init and API verified by fresh-install smoke; workers, UI, workflow engine and real IdP not included |
-| Workflow engine experiments and ADR | **experimental; decision proposed** | Temporal 22/22 and PostgreSQL-backed 26/26 (independent reruns); ADR 0006 recommends PostgreSQL-backed runner, awaiting confirmation; product runner not built |
+| Compose single-host install | **incomplete** | PostgreSQL, SeaweedFS, init, API and job worker verified by fresh-install smoke; UI and real IdP not included |
+| Workflow engine decision (ADR 0006) | **accepted** | PostgreSQL-backed runner chosen on the project owner's "Proceed"; Temporal is the named alternative with revisit triggers |
+| Durable job runner `axiom.jobs` | **verified (single-effect jobs)** | job::* (24 tests incl. real SIGKILL and pg_dump/pg_restore drill), mutation-check log; leases capped at step deadline, claim counter dead-letters poison jobs, fenced results, per-tenant cap, version pinning and migration, cancellation, operator tooling, effect gate with intents, lookup-before-create, operator parking and restore detection. **Not built:** metrics, an operations UI/API, CI execution of the kill suite, multi-step workflows, cancellation after an external call has started |
 | CI pipeline | not started | DEP-08 |
-| Phase A ADRs (workflow engine, isolation, evidence retention) | incomplete | 0002 and 0005 written; 0006 pending; retention rules not yet decided |
+| Phase A ADRs (workflow engine, isolation, evidence retention) | incomplete | 0002, 0005 and 0006 (accepted) written; retention rules not yet decided |
 
 **Phase A gate** (Plan 8): tenant isolation tests pass (met); audit failures roll back commands (met); object
 finalisation is safe (met for API-streamed uploads); workflow survives crash/restart and approval waiting without
-duplicate action (**not met in product code**: shown only in the Temporal experiment).
+duplicate action (**met for single-effect jobs with a fake integration**: job::test_sigkill_after_effect_before_outcome_recorded,
+job::test_wait_then_done; approval records themselves are Phase D, so approval waiting is shown with `Wait`, not real approvals).
 
 ## Phase B: Ingestion and inventory - incomplete (core verified)
 
@@ -44,7 +46,8 @@ duplicate action (**not met in product code**: shown only in the Temporal experi
 | Tenable export (parser + API client + sync) | verified at **fixture-tested** level | synthetic chunks, local fake API; **no live Tenable validation** |
 | Azure Resource Graph context (client + sync + tag context) | verified at **fixture-tested** level | synthetic pages, local fake API; **no live Azure validation**; production credential resolution (Key Vault / workload identity) not built |
 | Connections with secret references; checkpoints after complete runs | verified | sync:: tests |
-| Ingestion worker | **interim** | dispatcher pending ADR 0006; included in Compose and smoke-tested |
+| Ingestion dispatch | verified | run requests enqueue an `ingestion.run` job in the same transaction; generic worker `axiom.workers.jobs` (Compose `job-worker`); ingjob::* tests; interim dispatcher removed |
+| Scheduled risk-expiry sweep | verified (scheduling) | one `cases.risk_expiry_sweep` job per tenant per hour bucket (ingjob::test_risk_expiry_sweep_is_scheduled_once...); expiry behaviour itself: cases::test_risk_acceptance_limits_owner_and_expiry_reopens; notification delivery not built |
 | API: imports, runs, quarantine, connections, sync, adapters, identity candidates, asset view | verified | api:: tests, Compose smoke |
 | Webhooks, connector health/freshness metrics, connector operations UI | not started | ING-08, ING-10 |
 | Defender for Cloud, AWS inventory and other Phase E connectors | not started | catalogue lists them as planned |

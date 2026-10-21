@@ -108,7 +108,7 @@ services:
     networks: [data, edge]
 
   # Interim ingestion dispatcher (ADR 0006 pending); same image, runtime DB role, no inbound ports.
-  ingest-worker:
+  job-worker:
     <<: *backend
     depends_on:
       app-init: {condition: service_completed_successfully}
@@ -121,7 +121,7 @@ services:
       AXIOM_TRUSTED_ISSUERS_FILE: /var/lib/axiom/dev-idp/issuers.json
     volumes:
       - devidp:/var/lib/axiom/dev-idp:ro
-    entrypoint: ["sh", "-c", "export AXIOM_TRUSTED_ISSUERS_JSON=\"$$(cat $$AXIOM_TRUSTED_ISSUERS_FILE)\" && exec python -m axiom.workers.ingest --interval 3"]
+    entrypoint: ["sh", "-c", "export AXIOM_TRUSTED_ISSUERS_JSON=\"$$(cat $$AXIOM_TRUSTED_ISSUERS_FILE)\" && exec python -m axiom.workers.jobs --interval 3"]
     healthcheck: {disable: true}
     read_only: true
     tmpfs: [/tmp]

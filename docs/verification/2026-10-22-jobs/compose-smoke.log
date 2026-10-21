@@ -1,0 +1,13 @@
+image built: sha256:2595e8cdea7a196acce9a3972f2b685587629f046289f42e5c6b2828d4501224
+project axiom-smoke-230723
+ok   fresh install: migrations applied, api healthy
+ok   no token -> 401
+ok   evidence upload -> verified -> download via S3 (SeaweedFS)
+ok   digest mismatch -> rejected
+ok   case create, start-investigation, stale version -> 409
+ok   consultant in other tenant -> 404; non-member tenant selection -> 403
+ok   case events linked to audit rows: 2
+ok   Trivy import via API + job-worker: completed complete 30; cases visible: 30
+ok   re-running init: migrations 'applied: none', seed 'already seeded'
+SMOKE PASS (axiom-smoke-230723)
+compose exit=0

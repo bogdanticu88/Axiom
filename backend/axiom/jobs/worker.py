@@ -21,13 +21,25 @@ from datetime import datetime, timedelta, timezone
 from psycopg.types.json import Jsonb
 
 from ..db import Database, TenantContext
-from .core import Done, Fail, Handler, JobContext, NeedsOperator, Retry, StaleLease, Wait, event
+from .core import Done, Fail, Handler, JobContext, NeedsOperator, Retry, StaleLease, Wait, enqueue, event
 
 log = logging.getLogger(__name__)
 
 
 class RestoreNotAcknowledged(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class Schedule:
+    """A recurring per-tenant job. One job per tenant per interval bucket (dedupe key), so any number of
+    workers can ensure it without creating duplicates."""
+    kind: str
+    version: int
+    interval_seconds: int
+
+    def dedupe_key(self, now: datetime) -> str:
+        return f"schedule:{int(now.timestamp()) // self.interval_seconds}"
 
 
 @dataclass
@@ -41,8 +53,9 @@ class WorkerConfig:
 
 class Worker:
     def __init__(self, db: Database, handlers: list[Handler], *, worker_id: str | None = None,
-                 config: WorkerConfig | None = None):
+                 config: WorkerConfig | None = None, schedules: list[Schedule] | None = None):
         self.db = db
+        self.schedules = list(schedules or [])
         self.handlers = {h.kind: h for h in handlers}
         self.worker_id = worker_id or f"worker-{uuid.uuid4().hex[:8]}"
         self.config = config or WorkerConfig()
@@ -74,10 +87,20 @@ class Worker:
         for ctx in self.tenants():
             if only_tenants is not None and ctx.tenant_id not in only_tenants:
                 continue
+            self.ensure_scheduled(ctx)
             for job, token in self.claim(ctx):
                 self.execute(ctx, job, token)
                 executed += 1
         return executed
+
+    def ensure_scheduled(self, ctx: TenantContext) -> None:
+        if not self.schedules:
+            return
+        now = datetime.now(timezone.utc)
+        with self.db.tenant_tx(ctx) as conn:
+            for s in self.schedules:
+                enqueue(conn, ctx, kind=s.kind, version=s.version, payload={"bucket": s.dedupe_key(now)},
+                        dedupe_key=s.dedupe_key(now), max_attempts=3)
 
     # -------------------------------------------------------------------------- claim
     def _supported_filter(self) -> tuple[str, list]:

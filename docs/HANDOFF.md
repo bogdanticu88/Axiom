@@ -16,7 +16,7 @@ VERIFICATION.md.
 
 ## Explicit gaps
 Development token authentication only (no production SSO); single-step risk acceptance (no request/authorise/renew);
-workflow engine undecided (ADR 0006 pending); no ingestion, investigation, policies, actions, reporting, UI, Helm,
+job runner without metrics or ops API; no investigation, policies, actions, reporting, UI, Helm,
 observability, backup/restore, retention; no connectors at any support level. See REQUIREMENTS.md "Known gaps".
 
 ## State after the Phase B checkpoint
@@ -26,9 +26,16 @@ observability, backup/restore, retention; no connectors at any support level. Se
 * Both workflow experiments are complete and independently rerun; **ADR 0006 is proposed and awaits the project owner's
   confirmation** (recommendation: PostgreSQL-backed runner for Phases B-D, Temporal as named alternative).
 
+## State after the job-runner checkpoint
+* ADR 0006 accepted. `axiom.jobs` built and verified for single-effect jobs (see ADR 0006 "Status of the
+  conditions"); ingestion runs and an hourly risk-expiry sweep run on it through `python -m axiom.workers.jobs`
+  (Compose service `job-worker`). The interim ingestion dispatcher is gone.
+* After restoring a database backup, workers refuse to start until `python -m axiom.provisioning --dsn ...
+  recovery-status` has been reviewed and `acknowledge-recovery --by ... --note ...` run.
+
 ## Next tasks (in order)
-1. On confirmation of ADR 0006: build `axiom.jobs` (step timeouts, claim counter for poison runs, RLS-compatible
-   claiming, operator tooling, metrics, restore marker, CI kill suite) and move the ingestion dispatcher onto it.
+1. Job runner remainder: metrics (queue depth, oldest due job, lease expiries, fenced refusals), job operations API,
+   CI execution of the kill suite (with DEP-08).
 2. Phase D groundwork on that runner: action proposals, approvals bound to digest/scope/expiry/uses, reservations,
    intents, reconciliation, idempotency-key storage (API-07); then RISK-02 request/authorise/renew.
 3. Phase B remainder: merge/split execution for confirmed identity candidates (AST-03), webhooks (ING-08), connector

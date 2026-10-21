@@ -166,7 +166,7 @@ def test_ingestion_journey_through_api(client, as_, world, db, object_store):
     from axiom.domains.evidence.service import EvidenceService
     from axiom.ingestion.pipeline import IngestionService
     from axiom.ingestion.sync import SyncService
-    from axiom.workers.ingest import run_once
+    from axiom.workers.jobs import build_worker
     fixtures = Path(__file__).resolve().parent.parent / "fixtures"
     analyst = as_("analyst")
     report = (fixtures / "trivy/debian-bullseye-20230612-slim.subset.json").read_bytes()
@@ -176,8 +176,9 @@ def test_ingestion_journey_through_api(client, as_, world, db, object_store):
     assert r.status_code == 202 and r.json()["status"] == "queued", r.text
     run_id = r.json()["id"]
     ingestion = IngestionService(db, object_store)
-    assert run_once(db, ingestion, SyncService(db, ingestion, EvidenceService(db, object_store, max_bytes=10**7)),
-                    "api-test-worker") >= 1
+    worker = build_worker(db, ingestion, SyncService(db, ingestion, EvidenceService(db, object_store, max_bytes=10**7)),
+                          worker_id="api-test-worker")
+    assert worker.run_once(only_tenants={world.a.id}) >= 1     # the job created with the import runs it
     got = client.get(f"/api/v1/ingestion-runs/{run_id}", headers=analyst).json()
     assert got["status"] == "completed" and got["coverage"] == "complete" and got["quarantined"] == []
     listed = client.get("/api/v1/ingestion-runs", headers=as_("viewer")).json()["items"]

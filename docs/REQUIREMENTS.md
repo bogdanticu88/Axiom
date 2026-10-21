@@ -14,7 +14,8 @@ requirement is verified, the status is `implementing` and the note says which pa
 
 Test references are abbreviated: `cases::name` = tests/integration/test_cases.py, `iso::` = test_isolation.py,
 `evo::` = test_evidence_outbox.py, `api::` = test_api.py, `s3::` = test_s3_store.py, `unit::` = tests/unit/test_rules.py,
-`spike::` = experiments/workflow-spike/tests/test_scenarios.py.
+`spike::` = experiments/workflow-spike/tests/test_scenarios.py. `job::` = tests/integration/test_jobs.py.
+`ingjob::` = tests/integration/test_ingestion_jobs.py.
 
 Last updated: 2026-10-22 (Phase B checkpoint).
 
@@ -25,7 +26,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 |---|---|---|
 | Authentication is **development token authentication** (generated key, inline JWKS). No production enterprise OIDC/SSO login, IdP integration test, revocation strategy or workload identity yet | AUTHZ-14, ADR 0008 | planned |
 | Risk acceptance is **single-step**; the request, authorise and renew flow is not built | RISK-02, ADR 0004 | planned |
-| **Workflow engine not yet confirmed**: ADR 0006 recommends a PostgreSQL-backed runner; both are experiments only, no product runner exists | ARC-02, ADR 0006 | awaiting decision |
+| Job runner built for single-effect jobs only: no metrics, operations UI/API, multi-step workflows or CI execution of the kill suite; every integration so far is a test fake | ARC-02, ADR 0006 | implementing |
 | No route back from planned/remediating to review | R7, DECISIONS.md | awaiting decision |
 | Not built: webhooks, merge/split execution, Defender/AWS context (Phase B remainder), investigation and AI, prioritisation (C), actions, approvals, workflow adapters, reporting and GRC (D), UI, Helm/AKS, observability, backup/restore, retention and deletion (F), evaluation dataset | sections 8 to 17 | planned |
 | **No connector is sandbox-validated or production-supported.** Four are fixture-tested (Trivy and SARIF with real tool output; Tenable and Azure Resource Graph with synthetic data and local fakes); the other 16 are planned; commercial ones need licensed accounts | INT-01..INT-20 | fixture-tested / planned / blocked for sandbox validation |
@@ -41,9 +42,9 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | B03 | Missing, stale or contradictory evidence cannot justify dismissal, priority reduction or verified closure | `record_assessment`, `dismiss`, `verification_outcome`, `validate_closure` trigger | cases::test_definite_assessment_requires_verified_evidence, ::test_inconclusive_assessment_cannot_be_dismissed, ::test_wrong_deployment_digest_is_inconclusive, ::test_partial_coverage_... | implementing | Verified for dismissal and verified closure; priority-reduction path is Phase C; staleness needs observation freshness (Phase B) |
 | B04 | Failed or partial synchronisation never implies remediation | coverage rules; absence and source fixes never touch cases | ing::test_partial_scan..., ::test_tenable_identity..., sync::test_interrupted_sync_keeps_committed_pages_as_partial | verified | |
 | B05 | Untrusted content cannot grant authority, change policy or choose tool destinations | Authority only from tokens and bindings | none | planned | Investigation tools and gateway (Phase C) |
-| B06 | Records, jobs, objects, credentials, caches and model requests enforce tenant boundaries | RLS, composite FKs, `TenantObjectStore`, tx-bound context | iso::*, evo::test_cross_tenant_evidence_is_not_found, api::test_cross_tenant_access_through_api_is_denied | implementing | Verified for database, API and object storage; jobs, credentials, caches and model requests do not exist yet |
-| B07 | Approvals bind to exact action, arguments, resources, tenant, validity and use count | Experiment only | spike::approval digest mismatch, expired approval | implementing | Platform action tables not built (Phase D / ADR 0006) |
-| B08 | Unknown external outcomes reconcile before retry; no exactly-once claim | Experiment only | spike::lost acknowledgement, no-lookup operator parking | implementing | As B07 |
+| B06 | Records, jobs, objects, credentials, caches and model requests enforce tenant boundaries | RLS, composite FKs, `TenantObjectStore`, tx-bound context | iso::*, evo::test_cross_tenant_evidence_is_not_found, api::test_cross_tenant_access_through_api_is_denied, job::test_jobs_are_tenant_isolated | implementing | Verified for database, API, object storage and jobs; credentials (secret refs only so far), caches and model requests do not exist yet |
+| B07 | Approvals bind to exact action, arguments, resources, tenant, validity and use count | Experiment only; the effect gate's `revalidate` hook re-checks authority at the boundary (job::test_revoked_authority...) | spike::approval digest mismatch, expired approval | implementing | Platform approval tables not built (Phase D) |
+| B08 | Unknown external outcomes reconcile before retry; no exactly-once claim | `jobs/effects.py` EffectGate, `axiom.effect_intents` | job::test_lost_ack_with_lookup..., ::test_lost_ack_without_lookup_parks..., ::test_sigkill_after_effect... | verified | Against a file-backed fake integration only; each real integration must be shown to support lookup or idempotency keys |
 | B09 | Previous decisions remain retrievable after reassessment | Append-only decisions, events, closure records | cases::test_full_lifecycle_to_verified_closure_and_reopen_preserves_history | verified | |
 | B10 | Report figures derive from reproducible queries over an identified snapshot | none | none | planned | Phase D reporting |
 | B11 | Model output is analysis, supported by independent observations | none | none | planned | Phase C |
@@ -54,7 +55,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | ID | Scenario | Verification | Status | Notes |
 |---|---|---|---|---|
 | A01 | Reimport and replay: no duplicate occurrences, decisions or external actions | ing::test_replayed_import_creates_no_duplicates, ::test_resume_after_in_process_crash_skips_committed_pages, ::test_real_process_kill_then_resume | implementing | Occurrences, cases, events and decisions verified; external actions do not exist yet |
-| A02 | Lost acknowledgement after ticket creation reconciles or pauses | spike (Temporal) passed | implementing | Must be re-proven on the selected engine inside the platform (ADR 0006) |
+| A02 | Lost acknowledgement after ticket creation reconciles or pauses | job::test_lost_ack_with_lookup_is_adopted_not_repeated, ::test_lost_ack_without_lookup_parks_and_operator_adopts | implementing | Runner level verified with a fake ticket system; no ticket integration (Jira etc.) built yet |
 | A03 | Half a scan: keep cases, show partial coverage, close none | ing::test_partial_scan_closes_nothing_and_complete_rescan_records_absence | verified | |
 | A04 | Conflicting asset identifiers require review; no cross-tenant/deployment merge | ing::test_tenable_identity..., sync::test_tenable_host_and_azure_vm..., iso::test_cross_tenant_foreign_key_rejected | implementing | Weak overlaps and strong conflicts verified; merge execution not built |
 | A05 | Malicious instructions in scanner text change nothing | none | planned | Phase C adversarial suite |
@@ -63,8 +64,8 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | A08 | Changed arguments after approval require new approval | spike digest mismatch | implementing | Phase D in platform |
 | A09 | External ticket closure without deployment proof keeps the case open | cases::test_no_closure_path_from_remediating | implementing | Domain side verified; Jira/ServiceNow sync must preserve it (Phase D) |
 | A10 | Losing a connector or model preserves work and resumes with bounded retry | sync::test_interrupted_sync..., adp::test_tenable_client_bounded_retries... | implementing | Connector part verified against fakes; model part is Phase C |
-| A11 | Risk acceptance expiry reopens review and notifies the owner | cases::test_risk_acceptance_limits_owner_and_expiry_reopens | implementing | Reopen and notification event verified; scheduled sweep process and notification delivery not built |
-| A12 | Worker restarts at each durable boundary: no lost decisions or repeated effects | spike worker/server kills passed | implementing | ADR 0006 |
+| A11 | Risk acceptance expiry reopens review and notifies the owner | cases::test_risk_acceptance_limits_owner_and_expiry_reopens, ingjob::test_risk_expiry_sweep_is_scheduled_once_per_interval_per_tenant | implementing | Reopen, notification event and hourly scheduled sweep verified; notification delivery not built |
+| A12 | Worker restarts at each durable boundary: no lost decisions or repeated effects | job::test_sigkill_after_effect_before_outcome_recorded (both variants), ::test_hung_step_loses_lease..., ing::test_real_process_kill_then_resume, job::test_restore_is_detected... | implementing | Verified for single-effect jobs and ingestion; database-server crash not re-run in product code (experiment only); multi-step workflows not built |
 | A13 | Cross-tenant access via API, jobs, object paths, exports, caches is denied and audited | api::test_cross_tenant_access_through_api_is_denied, evo::test_tenant_object_store_refuses_foreign_keys, iso::test_tenant_selection_and_security_events | implementing | Jobs, exports and caches not built; 404s inside a tenant are not yet audited as denials |
 | A14 | Policy change after assessment keeps old decision and versions reassessment | none | planned | Phase C |
 | A15 | Restore backup within RPO/RTO and reconcile pending effects first | none | planned | Phase F; needs WAL archiving profile |
@@ -92,7 +93,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | X17 | Tenant selection gives no existence oracle | iso::test_tenant_selection_and_security_events | verified | |
 | X18 | Emergency access is time-bound and raises a review event | cases::test_tenant_admin_delegation_rules | verified | Review workflow itself planned |
 | X19 | Concurrent outbox relays never double-claim | evo::test_concurrent_relays_do_not_double_claim | verified | |
-| X20 | Approval waits survive worker restart without duplicate effects | spike passed | implementing | Platform implementation pending (ADR 0006) |
+| X20 | Approval waits survive worker restart without duplicate effects | spike passed; runner `Wait` state is a row (job::test_wait_then_done) | implementing | Approval records are Phase D |
 | X21 | Restored backups do not reactivate expired grants or replay effects (D 13) | none | planned | |
 | X22 | Evidence deletion and legal-hold races follow policy (D 13) | none | planned | |
 
@@ -163,7 +164,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | TEN-02 | Transaction-local, transaction-bound tenant context; no switching inside a transaction | `axiom.bind_context`, `axiom.current_tenant` | iso::test_cannot_switch..., ::test_session_level..., ::test_pool_reuse... | verified | |
 | TEN-03 | Runtime roles never owners, superusers or BYPASSRLS; startup check | provisioning assertion; `verify_runtime_role` | iso::test_runtime_role_self_check | verified | |
 | TEN-04 | Separate migration, runtime, authentication, relay and provisioning identities | db/provision_roles.sql | iso::test_provisioner_cannot_read..., ::test_relay_reads_only_outbox, ::test_runtime_cannot_read_identity_tables_directly | verified | Backup and operations roles planned |
-| TEN-05 | Background jobs take tenant from trusted persisted identity, never payloads | outbox rows carry tenant | evo::test_outbox_relay... | implementing | Worker framework pending |
+| TEN-05 | Background jobs take tenant from trusted persisted identity, never payloads | outbox rows carry tenant; job worker binds tenant and system principal from `axiom_auth.active_tenant_workers` | evo::test_outbox_relay..., job::*, ingjob::* | verified | |
 | TEN-06 | Object storage uses tenant namespaces and restricted identities | `TenantObjectStore`; per-tenant bucket policies not used | X07 | implementing | Storage credentials are installation-wide; tenant-scoped storage identities planned |
 | TEN-07 | Cache isolation | none | none | planned | |
 | TEN-08 | Search isolation | none | none | planned | |
@@ -177,7 +178,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | TEN-16 | Suspension and revocation block new actions and cancel waiting work | tenant status in policies | iso::test_suspended_tenant_is_inaccessible | implementing | Waiting work cancellation pending |
 | TEN-17 | Document that a compromised application choosing tenant context exceeds context-based RLS | ADR 0002, README | review | verified | Documentation requirement |
 | TEN-18 | Provider webhooks resolve tenant from authenticated connection | none | none | planned | |
-| TEN-19 | Workers take tenant and principal from trusted persisted records (`axiom_auth.active_tenant_workers`), never from payloads | workers/ingest.py | sync::test_tenable_sync_end_to_end_and_checkpoint (dispatch path) | verified | |
+| TEN-19 | Workers take tenant and principal from trusted persisted records (`axiom_auth.active_tenant_workers`), never from payloads | jobs/worker.py, workers/jobs.py | sync::test_tenable_sync_end_to_end_and_checkpoint (dispatch path), test_jobs (all) | verified | |
 
 ## 7. Audit, outbox and API conventions (S 2 B12, P 3-4, D 8)
 
@@ -335,7 +336,7 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | ID | Requirement | Status | Notes |
 |---|---|---|---|
 | ARC-01 | Modular application with separately deployable workers and identities | implementing | API module and relay done; workers pending |
-| ARC-02 | Durable workflow engine selected through an experiment and ADR | implementing | Both experiments run and independently rerun; ADR 0006 recommends PostgreSQL-backed runner, awaiting confirmation; runner not built |
+| ARC-02 | Durable workflow engine selected through an experiment and ADR | implementing | ADR 0006 accepted (PostgreSQL-backed); runner built for single-effect jobs; metrics, ops UI and CI kill suite remain (ADR 0006 conditions) |
 | ARC-03 | Domain logic independent of scanner, cloud and model vendors | implementing | Holds for current code |
 | ARC-04 | Pinned dependencies and reproducible builds | verified | uv.lock with cooldown; images pinned by digest; Docker build succeeded |
 | ARC-05 | React and TypeScript frontend supporting real journeys | planned | |
@@ -354,7 +355,7 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | OPS-11 | Data classification and residency defined before sending code or evidence to models | planned | |
 | OPS-12 | Upgrade compatibility across schema, API, workflow histories, connectors | implementing | Migration ledger in place |
 | DEP-01 | Docker images package components | verified | `docker build` succeeded; non-root user |
-| DEP-02 | Compose starts the complete functional platform | implementing | API, PostgreSQL, S3 storage and init verified; workers, UI and workflow engine pending |
+| DEP-02 | Compose starts the complete functional platform | implementing | API, PostgreSQL, S3 storage, init and job worker verified; UI pending |
 | DEP-03 | Insecure development defaults refused in production | verified | unit::test_production_refuses_development_shortcuts |
 | DEP-04 | Helm with external PostgreSQL, object storage, IdP, workflow services; restricted workloads; backups | planned | |
 | DEP-05 | AKS reference deployment with portable interfaces | planned | |

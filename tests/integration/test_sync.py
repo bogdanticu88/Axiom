@@ -16,7 +16,7 @@ from axiom.adapters.tenable import TenableExportClient
 from axiom.domains.evidence.service import EvidenceService
 from axiom.ingestion.pipeline import IngestionService
 from axiom.ingestion.sync import SyncService
-from axiom.workers.ingest import run_once
+from axiom.workers.jobs import build_worker
 
 pytestmark = pytest.mark.db
 FIX = Path(__file__).resolve().parent.parent / "fixtures"
@@ -88,7 +88,7 @@ def test_tenable_sync_end_to_end_and_checkpoint(world, run, ctx_for, services, d
                                  {"initial_since": 1760000000})
     queued = sync.request_sync(analyst, connection["id"])
     assert queued["status"] == "queued" and queued["source_kind"] == "api_sync"
-    assert run_once(db, ingestion, sync, "worker-test") >= 1      # the interim worker dispatches the run
+    assert build_worker(db, ingestion, sync, worker_id="worker-test").run_once(only_tenants={world.a.id}) >= 1
     done = run(analyst, lambda s: s.conn.execute("SELECT * FROM axiom.ingestion_runs WHERE id = %s",
                                                  (queued["id"],)).fetchone())
     assert done["status"] == "completed"

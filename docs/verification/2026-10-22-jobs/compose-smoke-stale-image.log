@@ -1,0 +1,50 @@
+project axiom-smoke-230509
+ok   fresh install: migrations applied, api healthy
+ok   no token -> 401
+ok   evidence upload -> verified -> download via S3 (SeaweedFS)
+ok   digest mismatch -> rejected
+ok   case create, start-investigation, stale version -> 409
+ok   consultant in other tenant -> 404; non-member tenant selection -> 403
+ok   case events linked to audit rows: 2
+SMOKE FAIL: import via worker: queued unknown None
+objects-1     | I1021 23:06:11.635856 volume_growth.go:395 Created Volume 8 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.635873 volume_growth.go:408 Registered Volume 8 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.636229 store.go:338 In dir /data (disk ID 0) adds volume:9 collection: replicaPlacement:000 ttl:
+objects-1     | I1021 23:06:11.636867 store.go:343 add volume 9 on disk ID 0
+objects-1     | I1021 23:06:11.636922 volume_grpc_client_to_master.go:303 volume server 172.19.0.2:8080 adds volume 9
+objects-1     | I1021 23:06:11.637293 volume_growth.go:395 Created Volume 9 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.637309 volume_growth.go:408 Registered Volume 9 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.637517 store.go:338 In dir /data (disk ID 0) adds volume:10 collection: replicaPlacement:000 ttl:
+objects-1     | I1021 23:06:11.638121 store.go:343 add volume 10 on disk ID 0
+objects-1     | I1021 23:06:11.638192 volume_grpc_client_to_master.go:303 volume server 172.19.0.2:8080 adds volume 10
+objects-1     | I1021 23:06:11.638308 volume_growth.go:395 Created Volume 10 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.638320 volume_growth.go:408 Registered Volume 10 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.638504 store.go:338 In dir /data (disk ID 0) adds volume:11 collection: replicaPlacement:000 ttl:
+objects-1     | I1021 23:06:11.639064 store.go:343 add volume 11 on disk ID 0
+objects-1     | I1021 23:06:11.639111 volume_grpc_client_to_master.go:303 volume server 172.19.0.2:8080 adds volume 11
+objects-1     | I1021 23:06:11.639208 volume_growth.go:395 Created Volume 11 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.639220 volume_growth.go:408 Registered Volume 11 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.639352 store.go:338 In dir /data (disk ID 0) adds volume:12 collection: replicaPlacement:000 ttl:
+objects-1     | I1021 23:06:11.640251 store.go:343 add volume 12 on disk ID 0
+objects-1     | I1021 23:06:11.640298 volume_grpc_client_to_master.go:303 volume server 172.19.0.2:8080 adds volume 12
+objects-1     | I1021 23:06:11.640480 volume_growth.go:395 Created Volume 12 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.640565 volume_growth.go:408 Registered Volume 12 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.640722 store.go:338 In dir /data (disk ID 0) adds volume:13 collection: replicaPlacement:000 ttl:
+objects-1     | I1021 23:06:11.641338 store.go:343 add volume 13 on disk ID 0
+objects-1     | I1021 23:06:11.641390 volume_grpc_client_to_master.go:303 volume server 172.19.0.2:8080 adds volume 13
+objects-1     | I1021 23:06:11.641624 volume_growth.go:395 Created Volume 13 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.641638 volume_growth.go:408 Registered Volume 13 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.641799 store.go:338 In dir /data (disk ID 0) adds volume:14 collection: replicaPlacement:000 ttl:
+objects-1     | I1021 23:06:11.642627 store.go:343 add volume 14 on disk ID 0
+objects-1     | I1021 23:06:11.642680 volume_grpc_client_to_master.go:303 volume server 172.19.0.2:8080 adds volume 14
+objects-1     | I1021 23:06:11.642844 volume_growth.go:395 Created Volume 14 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:11.642860 volume_growth.go:408 Registered Volume 14 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1     | I1021 23:06:13.637282 lock_ring_manager.go:159 LockRing: broadcasting ring update for group "" version 1792623973637236941: [172.19.0.2:8888.18888]
+objects-1     | I1021 23:06:13.637570 masterclient.go:346 LockRing: s3@172.19.0.2:18333 received ring update v1792623973637236941: [172.19.0.2:8888.18888]
+objects-1     | I1021 23:06:13.637583 masterclient.go:346 LockRing: filer@172.19.0.2:8888 received ring update v1792623973637236941: [172.19.0.2:8888.18888]
+objects-1     | I1021 23:06:13.637597 filer.go:181 LockRing: applying master ring update v1792623973637236941: [172.19.0.2:8888]
+objects-1     | I1021 23:06:43.637894 lock_ring_manager.go:159 LockRing: broadcasting ring update for group "" version 1792624003637848317: [172.19.0.2:8888.18888]
+objects-1     | I1021 23:06:43.638092 masterclient.go:346 LockRing: filer@172.19.0.2:8888 received ring update v1792624003637848317: [172.19.0.2:8888.18888]
+objects-1     | I1021 23:06:43.638116 filer.go:181 LockRing: applying master ring update v1792624003637848317: [172.19.0.2:8888]
+objects-1     | I1021 23:06:43.638135 masterclient.go:346 LockRing: s3@172.19.0.2:18333 received ring update v1792624003637848317: [172.19.0.2:8888.18888]
+compose exit=1
