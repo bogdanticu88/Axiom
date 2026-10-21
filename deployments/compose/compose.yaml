@@ -1,0 +1,118 @@
+# Single-host installation for development and evaluation with SYNTHETIC data.
+#
+#   cp deployments/compose/.env.example deployments/compose/.env   # then set real secrets
+#   docker compose -f deployments/compose/compose.yaml --env-file deployments/compose/.env up -d --build
+#
+# Not a production profile: development identity (inline JWKS from a generated key),
+# a single PostgreSQL instance, single-node object storage, no TLS termination.
+# The API refuses inline JWKS and filesystem storage when AXIOM_ENV=production.
+name: axiom
+
+x-backend: &backend
+  image: axiom-backend:dev
+  build:
+    context: ../..
+    dockerfile: Dockerfile
+  environment: &backend-env
+    AXIOM_ENV: development
+    AXIOM_LOG_LEVEL: INFO
+    AWS_ACCESS_KEY_ID: ${AXIOM_S3_ACCESS_KEY:?set AXIOM_S3_ACCESS_KEY}
+    AWS_SECRET_ACCESS_KEY: ${AXIOM_S3_SECRET_KEY:?set AXIOM_S3_SECRET_KEY}
+
+services:
+  postgres:
+    image: public.ecr.aws/docker/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+    environment:
+      POSTGRES_PASSWORD: ${AXIOM_PG_SUPERUSER_PASSWORD:?set AXIOM_PG_SUPERUSER_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [data]
+
+  objects:
+    image: mirror.gcr.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    command: ["server", "-dir=/data", "-s3", "-s3.config=/etc/axiom/s3.json", "-ip.bind=0.0.0.0"]
+    entrypoint: ["/bin/sh", "-c", "sed -e \"s/__ACCESS__/$$AXIOM_S3_ACCESS_KEY/\" -e \"s/__SECRET__/$$AXIOM_S3_SECRET_KEY/\" /etc/axiom/s3.template.json > /etc/axiom/s3.json && exec /entrypoint.sh \"$$@\"", "--"]
+    environment:
+      AXIOM_S3_ACCESS_KEY: ${AXIOM_S3_ACCESS_KEY}
+      AXIOM_S3_SECRET_KEY: ${AXIOM_S3_SECRET_KEY}
+    volumes:
+      - objdata:/data
+      - ./seaweedfs/s3.template.json:/etc/axiom/s3.template.json:ro
+      - objcfg:/etc/axiom
+    networks: [data]
+
+  # One-shot: cluster roles and the application database (runs as the PostgreSQL superuser).
+  db-init:
+    image: public.ecr.aws/docker/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${AXIOM_PG_SUPERUSER_PASSWORD}
+      AXIOM_MIGRATOR_PASSWORD: ${AXIOM_MIGRATOR_PASSWORD:?set AXIOM_MIGRATOR_PASSWORD}
+      AXIOM_APP_PASSWORD: ${AXIOM_APP_PASSWORD:?set AXIOM_APP_PASSWORD}
+      AXIOM_RELAY_PASSWORD: ${AXIOM_RELAY_PASSWORD:?set AXIOM_RELAY_PASSWORD}
+      AXIOM_ADMIN_CLI_PASSWORD: ${AXIOM_ADMIN_CLI_PASSWORD:?set AXIOM_ADMIN_CLI_PASSWORD}
+    volumes:
+      - ../../db:/axiom/db:ro
+      - ./init/db-init.sh:/axiom/db-init.sh:ro
+    entrypoint: ["sh", "/axiom/db-init.sh"]
+    restart: "no"
+    networks: [data]
+
+  # One-shot: migrations (as axiom_migrator), development identity keys, synthetic seed, bucket.
+  app-init:
+    <<: *backend
+    depends_on:
+      db-init: {condition: service_completed_successfully}
+      objects: {condition: service_started}
+    environment:
+      <<: *backend-env
+      AXIOM_MIGRATOR_DSN: host=postgres dbname=axiom user=axiom_migrator password=${AXIOM_MIGRATOR_PASSWORD}
+      AXIOM_ADMIN_DSN: host=postgres dbname=axiom user=axiom_admin_cli password=${AXIOM_ADMIN_CLI_PASSWORD}
+      AXIOM_APP_DSN_SEED: host=postgres dbname=axiom user=axiom_app password=${AXIOM_APP_PASSWORD}
+      AXIOM_S3_ENDPOINT_URL: http://objects:8333
+      AXIOM_S3_BUCKET: axiom-evidence
+    volumes:
+      - devidp:/var/lib/axiom/dev-idp
+      - ./init/app-init.sh:/axiom/app-init.sh:ro
+    user: "0:0"   # only to set ownership of the dev-idp volume; drops to uid 10001 for all work
+    entrypoint: ["sh", "/axiom/app-init.sh"]
+    restart: "no"
+    networks: [data]
+
+  api:
+    <<: *backend
+    depends_on:
+      app-init: {condition: service_completed_successfully}
+    environment:
+      <<: *backend-env
+      AXIOM_DATABASE_DSN: host=postgres dbname=axiom user=axiom_app password=${AXIOM_APP_PASSWORD}
+      AXIOM_OBJECT_STORE: s3
+      AXIOM_S3_ENDPOINT_URL: http://objects:8333
+      AXIOM_S3_BUCKET: axiom-evidence
+      AXIOM_TRUSTED_ISSUERS_FILE: /var/lib/axiom/dev-idp/issuers.json
+    volumes:
+      - devidp:/var/lib/axiom/dev-idp:ro
+    entrypoint: ["sh", "-c", "export AXIOM_TRUSTED_ISSUERS_JSON=\"$$(cat $$AXIOM_TRUSTED_ISSUERS_FILE)\" && exec python -m axiom.server"]
+    ports: ["127.0.0.1:${AXIOM_API_PORT:-8000}:8000"]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [data, edge]
+
+volumes:
+  pgdata: {}
+  objdata: {}
+  objcfg: {}
+  devidp: {}
+
+networks:
+  data: {internal: true}
+  edge: {}

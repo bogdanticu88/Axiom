@@ -1,0 +1,9 @@
+.bin/
+.venv/
+.run/
+__pycache__/
+*.db
+*.sqlite
+*.sqlite-*
+*.json.lock
+.pytest_cache/

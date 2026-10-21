@@ -1,0 +1,122 @@
+run started 2026-10-21T21:21:10Z
+$ uv run --frozen pytest -v -s tests/
+============================= test session starts ==============================
+platform linux -- Python 3.13.16, pytest-9.1.1, pluggy-1.6.0 -- /home/dev/axiom/experiments/workflow-spike/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/dev/axiom/experiments/workflow-spike
+configfile: pyproject.toml
+collecting ... collected 9 items
+
+tests/test_scenarios.py::test_worker_sigkill_while_awaiting_approval [00:21:10] started temporal-server:49505 pid=2345
+[00:21:11] temporal server ready at 127.0.0.1:49505
+[00:21:11] started ticket-service pid=2357
+[00:21:11] started worker-1 pid=2358
+[00:21:11] started workflow remediation-5ad0f6bd
+[00:21:12] workflow is awaiting approval; SIGKILL worker-1
+[00:21:12] SIGKILLed worker-1 pid=2358 rc=-9
+[00:21:14] started worker-2 pid=2367
+[00:21:24] result after 10.1s: WorkflowOutcome(status='completed', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='97d30471efa03b07879fd6c44f0a6bf527d41a556f36150ea4be61f152408ab2', ticket_id='TCK-d5b9c1ee', detail='created', history=['awaiting_approval', 'approval_received:alice@example.test', 'executing', 'completed'])
+[00:21:24] history events: ['workflow_execution_started', 'workflow_task_scheduled', 'workflow_task_started', 'workflow_task_completed', 'activity_task_scheduled', 'activity_task_started', 'activity_task_completed', 'workflow_task_scheduled', 'workflow_task_started', 'workflow_task_completed', 'timer_started', 'workflow_execution_signaled', 'workflow_task_scheduled', 'workflow_task_timed_out', 'workflow_task_scheduled', 'workflow_task_started', 'workflow_task_completed', 'timer_canceled', 'activity_task_scheduled', 'activity_task_started', 'activity_task_completed', 'workflow_task_scheduled', 'workflow_task_started', 'workflow_task_completed', 'activity_task_scheduled', 'activity_task_started', 'activity_task_completed', 'workflow_task_scheduled', 'workflow_task_started', 'workflow_task_completed', 'workflow_execution_completed']
+[00:21:24] external tickets: [{'id': 'TCK-d5b9c1ee', 'idempotency_key': '97d30471efa03b07879fd6c44f0a6bf527d41a556f36150ea4be61f152408ab2', 'payload': {'action': 'open_remediation_ticket', 'asset': 'api-gw-prod-01', 'finding_id': 'VULN-2026-0042', 'severity': 'high', 'summary': 'Upgrade openssl to patched version'}}]
+[00:21:24] platform_db.proposals: 1 row(s)
+[00:21:24]     {"workflow_id": "remediation-5ad0f6bd", "canonical_json": "{\"action\":\"open_...", "payload_digest": "33983f26b3ad5a73...", "recorded_at": "2026-10-21T21:21:11.900517+00:00"}
+[00:21:24] platform_db.execution_intents: 1 row(s)
+[00:21:24]     {"id": 1, "operation_key": "97d30471efa03b07...", "workflow_id": "remediation-5ad0f6bd", "payload_digest": "33983f26b3ad5a73...", "attempt": 1, "recorded_at": "2026-10-21T21:21:24.550055+00:00"}
+[00:21:24] platform_db.execution_results: 1 row(s)
+[00:21:24]     {"id": 1, "operation_key": "97d30471efa03b07...", "outcome": "created", "ticket_id": "TCK-d5b9c1ee", "attempt": 1, "recorded_at": "2026-10-21T21:21:24.576415+00:00"}
+[00:21:24] platform_db.workflow_events: 1 row(s)
+[00:21:24]     {"id": 1, "workflow_id": "remediation-5ad0f6bd", "event": "completed", "detail": "created TCK-d5b9c1ee", "recorded_at": "2026-10-21T21:21:24.604068+00:00"}
+PASSED
+tests/test_scenarios.py::test_approval_digest_mismatch_does_not_execute [00:21:24] started ticket-service pid=2383
+[00:21:24] started worker-1 pid=2384
+[00:21:25] started workflow remediation-a4258006
+[00:21:25] result: WorkflowOutcome(status='approval_mismatch', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='', ticket_id=None, detail='approved digest ad0bfd964f6d1546 != proposal digest 33983f26b3ad5a73', history=['awaiting_approval', 'approval_received:alice@example.test', 'approval_mismatch'])
+[00:21:25] platform_db.proposals: 1 row(s)
+[00:21:25]     {"workflow_id": "remediation-a4258006", "canonical_json": "{\"action\":\"open_...", "payload_digest": "33983f26b3ad5a73...", "recorded_at": "2026-10-21T21:21:25.145240+00:00"}
+[00:21:25] platform_db.execution_intents: 0 row(s)
+[00:21:25] platform_db.execution_results: 0 row(s)
+[00:21:25] platform_db.workflow_events: 1 row(s)
+[00:21:25]     {"id": 1, "workflow_id": "remediation-a4258006", "event": "approval_mismatch", "detail": "approved digest ...", "recorded_at": "2026-10-21T21:21:25.473276+00:00"}
+PASSED
+tests/test_scenarios.py::test_expired_approval_is_not_used [00:21:25] started ticket-service pid=2394
+[00:21:25] started worker-1 pid=2395
+[00:21:25] started workflow remediation-cc306c08
+[00:21:26] result: WorkflowOutcome(status='approval_expired', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='', ticket_id=None, detail='approval expired at 2026-10-21T21:21:21.302576+00:00', history=['awaiting_approval', 'approval_received:alice@example.test', 'approval_expired'])
+PASSED
+tests/test_scenarios.py::test_approval_deadline_timer [00:21:26] started ticket-service pid=2405
+[00:21:26] started worker-1 pid=2406
+[00:21:26] started workflow remediation-9f7ef1aa
+[00:21:29] result after 3.1s: WorkflowOutcome(status='approval_deadline_exceeded', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='', ticket_id=None, detail='no approval before deadline', history=['awaiting_approval', 'approval_deadline_exceeded'])
+[00:21:29] late approval signal -> RPCError: workflow execution already completed
+[00:21:29] timer events: ['timer_started_event_attributes', 'timer_fired_event_attributes']
+PASSED
+tests/test_scenarios.py::test_lost_ack_reconciles_by_lookup [00:21:29] started ticket-service pid=2416
+[00:21:30] started worker-1 pid=2417
+[00:21:30] started workflow remediation-1b7ec268
+[00:21:30] ticket exists, activity has not returned; SIGKILL worker-1
+[00:21:30] SIGKILLed worker-1 pid=2417 rc=-9
+[00:21:30] started worker-2 pid=2429
+[00:21:46] result 15.7s after restart: WorkflowOutcome(status='completed', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='7cd84efdbc851ffcd323333433ff5375f3fa3709774201316544bb00c95778ea', ticket_id='TCK-1b639555', detail='adopted', history=['awaiting_approval', 'approval_received:alice@example.test', 'executing', 'completed'])
+[00:21:46] external tickets: [{'id': 'TCK-1b639555', 'idempotency_key': '7cd84efdbc851ffcd323333433ff5375f3fa3709774201316544bb00c95778ea', 'payload': {'action': 'open_remediation_ticket', 'asset': 'api-gw-prod-01', 'finding_id': 'VULN-2026-0042', 'severity': 'high', 'summary': 'Upgrade openssl to patched version'}}]
+[00:21:46] platform_db.proposals: 1 row(s)
+[00:21:46]     {"workflow_id": "remediation-1b7ec268", "canonical_json": "{\"action\":\"open_...", "payload_digest": "33983f26b3ad5a73...", "recorded_at": "2026-10-21T21:21:30.410487+00:00"}
+[00:21:46] platform_db.execution_intents: 2 row(s)
+[00:21:46]     {"id": 1, "operation_key": "7cd84efdbc851ffc...", "workflow_id": "remediation-1b7ec268", "payload_digest": "33983f26b3ad5a73...", "attempt": 1, "recorded_at": "2026-10-21T21:21:30.739115+00:00"}
+[00:21:46]     {"id": 2, "operation_key": "7cd84efdbc851ffc...", "workflow_id": "remediation-1b7ec268", "payload_digest": "33983f26b3ad5a73...", "attempt": 2, "recorded_at": "2026-10-21T21:21:36.749544+00:00"}
+[00:21:46] platform_db.execution_results: 1 row(s)
+[00:21:46]     {"id": 1, "operation_key": "7cd84efdbc851ffc...", "outcome": "adopted", "ticket_id": "TCK-1b639555", "attempt": 2, "recorded_at": "2026-10-21T21:21:36.783053+00:00"}
+[00:21:46] platform_db.workflow_events: 1 row(s)
+[00:21:46]     {"id": 1, "workflow_id": "remediation-1b7ec268", "event": "completed", "detail": "adopted TCK-1b639555", "recorded_at": "2026-10-21T21:21:46.825836+00:00"}
+PASSED
+tests/test_scenarios.py::test_negative_control_naive_retry_duplicates [00:21:46] started ticket-service pid=2443
+[00:21:46] started worker-1 pid=2444
+[00:21:47] started workflow remediation-765dd62f
+[00:21:47] SIGKILLed worker-1 pid=2444 rc=-9
+[00:21:47] started worker-2 pid=2454
+[00:22:03] result: status=completed detail=created; external ticket count=2: ['TCK-3cce48ee', 'TCK-6ee6ed73']
+PASSED
+tests/test_scenarios.py::test_lost_ack_without_lookup_needs_operator [00:22:03] started ticket-service pid=2468
+[00:22:03] started worker-1 pid=2469
+[00:22:04] started workflow remediation-a4a9b3f8
+[00:22:04] SIGKILLed worker-1 pid=2469 rc=-9
+[00:22:04] started worker-2 pid=2480
+[00:22:15] workflow reached needs_operator_reconciliation after 10.0s
+[00:22:20] after 5s parked: tickets=1, status still needs_operator_reconciliation
+[00:22:20] result: WorkflowOutcome(status='completed', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='f09cf4ba97ee08817a2543ec8e87fc3623558e66afafc57017a46ce5a057beef', ticket_id='TCK-500147a3', detail='operator_adopted', history=['awaiting_approval', 'approval_received:alice@example.test', 'executing', 'needs_operator_reconciliation', 'completed'])
+[00:22:20] platform_db.proposals: 1 row(s)
+[00:22:20]     {"workflow_id": "remediation-a4a9b3f8", "canonical_json": "{\"action\":\"open_...", "payload_digest": "33983f26b3ad5a73...", "recorded_at": "2026-10-21T21:22:04.363915+00:00"}
+[00:22:20] platform_db.execution_intents: 2 row(s)
+[00:22:20]     {"id": 1, "operation_key": "f09cf4ba97ee0881...", "workflow_id": "remediation-a4a9b3f8", "payload_digest": "33983f26b3ad5a73...", "attempt": 1, "recorded_at": "2026-10-21T21:22:04.685267+00:00"}
+[00:22:20]     {"id": 2, "operation_key": "f09cf4ba97ee0881...", "workflow_id": "remediation-a4a9b3f8", "payload_digest": "33983f26b3ad5a73...", "attempt": 2, "recorded_at": "2026-10-21T21:22:10.690356+00:00"}
+[00:22:20] platform_db.execution_results: 1 row(s)
+[00:22:20]     {"id": 1, "operation_key": "f09cf4ba97ee0881...", "outcome": "operator_adopted", "ticket_id": "TCK-500147a3", "attempt": 1, "recorded_at": "2026-10-21T21:22:20.788270+00:00"}
+[00:22:20] platform_db.workflow_events: 2 row(s)
+[00:22:20]     {"id": 1, "workflow_id": "remediation-a4a9b3f8", "event": "needs_operator_reconciliation", "detail": "1 earlier attemp...", "recorded_at": "2026-10-21T21:22:20.755922+00:00"}
+[00:22:20]     {"id": 2, "workflow_id": "remediation-a4a9b3f8", "event": "completed", "detail": "operator bob adopted TCK-500147a3", "recorded_at": "2026-10-21T21:22:20.817822+00:00"}
+PASSED
+tests/test_scenarios.py::test_server_sigkill_restart_while_awaiting_approval [00:22:20] started temporal-server:45861 pid=2495
+[00:22:21] temporal server ready at 127.0.0.1:45861
+[00:22:21] started ticket-service pid=2504
+[00:22:21] started worker-1 pid=2505
+[00:22:21] started workflow remediation-9567f50d
+[00:22:22] SIGKILL temporal server and worker-1
+[00:22:22] SIGKILLed temporal-server:45861 pid=2495 rc=-9
+[00:22:22] SIGKILLed worker-1 pid=2505 rc=-9
+[00:22:22] started temporal-server:45861 pid=2513
+[00:22:22] temporal server ready at 127.0.0.1:45861
+[00:22:22] started worker-2 pid=2521
+[00:22:22] after server restart: workflow remediation-9567f50d status=RUNNING
+[00:22:23] result: WorkflowOutcome(status='completed', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='5102254da57501c7778179e261c320f6a83c6a7dc95a5ec3fb286e8ec38f9d75', ticket_id='TCK-a2f6c6d4', detail='created', history=['awaiting_approval', 'approval_received:alice@example.test', 'executing', 'completed'])
+[00:22:23] external ticket count=1
+PASSED
+tests/test_scenarios.py::test_replay_detects_unpatched_change [00:22:24] started ticket-service pid=2536
+[00:22:24] started worker-1 pid=2537
+[00:22:24] started workflow remediation-1a766b75
+[00:22:25] recorded history: 29 events
+[00:22:25] replay with original: OK
+2026-10-21T21:22:25.491549Z  WARN temporalio_sdk_core::worker::workflow: Failing workflow task run_id=01a16058-0a1c-7b15-a84f-60687b7c98df failure=Failure { failure: Some(Failure { message: "[TMPRL1100] Nondeterminism error: Timer machine does not handle this event: HistoryEvent(id: 5, ActivityTaskScheduled)", source: "", stack_trace: "", encoded_attributes: None, cause: None, failure_info: Some(ApplicationFailureInfo(ApplicationFailureInfo { r#type: "", non_retryable: false, details: None, next_retry_delay: None, category: Unspecified })) }), force_cause: NonDeterministicError }
+[00:22:25] replay with unpatched_change: NondeterminismError: Workflow activation completion failed: Failure { failure: Some(Failure { message: "[TMPRL1100] Nondeterminism error: Timer machine does not handle this event: HistoryEvent(id: 5, ActivityTaskScheduled
+[00:22:25] replay with patched_change: OK
+PASSED
+
+========================= 9 passed in 75.86s (0:01:15) =========================

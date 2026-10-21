@@ -1,0 +1,17 @@
+[project]
+name = "workflow-spike"
+version = "0.0.0"
+description = "Bounded experiment: does Temporal meet the platform's durable-workflow requirements?"
+requires-python = ">=3.13"
+dependencies = [
+    "temporalio",
+    "pytest",
+]
+
+[tool.uv]
+exclude-newer = "2026-10-14T00:00:00Z"
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]

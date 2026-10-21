@@ -59,6 +59,8 @@ class Settings(BaseSettings):
                 raise ConfigurationError(f"symmetric/none algorithms are not accepted: {sorted(bad)}")
             if issuer.jwks is None and issuer.jwks_uri is None:
                 raise ConfigurationError(f"issuer {issuer.issuer} has no key source")
+            if issuer.jwks is not None and not issuer.jwks.get("keys"):
+                raise ConfigurationError(f"issuer {issuer.issuer} has an empty inline JWKS")
         if self.env == "production":
             if any(i.jwks is not None for i in issuers):
                 raise ConfigurationError("inline JWKS is not permitted in production")

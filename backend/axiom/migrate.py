@@ -1,6 +1,6 @@
 """Ledgered SQL migration runner.
 
-Applies backend/migrations/NNNN_name.sql in order, each in its own transaction,
+Applies axiom/migrations/NNNN_name.sql in order, each in its own transaction,
 as the migration login role acting as axiom_owner (SET ROLE). Applied files are
 recorded with their SHA-256; a changed checksum of an applied migration is a
 hard error (fix forward with a new migration instead of editing history).
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import psycopg
 
-MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 _NAME = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
 _LOCK_KEY = 0x5650_4D49  # "VPMI": serialises concurrent migration runs
 
