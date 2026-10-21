@@ -165,3 +165,15 @@ configured for that run); ingestion file with the re-import assertion: 13 passed
   run 7 first failure too. Fixed by using `grep ... >/dev/null`.
 * After the fix, three consecutive runs passed: `SMOKE PASS (axiom-smoke-224301)`, `(-224400)`, `(-224456)`, each
   including the Trivy import through the API and ingest worker. Logs in `docs/verification/2026-10-22-final/`.
+
+### Run 11: restore test of the Phase B preservation set (2026-10-22 ~22:47Z)
+Artifacts built from commit 0ce7b8d (tag `phase-b-checkpoint-1` points to 3ec1632):
+```
+7c21b76b5b1896e75eac6290be3dbf5780f1f96895a26f5b46d7f6bc6bbe4e27  axiom-phaseb-20261022-0ce7b8d-source.tar.gz
+df66c33775bc30e92584fb311fdd631589bd2c09074e217e8321439e0fc9ac9b  axiom-phaseb-20261022-0ce7b8d.bundle
+ba8416fc7142030c52bd582448648b9143b42e762ac19c1f90e74a730687a9ab  axiom-phaseb-20261022-0ce7b8d-MANIFEST.txt
+```
+`sha256sum -c`: all OK. Bundle: "is okay", both tags present, tree identical to repository HEAD. Extracted source:
+165 files, no `.env`, keys, virtual environments or data directories. From the extracted copy with a fresh
+SeaweedFS: **126 passed, 0 skipped**, 1 warning, 43.65s. (This entry was added after the archive was built, so the
+archive's own copy of this file stops at run 10.)
