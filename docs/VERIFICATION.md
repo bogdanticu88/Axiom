@@ -131,8 +131,10 @@ defence in depth). Code restored and compared byte-for-byte afterwards.
 ### Run 7: Compose fresh-install smoke with ingestion (2026-10-22 22:24Z to 22:28Z)
 `scripts/verify/compose-smoke.sh` now also uploads the real Trivy fixture, imports it through `/api/v1/imports`,
 and waits for the Compose `ingest-worker` to complete it.
-* First attempt (BUILD=1): **failed** at the final re-initialisation check. The script slept a fixed 15 seconds and
-  read the recreated init container's logs before it had run. Fixed to wait for the container to exit.
+* First attempt (BUILD=1): **failed**. At the time I attributed it to the final re-initialisation check (fixed
+  15-second sleep) and replaced the sleep with a wait for the container to exit. **That diagnosis was wrong or at
+  least incomplete:** see run 10, where the same symptom recurred and the real cause was found (`grep -q` under
+  `set -o pipefail`).
 * Before the fix, two further runs passed (one with BUILD=1). After the fix, two consecutive runs passed:
   `SMOKE PASS (axiom-smoke-222712)` and `SMOKE PASS (axiom-smoke-222808)`, each including
   `Trivy import via API + ingest-worker: completed complete 30`. Logs: `docs/verification/2026-10-22-phase-b/`.
@@ -151,3 +153,15 @@ New test `test_strong_identifier_conflict_creates_conflict_asset_and_review` fir
 instead of 1** (each record of a conflicting import created its own holding asset and review candidate). Fixed with
 a stable `identity_claim` key on the holding asset. Full suite afterwards: **124 passed, 2 skipped** (S3 not
 configured for that run); ingestion file with the re-import assertion: 13 passed.
+
+### Run 10: final verification at commit 3093609 (2026-10-22 22:40Z to 22:45Z)
+* `scripts/verify/foundation.sh` at `3093609` (clean tree): migrations `applied: 0001, 0002, 0003`, re-run
+  `applied: none`, second database `applied: 0001, 0002, 0003`; edited migration rejected; 40 tables with forced RLS;
+  **126 passed, 0 skipped, 1 warning in 42.72s**. Log: `docs/verification/2026-10-22-final/foundation-verify.log`.
+* `BUILD=1 scripts/verify/compose-smoke.sh`: **failed** with "migrations not applied on fresh install" although the
+  logs contained `applied: 0001, 0002, 0003`. Root cause: `docker compose logs ... | grep -q` under `set -o pipefail`;
+  `grep -q` exits at the first match, the log writer receives SIGPIPE and the pipeline reports failure depending on
+  timing and log size. This is a defect in the test script, not in the platform, and it most likely explains the
+  run 7 first failure too. Fixed by using `grep ... >/dev/null`.
+* After the fix, three consecutive runs passed: `SMOKE PASS (axiom-smoke-224301)`, `(-224400)`, `(-224456)`, each
+  including the Trivy import through the API and ingest worker. Logs in `docs/verification/2026-10-22-final/`.

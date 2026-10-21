@@ -38,7 +38,7 @@ for i in $(seq 1 60); do
   [ "$(dc ps api --format '{{.Health}}')" = "healthy" ] && break; sleep 2
 done
 [ "$(dc ps api --format '{{.Health}}')" = "healthy" ] || fail "api not healthy"
-dc logs app-init --no-color | grep -q "applied: 0001, 0002, 0003" || fail "migrations not applied on fresh install"
+dc logs app-init --no-color | grep "applied: 0001, 0002, 0003" >/dev/null || fail "migrations not applied on fresh install"
 echo "ok   fresh install: migrations applied, api healthy"
 B="http://127.0.0.1:$PORT/api/v1"
 tok() { dc exec -T api python -m axiom.devtools mint --dir /var/lib/axiom/dev-idp --sub "$1"; }
@@ -89,7 +89,7 @@ for i in $(seq 1 60); do   # wait for the recreated one-shot container to finish
   [ "$(dc ps -a app-init --format '{{.State}}')" = "exited" ] && break; sleep 2
 done
 [ "$(dc ps -a app-init --format '{{.State}} {{.ExitCode}}')" = "exited 0" ] || fail "re-init did not exit cleanly"
-dc logs app-init --no-color | grep -q "already seeded" || fail "re-init not idempotent"
-dc logs app-init --no-color | grep -q "applied: none" || fail "re-migration applied something"
+dc logs app-init --no-color | grep "already seeded" >/dev/null || fail "re-init not idempotent"
+dc logs app-init --no-color | grep "applied: none" >/dev/null || fail "re-migration applied something"
 echo "ok   re-running init: migrations 'applied: none', seed 'already seeded'"
 echo "SMOKE PASS ($P)"
