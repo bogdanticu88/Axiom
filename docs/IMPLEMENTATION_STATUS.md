@@ -21,7 +21,7 @@ Capability states used here:
 | Evidence upload, finalisation, classified audited reads, tamper detection | verified | evo::, s3:: |
 | HTTP API (/api/v1) | verified for implemented endpoints | api:: tests and Compose smoke |
 | Compose single-host install | **incomplete** | PostgreSQL, SeaweedFS, init and API verified by fresh-install smoke; workers, UI, workflow engine and real IdP not included |
-| Workflow engine spike and ADR | **experimental / pending** | Temporal experiment passed 9/9; PostgreSQL-backed comparison in progress; ADR 0006 pending |
+| Workflow engine experiments and ADR | **experimental; decision proposed** | Temporal 22/22 and PostgreSQL-backed 26/26 (independent reruns); ADR 0006 recommends PostgreSQL-backed runner, awaiting confirmation; product runner not built |
 | CI pipeline | not started | DEP-08 |
 | Phase A ADRs (workflow engine, isolation, evidence retention) | incomplete | 0002 and 0005 written; 0006 pending; retention rules not yet decided |
 

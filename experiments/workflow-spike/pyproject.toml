@@ -5,6 +5,7 @@ description = "Bounded experiment: does Temporal meet the platform's durable-wor
 requires-python = ">=3.13"
 dependencies = [
     "temporalio",
+    "cryptography",
     "pytest",
 ]
 

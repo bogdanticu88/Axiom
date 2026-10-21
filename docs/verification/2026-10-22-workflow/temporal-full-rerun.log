@@ -1,0 +1,509 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+Checked 13 packages in 0.11ms
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+============================= test session starts ==============================
+platform linux -- Python 3.13.16, pytest-9.1.1, pluggy-1.6.0 -- /home/dev/axiom/experiments/workflow-spike/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/dev/axiom/experiments/workflow-spike
+configfile: pyproject.toml
+collecting ... collected 22 items
+
+tests/test_recovery.py::test_q5_stale_worker_sigstop[naive] [01:34:22] started temporal-server:49713 pid=7925
+[01:34:23] temporal server ready at 127.0.0.1:49713 extra=['--search-attribute', 'TenantId=Keyword', '--namespace', 'tenant-a', '--namespace', 'tenant-b']
+[01:34:23] started ticket-service pid=7937
+[01:34:23] started wf-worker pid=7938
+[01:34:23] started act-A pid=7944
+[01:34:24] SIGSTOPped act-A pid=7944
+[01:34:24] started act-B pid=7951
+[01:35:03] workflow result 39.1s after SIGSTOP of act-A: SecureOutcome(status='completed', ticket_id='TCK-702234c7', reason_code='')
+[01:35:03] tickets while act-A is still stopped: 1
+[01:35:03] SIGCONTed act-A pid=7944
+[01:35:07] tickets after act-A resumed: 5 ['TCK-702234c7', 'TCK-2888a97c', 'TCK-adef0c37', 'TCK-6cf4a62e', 'TCK-495468f9']
+[01:35:07] act-A log (activity and SDK lines):
+[01:35:07]     [01:34:24] PRE-EFFECT attempt=1 pid=7944
+[01:35:07]     [01:35:03] RESUMED attempt=1 is_cancelled=False details=None
+[01:35:07]     [2m2026-10-21T22:35:03.728900Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::activities[0m[2m:[0m Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. [3mtask_token[0m[2m=[0mTaskToken(CiQwMWExNjA5OS1lZTQ3LTdkYTMtYjZjYi1iZTll
+[01:35:07]     [2m2026-10-21T22:35:03.738532Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::activities[0m[2m:[0m Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. [3mtask_token[0m[2m=[0mTaskToken(CiQwMWExNjA5OS1lZTQ3LTdkYTMtYjZjYi1iZTll
+[01:35:07]     [01:35:03] EFFECT APPLIED attempt=3 ticket=TCK-2888a97c pid=7944
+[01:35:07]     [01:35:03] ACTIVITY EXIT attempt=3 CancelledError: Cancelled details=ActivityCancellationDetails(not_found=True, cancel_requested=False, paused=False, reset=False, timed_out=False, worker_shutdown=False)
+[01:35:07]     [01:35:03] EFFECT APPLIED attempt=1 ticket=TCK-adef0c37 pid=7944
+[01:35:07]     [01:35:03] ACTIVITY EXIT attempt=1 CancelledError: Cancelled details=ActivityCancellationDetails(not_found=True, cancel_requested=False, paused=False, reset=False, timed_out=True, worker_shutdown=False)
+[01:35:07]     [01:35:03] EFFECT APPLIED attempt=2 ticket=TCK-6cf4a62e pid=7944
+[01:35:07]     [01:35:03] ACTIVITY EXIT attempt=2 CancelledError: Cancelled details=ActivityCancellationDetails(not_found=True, cancel_requested=False, paused=False, reset=False, timed_out=False, worker_shutdown=False)
+[01:35:07]     [01:35:03] EFFECT APPLIED attempt=4 ticket=TCK-495468f9 pid=7944
+[01:35:07]     [01:35:03] ACTIVITY EXIT attempt=4 CancelledError: Cancelled details=ActivityCancellationDetails(not_found=True, cancel_requested=False, paused=False, reset=False, timed_out=False, worker_shutdown=False)
+[01:35:07] act-B log:
+[01:35:07]     [01:34:40] EFFECT APPLIED attempt=5 ticket=TCK-702234c7 pid=7951
+[01:35:07]     [01:34:40] ACTIVITY RETURNING attempt=5 ticket=TCK-702234c7
+[01:35:07]     history #6 check_proposal Started attempt=1 identity=act-A last_failure=''
+[01:35:07]     history #7 check_proposal Completed identity=act-A
+[01:35:07]     history #18 verify_approval Started attempt=1 identity=act-A last_failure=''
+[01:35:07]     history #19 verify_approval Completed identity=act-A
+[01:35:07]     history #24 execute_effect Started attempt=5 identity=act-B last_failure='activity Heartbeat timeout'
+[01:35:07]     history #25 execute_effect Completed identity=act-B
+[01:35:07]     history #30 record_event Started attempt=3 identity=act-B last_failure='activity StartToClose timeout'
+[01:35:07]     history #31 record_event Completed identity=act-B
+[01:35:07] platform_db.execution_intents: 5 row(s)
+[01:35:07]     {"id": 1, "operation_key": "097f08a7af78bf34...", "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "attempt": 1, "worker": "act-A", "recorded_at": "2026-10-21T22:34:24.567255+00:00"}
+[01:35:07]     {"id": 2, "operation_key": "097f08a7af78bf34...", "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "attempt": 5, "worker": "act-B", "recorded_at": "2026-10-21T22:34:40.594201+00:00"}
+[01:35:07]     {"id": 3, "operation_key": "097f08a7af78bf34...", "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "attempt": 2, "worker": "act-A", "recorded_at": "2026-10-21T22:35:03.725732+00:00"}
+[01:35:07]     {"id": 4, "operation_key": "097f08a7af78bf34...", "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "attempt": 4, "worker": "act-A", "recorded_at": "2026-10-21T22:35:03.729536+00:00"}
+[01:35:07]     {"id": 5, "operation_key": "097f08a7af78bf34...", "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "attempt": 3, "worker": "act-A", "recorded_at": "2026-10-21T22:35:03.729454+00:00"}
+[01:35:07] platform_db.execution_results: 1 row(s)
+[01:35:07]     {"id": 1, "operation_key": "097f08a7af78bf34...", "outcome": "created", "ticket_id": "TCK-702234c7", "attempt": 5, "worker": "act-B", "recorded_at": "2026-10-21T22:34:40.619317+00:00"}
+[01:35:07] platform_db.workflow_events: 7 row(s)
+[01:35:07]     {"id": 1, "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "event": "completed", "detail": "TCK-702234c7", "recorded_at": "2026-10-21T22:35:03.665818+00:00"}
+[01:35:07]     {"id": 2, "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "event": "completed", "detail": "TCK-702234c7", "recorded_at": "2026-10-21T22:35:03.723960+00:00"}
+[01:35:07]     {"id": 3, "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "event": "completed", "detail": "TCK-702234c7", "recorded_at": "2026-10-21T22:35:03.729586+00:00"}
+[01:35:07]     {"id": 4, "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "event": "activity_observed_cancel", "detail": "attempt=1 detail...", "recorded_at": "2026-10-21T22:35:03.776075+00:00"}
+[01:35:07]     {"id": 5, "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "event": "activity_observed_cancel", "detail": "attempt=3 detail...", "recorded_at": "2026-10-21T22:35:03.787220+00:00"}
+[01:35:07]     {"id": 6, "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "event": "activity_observed_cancel", "detail": "attempt=2 detail...", "recorded_at": "2026-10-21T22:35:03.795585+00:00"}
+[01:35:07]     {"id": 7, "tenant_id": "tenant-a", "run_id": "run4c08d4fb", "event": "activity_observed_cancel", "detail": "attempt=4 detail...", "recorded_at": "2026-10-21T22:35:03.796024+00:00"}
+[01:35:07] execute_effect attempts recorded by the server: 1
+[01:35:07] SIGCONTed act-A pid=7944
+PASSED
+tests/test_recovery.py::test_q5_stale_worker_sigstop[platform] [01:35:07] started ticket-service pid=7993
+[01:35:07] started wf-worker pid=7994
+[01:35:08] started act-A pid=8000
+[01:35:09] SIGSTOPped act-A pid=8000
+[01:35:09] started act-B pid=8007
+[01:35:13] workflow result 4.1s after SIGSTOP of act-A: SecureOutcome(status='completed', ticket_id='TCK-c956b3c2', reason_code='')
+[01:35:13] tickets while act-A is still stopped: 1
+[01:35:13] SIGCONTed act-A pid=8000
+[01:35:17] tickets after act-A resumed: 1 ['TCK-c956b3c2']
+[01:35:17] act-A log (activity and SDK lines):
+[01:35:17]     [01:35:09] PRE-EFFECT attempt=1 pid=8000
+[01:35:17]     [01:35:13] RESUMED attempt=1 is_cancelled=False details=None
+[01:35:17]     [01:35:13] STALE attempt=1 fence=2; no effect
+[01:35:17]     [01:35:13] ACTIVITY EXIT attempt=1 ApplicationError: StaleAttempt: stale attempt 1 < fence 2 details=None
+[01:35:17]     [2m2026-10-21T22:35:13.199459Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::activities[0m[2m:[0m Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. [3mtask_token[0m[2m=[0mTaskToken(CiQwMWExNjA5OS1lZTQ3LTdkYTMtYjZjYi1iZTll
+[01:35:17] act-B log:
+[01:35:17]     [01:35:13] EFFECT APPLIED attempt=2 ticket=TCK-c956b3c2 pid=8007
+[01:35:17]     [01:35:13] ACTIVITY RETURNING attempt=2 ticket=TCK-c956b3c2
+[01:35:17]     history #6 check_proposal Started attempt=1 identity=act-A last_failure=''
+[01:35:17]     history #7 check_proposal Completed identity=act-A
+[01:35:17]     history #18 verify_approval Started attempt=1 identity=act-A last_failure=''
+[01:35:17]     history #19 verify_approval Completed identity=act-A
+[01:35:17]     history #24 execute_effect Started attempt=2 identity=act-B last_failure='activity Heartbeat timeout'
+[01:35:17]     history #25 execute_effect Completed identity=act-B
+[01:35:17]     history #30 record_event Started attempt=1 identity=act-B last_failure=''
+[01:35:17]     history #31 record_event Completed identity=act-B
+[01:35:17] platform_db.execution_intents: 2 row(s)
+[01:35:17]     {"id": 1, "operation_key": "e7491aad808a1d7e...", "tenant_id": "tenant-a", "run_id": "runb921e1f2", "attempt": 1, "worker": "act-A", "recorded_at": "2026-10-21T22:35:09.074761+00:00"}
+[01:35:17]     {"id": 2, "operation_key": "e7491aad808a1d7e...", "tenant_id": "tenant-a", "run_id": "runb921e1f2", "attempt": 2, "worker": "act-B", "recorded_at": "2026-10-21T22:35:13.088355+00:00"}
+[01:35:17] platform_db.execution_results: 1 row(s)
+[01:35:17]     {"id": 1, "operation_key": "e7491aad808a1d7e...", "outcome": "created", "ticket_id": "TCK-c956b3c2", "attempt": 2, "worker": "act-B", "recorded_at": "2026-10-21T22:35:13.123157+00:00"}
+[01:35:17] platform_db.workflow_events: 1 row(s)
+[01:35:17]     {"id": 1, "tenant_id": "tenant-a", "run_id": "runb921e1f2", "event": "completed", "detail": "TCK-c956b3c2", "recorded_at": "2026-10-21T22:35:13.161560+00:00"}
+[01:35:17] execute_effect attempts recorded by the server: 1
+[01:35:17] SIGCONTed act-A pid=8000
+PASSED
+tests/test_recovery.py::test_q5_stale_worker_sigstop[heartbeat_gate] [01:35:17] started ticket-service pid=8023
+[01:35:17] started wf-worker pid=8024
+[01:35:17] started act-A pid=8030
+[01:35:18] SIGSTOPped act-A pid=8030
+[01:35:18] started act-B pid=8037
+[01:35:46] workflow result 28.6s after SIGSTOP of act-A: SecureOutcome(status='completed', ticket_id='TCK-cbb751bc', reason_code='')
+[01:35:46] tickets while act-A is still stopped: 1
+[01:35:46] SIGCONTed act-A pid=8030
+[01:35:51] tickets after act-A resumed: 1 ['TCK-cbb751bc']
+[01:35:51] act-A log (activity and SDK lines):
+[01:35:51]     [01:35:18] PRE-EFFECT attempt=1 pid=8030
+[01:35:51]     [01:35:46] RESUMED attempt=1 is_cancelled=False details=None
+[01:35:51]     [01:35:47] ACTIVITY EXIT attempt=1 CancelledError: Cancelled details=ActivityCancellationDetails(not_found=True, cancel_requested=False, paused=False, reset=False, timed_out=True, worker_shutdown=False)
+[01:35:51]     [2m2026-10-21T22:35:47.010824Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::activities[0m[2m:[0m Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. [3mtask_token[0m[2m=[0mTaskToken(CiQwMWExNjA5OS1lZTQ3LTdkYTMtYjZjYi1iZTll
+[01:35:51]     [2m2026-10-21T22:35:47.017867Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::activities[0m[2m:[0m Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. [3mtask_token[0m[2m=[0mTaskToken(CiQwMWExNjA5OS1lZTQ3LTdkYTMtYjZjYi1iZTll
+[01:35:51] act-B log:
+[01:35:51]     [01:35:23] EFFECT APPLIED attempt=2 ticket=TCK-cbb751bc pid=8037
+[01:35:51]     [01:35:23] ACTIVITY RETURNING attempt=2 ticket=TCK-cbb751bc
+[01:35:51]     history #6 check_proposal Started attempt=1 identity=act-A last_failure=''
+[01:35:51]     history #7 check_proposal Completed identity=act-A
+[01:35:51]     history #18 verify_approval Started attempt=1 identity=act-A last_failure=''
+[01:35:51]     history #19 verify_approval Completed identity=act-A
+[01:35:51]     history #24 execute_effect Started attempt=2 identity=act-B last_failure='activity Heartbeat timeout'
+[01:35:51]     history #25 execute_effect Completed identity=act-B
+[01:35:51]     history #30 record_event Started attempt=3 identity=act-B last_failure='activity StartToClose timeout'
+[01:35:51]     history #31 record_event Completed identity=act-B
+[01:35:51] platform_db.execution_intents: 2 row(s)
+[01:35:51]     {"id": 1, "operation_key": "a3517fd56c5bb6b9...", "tenant_id": "tenant-a", "run_id": "run6a30f513", "attempt": 1, "worker": "act-A", "recorded_at": "2026-10-21T22:35:18.344965+00:00"}
+[01:35:51]     {"id": 2, "operation_key": "a3517fd56c5bb6b9...", "tenant_id": "tenant-a", "run_id": "run6a30f513", "attempt": 2, "worker": "act-B", "recorded_at": "2026-10-21T22:35:22.354122+00:00"}
+[01:35:51] platform_db.execution_results: 1 row(s)
+[01:35:51]     {"id": 1, "operation_key": "a3517fd56c5bb6b9...", "outcome": "created", "ticket_id": "TCK-cbb751bc", "attempt": 2, "worker": "act-B", "recorded_at": "2026-10-21T22:35:23.885732+00:00"}
+[01:35:51] platform_db.workflow_events: 4 row(s)
+[01:35:51]     {"id": 1, "tenant_id": "tenant-a", "run_id": "run6a30f513", "event": "completed", "detail": "TCK-cbb751bc", "recorded_at": "2026-10-21T22:35:46.966272+00:00"}
+[01:35:51]     {"id": 2, "tenant_id": "tenant-a", "run_id": "run6a30f513", "event": "activity_observed_cancel", "detail": "attempt=1 detail...", "recorded_at": "2026-10-21T22:35:47.005042+00:00"}
+[01:35:51]     {"id": 3, "tenant_id": "tenant-a", "run_id": "run6a30f513", "event": "completed", "detail": "TCK-cbb751bc", "recorded_at": "2026-10-21T22:35:47.005120+00:00"}
+[01:35:51]     {"id": 4, "tenant_id": "tenant-a", "run_id": "run6a30f513", "event": "completed", "detail": "TCK-cbb751bc", "recorded_at": "2026-10-21T22:35:47.005186+00:00"}
+[01:35:51] execute_effect attempts recorded by the server: 1
+[01:35:51] heartbeat_gate observed ticket count: 1
+[01:35:51] SIGCONTed act-A pid=8030
+PASSED
+tests/test_recovery.py::test_q6_cancel_during_approval_wait [01:35:51] started ticket-service pid=8069
+[01:35:51] started w pid=8070
+[01:35:51] result: WorkflowFailureError cause=CancelledError: Workflow cancelled; status=CANCELED
+[01:35:51]     history #6 check_proposal Started attempt=1 identity=w last_failure=''
+[01:35:51]     history #7 check_proposal Completed identity=w
+[01:35:51]     history #12 WorkflowExecutionCancelRequested
+[01:35:51]     history #18 record_event Started attempt=1 identity=w last_failure=''
+[01:35:51]     history #19 record_event Completed identity=w
+[01:35:51]     history #23 WorkflowExecutionCanceled
+[01:35:51] platform_db.workflow_events: 1 row(s)
+[01:35:51]     {"id": 1, "tenant_id": "tenant-a", "run_id": "run8ed94d12", "event": "cancelled", "detail": "while awaiting_approval", "recorded_at": "2026-10-21T22:35:51.938396+00:00"}
+[01:35:51] approval signal after cancel -> RPCError: workflow execution already completed
+PASSED
+tests/test_recovery.py::test_q6_cancel_during_activity [01:35:51] started ticket-service pid=8081
+[01:35:52] started w pid=8082
+[01:35:54] result 1.6s after cancel: WorkflowFailureError cause=CancelledError: Workflow cancelled; status=CANCELED
+[01:35:54]     worker: [01:35:54] ACTIVITY EXIT attempt=1 CancelledError: Cancelled details=ActivityCancellationDetails(not_found=False, cancel_requested=True, paused=False, reset=False, timed_out=False, worker_shutdown=False)
+[01:35:54]     history #6 check_proposal Started attempt=1 identity=w last_failure=''
+[01:35:54]     history #7 check_proposal Completed identity=w
+[01:35:54]     history #18 verify_approval Started attempt=1 identity=w last_failure=''
+[01:35:54]     history #19 verify_approval Completed identity=w
+[01:35:54]     history #24 WorkflowExecutionCancelRequested
+[01:35:54]     history #28 ActivityTaskCancelRequested
+[01:35:54]     history #29 execute_effect Started attempt=1 identity=w last_failure=''
+[01:35:54]     history #30 execute_effect Canceled identity=w
+[01:35:54]     history #35 record_event Started attempt=1 identity=w last_failure=''
+[01:35:54]     history #36 record_event Completed identity=w
+[01:35:54]     history #40 WorkflowExecutionCanceled
+[01:35:54] platform_db.execution_intents: 1 row(s)
+[01:35:54]     {"id": 1, "operation_key": "61f4444f568b858e...", "tenant_id": "tenant-a", "run_id": "run9461e4ae", "attempt": 1, "worker": "w", "recorded_at": "2026-10-21T22:35:52.845877+00:00"}
+[01:35:54] platform_db.execution_results: 0 row(s)
+[01:35:54] platform_db.workflow_events: 2 row(s)
+[01:35:54]     {"id": 1, "tenant_id": "tenant-a", "run_id": "run9461e4ae", "event": "activity_observed_cancel", "detail": "attempt=1 detail...", "recorded_at": "2026-10-21T22:35:54.455791+00:00"}
+[01:35:54]     {"id": 2, "tenant_id": "tenant-a", "run_id": "run9461e4ae", "event": "cancelled", "detail": "while executing", "recorded_at": "2026-10-21T22:35:54.492080+00:00"}
+PASSED
+tests/test_recovery.py::test_q6_revoked_approval_rechecked_before_effect [01:35:54] started ticket-service pid=8093
+[01:35:54] started w pid=8094
+[01:35:55] workflow status at pause: executing (approval verified)
+[01:35:55] API revoked apr-d5d19780b7ea
+[01:35:55] result: SecureOutcome(status='approval_revoked', ticket_id=None, reason_code='ApprovalRevoked')
+[01:35:55]     worker: [01:35:55] attempt=1 approval re-check verdict=revoked; no effect
+[01:35:55]     worker: [01:35:55] ACTIVITY EXIT attempt=1 ApplicationError: ApprovalRevoked: approval revoked details=None
+[01:35:55] platform_db.execution_intents: 1 row(s)
+[01:35:55]     {"id": 1, "operation_key": "5ba13e65c1085026...", "tenant_id": "tenant-a", "run_id": "run3823b7d0", "attempt": 1, "worker": "w", "recorded_at": "2026-10-21T22:35:55.417424+00:00"}
+[01:35:55] platform_db.execution_results: 0 row(s)
+[01:35:55] platform_db.workflow_events: 1 row(s)
+[01:35:55]     {"id": 1, "tenant_id": "tenant-a", "run_id": "run3823b7d0", "event": "approval_revoked", "detail": "ApprovalRevoked", "recorded_at": "2026-10-21T22:35:55.653747+00:00"}
+PASSED
+tests/test_recovery.py::test_q8_backup_restore_mid_flight[platform] [01:35:55] started temporal-server:45163 pid=8105
+[01:35:56] temporal server ready at 127.0.0.1:45163 extra=[]
+[01:35:56] started ticket-service pid=8114
+[01:35:56] started wf-worker-1 pid=8115
+[01:35:56] started act-1 pid=8121
+[01:35:57] effect applied, completion not yet reported; tickets=1
+[01:35:57] SIGSTOPped temporal-server:45163 pid=8105
+[01:35:57] SIGCONTed temporal-server:45163 pid=8105
+[01:35:57] backup taken (server frozen during copy): ['temporal.db (684032 B)']
+[01:35:57] backup PRAGMA integrity_check: ok
+[01:35:57] original timeline result: SecureOutcome(status='completed', ticket_id='TCK-d5918ff7', reason_code='')
+[01:35:57] SIGKILLed temporal-server:45163 pid=8105 rc=-9
+[01:35:57] SIGKILLed wf-worker-1 pid=8115 rc=-9
+[01:35:57] SIGKILLed act-1 pid=8121 rc=-9
+[01:35:57] restored Temporal DB from backup: ['temporal.db (684032 B)']
+[01:35:57] started temporal-server:45163 pid=8136
+[01:35:58] temporal server ready at 127.0.0.1:45163 extra=[]
+[01:35:58] after restore: workflow status=RUNNING (original timeline had completed)
+[01:35:58] started wf-worker-2 pid=8145
+[01:35:58] started act-2 pid=8151
+[01:36:01] restored timeline result 3.2s after workers restarted: SecureOutcome(status='completed', ticket_id='TCK-d5918ff7', reason_code='')
+[01:36:01]     act-2: [01:36:01] attempt=2 found recorded result ('created', 'TCK-d5918ff7'); adopting
+[01:36:01]     history #6 check_proposal Started attempt=1 identity=act-1 last_failure=''
+[01:36:01]     history #7 check_proposal Completed identity=act-1
+[01:36:01]     history #18 verify_approval Started attempt=1 identity=act-1 last_failure=''
+[01:36:01]     history #19 verify_approval Completed identity=act-1
+[01:36:01]     history #24 execute_effect Started attempt=2 identity=act-2 last_failure='activity Heartbeat timeout'
+[01:36:01]     history #25 execute_effect Completed identity=act-2
+[01:36:01]     history #30 record_event Started attempt=1 identity=act-2 last_failure=''
+[01:36:01]     history #31 record_event Completed identity=act-2
+[01:36:01] external tickets: 1 ['TCK-d5918ff7']
+[01:36:01] platform_db.execution_intents: 1 row(s)
+[01:36:01]     {"id": 1, "operation_key": "78936a6745238592...", "tenant_id": "tenant-a", "run_id": "run03720238", "attempt": 1, "worker": "act-1", "recorded_at": "2026-10-21T22:35:57.346585+00:00"}
+[01:36:01] platform_db.execution_results: 1 row(s)
+[01:36:01]     {"id": 1, "operation_key": "78936a6745238592...", "outcome": "created", "ticket_id": "TCK-d5918ff7", "attempt": 1, "worker": "act-1", "recorded_at": "2026-10-21T22:35:57.574333+00:00"}
+[01:36:01] platform_db.workflow_events: 2 row(s)
+[01:36:01]     {"id": 1, "tenant_id": "tenant-a", "run_id": "run03720238", "event": "completed", "detail": "TCK-d5918ff7", "recorded_at": "2026-10-21T22:35:57.609533+00:00"}
+[01:36:01]     {"id": 2, "tenant_id": "tenant-a", "run_id": "run03720238", "event": "completed", "detail": "TCK-d5918ff7", "recorded_at": "2026-10-21T22:36:01.378101+00:00"}
+[01:36:01] platform DB 'completed' events for this action: 2
+PASSED
+tests/test_recovery.py::test_q8_backup_restore_mid_flight[naive] [01:36:02] started temporal-server:45325 pid=8160
+[01:36:03] temporal server ready at 127.0.0.1:45325 extra=[]
+[01:36:03] started ticket-service pid=8168
+[01:36:03] started wf-worker-1 pid=8170
+[01:36:03] started act-1 pid=8176
+[01:36:04] effect applied, completion not yet reported; tickets=1
+[01:36:04] SIGSTOPped temporal-server:45325 pid=8160
+[01:36:04] SIGCONTed temporal-server:45325 pid=8160
+[01:36:04] backup taken (server frozen during copy): ['temporal.db (684032 B)']
+[01:36:04] backup PRAGMA integrity_check: ok
+[01:36:04] original timeline result: SecureOutcome(status='completed', ticket_id='TCK-c5057521', reason_code='')
+[01:36:04] SIGKILLed temporal-server:45325 pid=8160 rc=-9
+[01:36:04] SIGKILLed wf-worker-1 pid=8170 rc=-9
+[01:36:04] SIGKILLed act-1 pid=8176 rc=-9
+[01:36:04] restored Temporal DB from backup: ['temporal.db (684032 B)']
+[01:36:04] started temporal-server:45325 pid=8188
+[01:36:05] temporal server ready at 127.0.0.1:45325 extra=[]
+[01:36:05] after restore: workflow status=RUNNING (original timeline had completed)
+[01:36:05] started wf-worker-2 pid=8197
+[01:36:05] started act-2 pid=8203
+[01:36:08] restored timeline result 3.3s after workers restarted: SecureOutcome(status='completed', ticket_id='TCK-e87f0a3c', reason_code='')
+[01:36:08]     act-2: [01:36:08] EFFECT APPLIED attempt=2 ticket=TCK-e87f0a3c pid=8203
+[01:36:08]     act-2: [01:36:08] ACTIVITY RETURNING attempt=2 ticket=TCK-e87f0a3c
+[01:36:08]     history #6 check_proposal Started attempt=1 identity=act-1 last_failure=''
+[01:36:08]     history #7 check_proposal Completed identity=act-1
+[01:36:08]     history #18 verify_approval Started attempt=1 identity=act-1 last_failure=''
+[01:36:08]     history #19 verify_approval Completed identity=act-1
+[01:36:08]     history #24 execute_effect Started attempt=2 identity=act-2 last_failure='activity Heartbeat timeout'
+[01:36:08]     history #25 execute_effect Completed identity=act-2
+[01:36:08]     history #30 record_event Started attempt=1 identity=act-2 last_failure=''
+[01:36:08]     history #31 record_event Completed identity=act-2
+[01:36:08] external tickets: 2 ['TCK-c5057521', 'TCK-e87f0a3c']
+[01:36:08] platform_db.execution_intents: 2 row(s)
+[01:36:08]     {"id": 1, "operation_key": "9d36a9f91814ad50...", "tenant_id": "tenant-a", "run_id": "run44c7a912", "attempt": 1, "worker": "act-1", "recorded_at": "2026-10-21T22:36:04.397655+00:00"}
+[01:36:08]     {"id": 2, "operation_key": "9d36a9f91814ad50...", "tenant_id": "tenant-a", "run_id": "run44c7a912", "attempt": 2, "worker": "act-2", "recorded_at": "2026-10-21T22:36:08.407750+00:00"}
+[01:36:08] platform_db.execution_results: 2 row(s)
+[01:36:08]     {"id": 1, "operation_key": "9d36a9f91814ad50...", "outcome": "created", "ticket_id": "TCK-c5057521", "attempt": 1, "worker": "act-1", "recorded_at": "2026-10-21T22:36:04.625959+00:00"}
+[01:36:08]     {"id": 2, "operation_key": "9d36a9f91814ad50...", "outcome": "created", "ticket_id": "TCK-e87f0a3c", "attempt": 2, "worker": "act-2", "recorded_at": "2026-10-21T22:36:08.432387+00:00"}
+[01:36:08] platform_db.workflow_events: 2 row(s)
+[01:36:08]     {"id": 1, "tenant_id": "tenant-a", "run_id": "run44c7a912", "event": "completed", "detail": "TCK-c5057521", "recorded_at": "2026-10-21T22:36:04.657349+00:00"}
+[01:36:08]     {"id": 2, "tenant_id": "tenant-a", "run_id": "run44c7a912", "event": "completed", "detail": "TCK-e87f0a3c", "recorded_at": "2026-10-21T22:36:08.478907+00:00"}
+[01:36:08] platform DB 'completed' events for this action: 2
+PASSED
+tests/test_scenarios.py::test_worker_sigkill_while_awaiting_approval [01:36:11] started temporal-server:45967 pid=8215
+[01:36:11] temporal server ready at 127.0.0.1:45967
+[01:36:11] started ticket-service pid=8223
+[01:36:11] started worker-1 pid=8224
+[01:36:11] started workflow remediation-c0b800b1
+[01:36:12] workflow is awaiting approval; SIGKILL worker-1
+[01:36:12] SIGKILLed worker-1 pid=8224 rc=-9
+[01:36:14] started worker-2 pid=8234
+[01:36:24] result after 10.1s: WorkflowOutcome(status='completed', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='a6efe25c59e4ecce2613f6c6dd09cb4a3c74087b69045fe8cc7f98e04201f78e', ticket_id='TCK-a01e7ae7', detail='created', history=['awaiting_approval', 'approval_received:alice@example.test', 'executing', 'completed'])
+[01:36:24] history events: ['workflow_execution_started', 'workflow_task_scheduled', 'workflow_task_started', 'workflow_task_completed', 'activity_task_scheduled', 'activity_task_started', 'activity_task_completed', 'workflow_task_scheduled', 'workflow_task_started', 'workflow_task_completed', 'timer_started', 'workflow_execution_signaled', 'workflow_task_scheduled', 'workflow_task_timed_out', 'workflow_task_scheduled', 'workflow_task_started', 'workflow_task_completed', 'timer_canceled', 'activity_task_scheduled', 'activity_task_started', 'activity_task_completed', 'workflow_task_scheduled', 'workflow_task_started', 'workflow_task_completed', 'activity_task_scheduled', 'activity_task_started', 'activity_task_completed', 'workflow_task_scheduled', 'workflow_task_started', 'workflow_task_completed', 'workflow_execution_completed']
+[01:36:24] external tickets: [{'id': 'TCK-a01e7ae7', 'idempotency_key': 'a6efe25c59e4ecce2613f6c6dd09cb4a3c74087b69045fe8cc7f98e04201f78e', 'payload': {'action': 'open_remediation_ticket', 'asset': 'api-gw-prod-01', 'finding_id': 'VULN-2026-0042', 'severity': 'high', 'summary': 'Upgrade openssl to patched version'}}]
+[01:36:24] platform_db.proposals: 1 row(s)
+[01:36:24]     {"workflow_id": "remediation-c0b800b1", "canonical_json": "{\"action\":\"open_...", "payload_digest": "33983f26b3ad5a73...", "recorded_at": "2026-10-21T22:36:12.032805+00:00"}
+[01:36:24] platform_db.execution_intents: 1 row(s)
+[01:36:24]     {"id": 1, "operation_key": "a6efe25c59e4ecce...", "workflow_id": "remediation-c0b800b1", "payload_digest": "33983f26b3ad5a73...", "attempt": 1, "recorded_at": "2026-10-21T22:36:24.678345+00:00"}
+[01:36:24] platform_db.execution_results: 1 row(s)
+[01:36:24]     {"id": 1, "operation_key": "a6efe25c59e4ecce...", "outcome": "created", "ticket_id": "TCK-a01e7ae7", "attempt": 1, "recorded_at": "2026-10-21T22:36:24.703610+00:00"}
+[01:36:24] platform_db.workflow_events: 1 row(s)
+[01:36:24]     {"id": 1, "workflow_id": "remediation-c0b800b1", "event": "completed", "detail": "created TCK-a01e7ae7", "recorded_at": "2026-10-21T22:36:24.730405+00:00"}
+PASSED
+tests/test_scenarios.py::test_approval_digest_mismatch_does_not_execute [01:36:24] started ticket-service pid=8251
+[01:36:24] started worker-1 pid=8252
+[01:36:25] started workflow remediation-ef9a89d7
+[01:36:25] result: WorkflowOutcome(status='approval_mismatch', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='', ticket_id=None, detail='approved digest ad0bfd964f6d1546 != proposal digest 33983f26b3ad5a73', history=['awaiting_approval', 'approval_received:alice@example.test', 'approval_mismatch'])
+[01:36:25] platform_db.proposals: 1 row(s)
+[01:36:25]     {"workflow_id": "remediation-ef9a89d7", "canonical_json": "{\"action\":\"open_...", "payload_digest": "33983f26b3ad5a73...", "recorded_at": "2026-10-21T22:36:25.263929+00:00"}
+[01:36:25] platform_db.execution_intents: 0 row(s)
+[01:36:25] platform_db.execution_results: 0 row(s)
+[01:36:25] platform_db.workflow_events: 1 row(s)
+[01:36:25]     {"id": 1, "workflow_id": "remediation-ef9a89d7", "event": "approval_mismatch", "detail": "approved digest ...", "recorded_at": "2026-10-21T22:36:25.588278+00:00"}
+PASSED
+tests/test_scenarios.py::test_expired_approval_is_not_used [01:36:25] started ticket-service pid=8262
+[01:36:25] started worker-1 pid=8263
+[01:36:26] started workflow remediation-f5f08f1f
+[01:36:26] result: WorkflowOutcome(status='approval_expired', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='', ticket_id=None, detail='approval expired at 2026-10-21T22:36:21.400816+00:00', history=['awaiting_approval', 'approval_received:alice@example.test', 'approval_expired'])
+PASSED
+tests/test_scenarios.py::test_approval_deadline_timer [01:36:26] started ticket-service pid=8274
+[01:36:26] started worker-1 pid=8275
+[01:36:26] started workflow remediation-f5e5bb5f
+[01:36:30] result after 3.1s: WorkflowOutcome(status='approval_deadline_exceeded', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='', ticket_id=None, detail='no approval before deadline', history=['awaiting_approval', 'approval_deadline_exceeded'])
+[01:36:30] late approval signal -> RPCError: workflow execution already completed
+[01:36:30] timer events: ['timer_started_event_attributes', 'timer_fired_event_attributes']
+PASSED
+tests/test_scenarios.py::test_lost_ack_reconciles_by_lookup [01:36:30] started ticket-service pid=8286
+[01:36:30] started worker-1 pid=8287
+[01:36:30] started workflow remediation-b885da52
+[01:36:30] ticket exists, activity has not returned; SIGKILL worker-1
+[01:36:30] SIGKILLed worker-1 pid=8287 rc=-9
+[01:36:30] started worker-2 pid=8299
+[01:36:46] result 15.7s after restart: WorkflowOutcome(status='completed', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='e840cacb245cc57a337343e2923cff0be527d53e6b1fd7367ae15251f1acbb44', ticket_id='TCK-8d101925', detail='adopted', history=['awaiting_approval', 'approval_received:alice@example.test', 'executing', 'completed'])
+[01:36:46] external tickets: [{'id': 'TCK-8d101925', 'idempotency_key': 'e840cacb245cc57a337343e2923cff0be527d53e6b1fd7367ae15251f1acbb44', 'payload': {'action': 'open_remediation_ticket', 'asset': 'api-gw-prod-01', 'finding_id': 'VULN-2026-0042', 'severity': 'high', 'summary': 'Upgrade openssl to patched version'}}]
+[01:36:46] platform_db.proposals: 1 row(s)
+[01:36:46]     {"workflow_id": "remediation-b885da52", "canonical_json": "{\"action\":\"open_...", "payload_digest": "33983f26b3ad5a73...", "recorded_at": "2026-10-21T22:36:30.493181+00:00"}
+[01:36:46] platform_db.execution_intents: 2 row(s)
+[01:36:46]     {"id": 1, "operation_key": "e840cacb245cc57a...", "workflow_id": "remediation-b885da52", "payload_digest": "33983f26b3ad5a73...", "attempt": 1, "recorded_at": "2026-10-21T22:36:30.824983+00:00"}
+[01:36:46]     {"id": 2, "operation_key": "e840cacb245cc57a...", "workflow_id": "remediation-b885da52", "payload_digest": "33983f26b3ad5a73...", "attempt": 2, "recorded_at": "2026-10-21T22:36:36.833059+00:00"}
+[01:36:46] platform_db.execution_results: 1 row(s)
+[01:36:46]     {"id": 1, "operation_key": "e840cacb245cc57a...", "outcome": "adopted", "ticket_id": "TCK-8d101925", "attempt": 2, "recorded_at": "2026-10-21T22:36:36.854302+00:00"}
+[01:36:46] platform_db.workflow_events: 1 row(s)
+[01:36:46]     {"id": 1, "workflow_id": "remediation-b885da52", "event": "completed", "detail": "adopted TCK-8d101925", "recorded_at": "2026-10-21T22:36:46.898743+00:00"}
+PASSED
+tests/test_scenarios.py::test_negative_control_naive_retry_duplicates [01:36:46] started ticket-service pid=8317
+[01:36:47] started worker-1 pid=8320
+[01:36:47] started workflow remediation-9e7e91c6
+[01:36:47] SIGKILLed worker-1 pid=8320 rc=-9
+[01:36:47] started worker-2 pid=8330
+[01:37:03] result: status=completed detail=created; external ticket count=2: ['TCK-b4d8cf08', 'TCK-3e0da6dc']
+PASSED
+tests/test_scenarios.py::test_lost_ack_without_lookup_needs_operator [01:37:03] started ticket-service pid=8349
+[01:37:03] started worker-1 pid=8350
+[01:37:04] started workflow remediation-ed2226dd
+[01:37:04] SIGKILLed worker-1 pid=8350 rc=-9
+[01:37:04] started worker-2 pid=8361
+[01:37:15] workflow reached needs_operator_reconciliation after 10.0s
+[01:37:20] after 5s parked: tickets=1, status still needs_operator_reconciliation
+[01:37:20] result: WorkflowOutcome(status='completed', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='8095917e1e9062d8d1a7f5796a379aedbb1d9ae5d0b6976d0d5b5e96f13a6ee5', ticket_id='TCK-55ec2786', detail='operator_adopted', history=['awaiting_approval', 'approval_received:alice@example.test', 'executing', 'needs_operator_reconciliation', 'completed'])
+[01:37:20] platform_db.proposals: 1 row(s)
+[01:37:20]     {"workflow_id": "remediation-ed2226dd", "canonical_json": "{\"action\":\"open_...", "payload_digest": "33983f26b3ad5a73...", "recorded_at": "2026-10-21T22:37:04.296278+00:00"}
+[01:37:20] platform_db.execution_intents: 2 row(s)
+[01:37:20]     {"id": 1, "operation_key": "8095917e1e9062d8...", "workflow_id": "remediation-ed2226dd", "payload_digest": "33983f26b3ad5a73...", "attempt": 1, "recorded_at": "2026-10-21T22:37:04.626116+00:00"}
+[01:37:20]     {"id": 2, "operation_key": "8095917e1e9062d8...", "workflow_id": "remediation-ed2226dd", "payload_digest": "33983f26b3ad5a73...", "attempt": 2, "recorded_at": "2026-10-21T22:37:10.631028+00:00"}
+[01:37:20] platform_db.execution_results: 1 row(s)
+[01:37:20]     {"id": 1, "operation_key": "8095917e1e9062d8...", "outcome": "operator_adopted", "ticket_id": "TCK-55ec2786", "attempt": 1, "recorded_at": "2026-10-21T22:37:20.725259+00:00"}
+[01:37:20] platform_db.workflow_events: 2 row(s)
+[01:37:20]     {"id": 1, "workflow_id": "remediation-ed2226dd", "event": "needs_operator_reconciliation", "detail": "1 earlier attemp...", "recorded_at": "2026-10-21T22:37:20.696010+00:00"}
+[01:37:20]     {"id": 2, "workflow_id": "remediation-ed2226dd", "event": "completed", "detail": "operator bob adopted TCK-55ec2786", "recorded_at": "2026-10-21T22:37:20.750723+00:00"}
+PASSED
+tests/test_scenarios.py::test_server_sigkill_restart_while_awaiting_approval [01:37:20] started temporal-server:59001 pid=8380
+[01:37:21] temporal server ready at 127.0.0.1:59001
+[01:37:21] started ticket-service pid=8388
+[01:37:21] started worker-1 pid=8389
+[01:37:21] started workflow remediation-d62af6b3
+[01:37:22] SIGKILL temporal server and worker-1
+[01:37:22] SIGKILLed temporal-server:59001 pid=8380 rc=-9
+[01:37:22] SIGKILLed worker-1 pid=8389 rc=-9
+[01:37:22] started temporal-server:59001 pid=8397
+[01:37:22] temporal server ready at 127.0.0.1:59001
+[01:37:22] started worker-2 pid=8406
+[01:37:22] after server restart: workflow remediation-d62af6b3 status=RUNNING
+[01:37:23] result: WorkflowOutcome(status='completed', payload_digest='33983f26b3ad5a73497fa06639bcb970081c97efd4c348b8b35b1c008837fcff', operation_key='47f1124ed07c60c4ad2da7daf4833f1706bac064a6d258f9b133e460289d4ff0', ticket_id='TCK-b920c306', detail='created', history=['awaiting_approval', 'approval_received:alice@example.test', 'executing', 'completed'])
+[01:37:23] external ticket count=1
+PASSED
+tests/test_scenarios.py::test_replay_detects_unpatched_change [01:37:24] started ticket-service pid=8418
+[01:37:24] started worker-1 pid=8419
+[01:37:24] started workflow remediation-2ce36478
+[01:37:25] recorded history: 29 events
+[01:37:25] replay with original: OK
+[2m2026-10-21T22:37:25.406886Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::workflow[0m[2m:[0m Failing workflow task [3mrun_id[0m[2m=[0m01a1609c-b3fa-70a9-a441-1c8e60606efb [3mfailure[0m[2m=[0mFailure { failure: Some(Failure { message: "[TMPRL1100] Nondeterminism error: Timer machine does not handle this event: HistoryEvent(id: 5, ActivityTaskScheduled)", source: "", stack_trace: "", encoded_attributes: None, cause: None, failure_info: Some(ApplicationFailureInfo(ApplicationFailureInfo { r#type: "", non_retryable: false, details: None, next_retry_delay: None, category: Unspecified })) }), force_cause: NonDeterministicError }
+[01:37:25] replay with unpatched_change: NondeterminismError: Workflow activation completion failed: Failure { failure: Some(Failure { message: "[TMPRL1100] Nondeterminism error: Timer machine does not handle this event: HistoryEvent(id: 5, ActivityTaskScheduled
+[01:37:25] replay with patched_change: OK
+PASSED
+tests/test_security.py::test_q1_minimal_payloads_and_codec [01:37:25] started temporal-server:57375 pid=8437
+[01:37:25] temporal server ready at 127.0.0.1:57375 extra=['--search-attribute', 'TenantId=Keyword', '--namespace', 'tenant-a', '--namespace', 'tenant-b']
+[01:37:25] started ticket-service pid=8446
+[01:37:26] started worker-1 pid=8447
+[01:37:26] started w-plain pid=8454
+[01:37:26] started w-enc pid=8462
+[01:37:27] $ temporal workflow show --workflow-id orig-144198d4 --namespace default --output json  -> rc=0
+[01:37:27] A original workflow, no codec: markers found = {"EVIDENCE-SECRET-7f3a": [".events[0].workflowExecutionStartedEventAttributes.input.payloads[0].data (base64)", ".events[4].activityTaskScheduledEventAttributes.input.payloads[1].data (base64)"], "api-gw-prod-01": [".events[0].workflowExecutionStartedEventAttributes.input.payloads[0].data (base64)", ".events[4].activityTaskScheduledEventAttributes.input.payloads[1].data (base64)"], "openssl": [".e
+[01:37:27] A payload encodings: {'json/plain': 5}
+[01:37:27] B result: SecureOutcome(status='completed', ticket_id='TCK-d0d46286', reason_code='')
+[01:37:27] $ temporal workflow show --workflow-id axiom.tenant-a.runb0281875 --namespace default --output json  -> rc=0
+[01:37:27] B ids-only, no codec: secret markers = {}
+[01:37:27] B identifiers visible: ['1bb3c8d15c7b10ec8c21716d1896acadd56d38f7d1a27ecd22daa99963ff0610', 'TCK-d0d46286', 'apr-e6fe60b45a29', 'runb0281875', 'tenant-a']
+[01:37:27] B payload encodings: {'json/plain': 21, 'binary/null': 1}
+[01:37:28] C result (decoded by codec client): SecureOutcome(status='completed', ticket_id='TCK-19ee9625', reason_code='')
+[01:37:28] $ temporal workflow show --workflow-id axiom.tenant-a.rune2af4693 --namespace default --output json  -> rc=0
+[01:37:28] C codec: secret markers = {}
+[01:37:28] C codec: identifiers still visible = {'tenant-a': ['.events[0].workflowExecutionStartedEventAttributes.input.payloads[0].metadata.encryption-key-id (base64)', '.events[0].workflowExecutionStartedEventAttributes.memo.fields.memo_note.metadata.encryption-key-id (base64)', '.events[0].workflowExecutionStartedEventAttributes.searchAttributes.indexedFields.TenantId.data (base64)'], 'rune2af4693': ['.events[0].workflowExecutionStartedEventAttributes.workflowId (plain)']}
+[01:37:28] C payload encodings: {'binary/encrypted': 23, 'json/plain': 1}
+[01:37:28] C key ids used: {'tenant-a': 23}
+[01:37:28] C plaintext field workflowType: ['{"name": "SecureRemediationWorkflow"}']
+[01:37:28] C plaintext field taskQueue: ['{"name": "q1-enc-fae5", "kind": "TASK_QUEUE_KIND_NORMAL"}', '{"name": "q1-enc-fae5-act", "kind": "TASK_QUEUE_KIND_NORMAL"}', '{"name": "w-enc-30093d8939bc443da2ab35b2f4ae7729", "kind": "TASK_QUEUE_KIND_STICKY", "normalName": "q1-enc-fae5"}']
+[01:37:28] C plaintext field identity: ['"7924@vm"', '"w-enc"']
+[01:37:28] C plaintext field searchAttributes: ['{"indexedFields": {"TenantId": {"metadata": {"encoding": "anNvbi9wbGFpbg==", "type": "S2V5d29yZA=="}, "data": "InRlbmFudC1hIg=="}}}']
+[01:37:28] C plaintext field memo: ['{"fields": {"memo_note": {"metadata": {"encoding": "YmluYXJ5L2VuY3J5cHRlZA==", "encryption-key-id": "dGVuYW50LWE="}, "data": "kAZo/WwArIjyYnWCaF0SuVrRmQkxeA1Mgo']
+[01:37:28] C plaintext field eventTime: ['2026-10-21T22:37:27.924350546Z', '2026-10-21T22:37:27.924418590Z', '2026-10-21T22:37:27.931196430Z', '2026-10-21T22:37:27.949722852Z', '2026-10-21T22:37:27.949780686Z', '2026-10-21T22:37:27.958959983Z']
+[01:37:28] C plaintext field activityType: ['{"name": "check_proposal"}', '{"name": "execute_effect"}', '{"name": "record_event"}', '{"name": "verify_approval"}']
+[01:37:28] C plaintext field signalName: ['"approval_ready"']
+[01:37:28] C payload encodings excluding search attributes: {'binary/encrypted': 23}
+[01:37:28] $ temporal workflow describe --workflow-id axiom.tenant-a.rune2af4693 --output json  -> rc=0
+[01:37:28] C describe.memo = {"fields": {"memo_note": {"data": "kAZo/WwArIjyYnWCaF0SuVrRmQkxeA1MgoIN73GT+/F7qPF4HtHm3fWIinDmb7/Kb/rOBHeqD5o5L4mspG6UOKw8RmXh", "metadata": {"encoding": "YmluYXJ5L2VuY3J5cHRlZA==", "encryption-key-i
+[01:37:28] C describe.searchAttributes = {"indexedFields": {"BuildIds": {"data": "WyJ1bnZlcnNpb25lZCIsInVudmVyc2lvbmVkOjM1MmI2YzNkNWUxYjVlYTM2ZTQxZDc2MGFmMzVkYjNhIl0=", "metadata": {"encoding": "anNvbi9wbGFpbg==", "type": "S2V5d29yZExpc3Q="}
+[01:37:28] $ temporal workflow list --query TenantId="tenant-a" --output json  -> rc=0
+[01:37:28] C list TenantId=tenant-a -> 1 execution(s)
+[01:37:28] C decode with full keyring: b'{"approval_window_seconds":3600.0,"proposal_digest":"1bb3c8d15c7b10ec8c21716d189'
+[01:37:28] C decode after destroying tenant-a key: KeyError: "no key for key id 'tenant-a' (destroyed or never provisioned)"
+[01:37:28] started w-fail0 pid=8520
+[01:37:29] D encode_common_attributes=False: client-side (decoded) error: Activity task failed
+[01:37:29] $ temporal workflow show --workflow-id axiom.tenant-a.run9424c4b9 --namespace default --output json  -> rc=0
+[01:37:29] D encode_common_attributes=False: failure .message values in history = ['Activity task failed', 'scanner rejected proposal: Upgrade openssl to patched version']
+[01:37:29] D encode_common_attributes=False: leaked markers = {'openssl': ['.events[6].activityTaskFailedEventAttributes.failure.message (plain)', '.events[10].workflowExecutionFailedEventAttributes.failure.cause.message (plain)'], 'scanner rejected proposal': ['.events[6].activityTaskFailedEventAttributes.failure.message (plain)', '.events[6].activityTaskFailedEventAttributes.failure.stackTrace (plain)', '.events[10].workflowExecutionFailedEventAttributes.failure.cause.message (plain)', '.events[10].workflowExecutionFailedEventAttributes.failure.cause.stackTrace (plain)']}
+[01:37:29] started w-fail1 pid=8538
+[01:37:29] D encode_common_attributes=True: client-side (decoded) error: Activity task failed
+[01:37:29] $ temporal workflow show --workflow-id axiom.tenant-a.runf88ce23f --namespace default --output json  -> rc=0
+[01:37:29] D encode_common_attributes=True: failure .message values in history = ['Encoded failure']
+[01:37:29] D encode_common_attributes=True: leaked markers = {}
+PASSED
+tests/test_security.py::test_q2_any_client_can_signal [01:37:29] started ticket-service pid=8555
+[01:37:29] started worker-1 pid=8556
+[01:37:29] started w-sec pid=8562
+[01:37:30] A attacker read input (6 proposal fields) and signalled; result=completed/created; tickets=1; signal event identity='definitely-the-approver'
+[01:37:34] B after 2 attacker signals: status=awaiting_approval, tickets=1
+[01:37:34] B after API approval: SecureOutcome(status='completed', ticket_id='TCK-30af688f', reason_code='')
+[01:37:34] platform_db.workflow_events: 3 row(s)
+[01:37:34]     {"id": 1, "tenant_id": "tenant-a", "run_id": "runf1c8f8f5", "event": "approval_signal_rejected", "detail": "unknown_approval", "recorded_at": "2026-10-21T22:37:31.209407+00:00"}
+[01:37:34]     {"id": 2, "tenant_id": "tenant-a", "run_id": "runf1c8f8f5", "event": "approval_signal_rejected", "detail": "wrong_tenant_or_run", "recorded_at": "2026-10-21T22:37:31.274011+00:00"}
+[01:37:34]     {"id": 3, "tenant_id": "tenant-a", "run_id": "runf1c8f8f5", "event": "completed", "detail": "TCK-30af688f", "recorded_at": "2026-10-21T22:37:34.285119+00:00"}
+[01:37:34] C attacker terminate -> status=TERMINATED
+PASSED
+tests/test_security.py::test_q7_workflow_id_dedupe [01:37:34] started ticket-service pid=8587
+[01:37:34] started w-q7 pid=8588
+[01:37:35] start #1 ok run_id=01a1609c-dc6b-7f1f-aa6d-62df5ba17637
+[01:37:35] start #2 (default conflict policy) -> WorkflowAlreadyStartedError: Workflow execution already started
+[01:37:35] start #3 (USE_EXISTING) -> run_id=01a1609c-dc6b-7f1f-aa6d-62df5ba17637 same=True
+[01:37:35] 20 concurrent starts of axiom.tenant-a.run32f2ceb2: 1 started, 19 rejected ({'WorkflowAlreadyStartedError'})
+[01:37:39] run #1 closed: approval_deadline_exceeded
+[01:37:39] start after close with REJECT_DUPLICATE -> WorkflowAlreadyStartedError: Workflow execution already started
+[01:37:39] start after close with default reuse policy -> NEW run_id=01a1609c-ecac-7407-ab2d-c8f21889836e (differs=True)
+PASSED
+tests/test_tenancy.py::test_q3_noisy_tenant_isolation [01:37:40] started temporal-server:51403 pid=8601
+[01:37:41] temporal server ready at 127.0.0.1:51403 extra=[]
+[01:37:41] started warm pid=8610
+[01:37:41] started shared-worker pid=8617
+[01:37:47] S1 shared queue, 4 slots: {'tenant_a_flood_s': 5.59, 'tenant_b_latencies_s': [5.04, 3.51, 4.05], 'tenant_b_max_s': 5.04, 'tenant_b_median_s': 4.05}
+[01:37:47] started worker-tenant-a pid=8627
+[01:37:48] started worker-tenant-b pid=8633
+[01:37:53] S2 per-tenant queues, 4 slots each: {'tenant_a_flood_s': 5.35, 'tenant_b_latencies_s': [0.35, 0.37, 0.38], 'tenant_b_max_s': 0.38, 'tenant_b_median_s': 0.37}
+[01:37:53] started worker-both pid=8644
+[01:37:59] S2b per-tenant queues polled by one process (one Worker per queue, 4 slots each): {'tenant_a_flood_s': 5.38, 'tenant_b_latencies_s': [0.32, 0.34, 0.36], 'tenant_b_max_s': 0.36, 'tenant_b_median_s': 0.34}
+[01:37:59] started worker-rl pid=8659
+[01:38:00] $ temporal task-queue config set --task-queue tq-rl-a --task-queue-type activity --queue-rps-limit 2 --queue-rps-limit-reason 'noisy tenant'  -> rc=0
+[01:38:00]     Successfully updated task queue configuration
+  Config  {"queueRateLimit":{"rateLimit":{"requestsPerSecond":2},"metadata":{"reason":"noisy tenant","updateIdentity":"temporal-cli:root@vm","updateTime":
+[01:38:13] S3 task-queue rate limit 2 rps on tenant-a activities: {'10x50ms_no_limit_s': 0.21, '10x50ms_limit_2rps_s': 7.13, 'tenant_b_while_a_limited_s': 0.29}
+[01:38:13] $ temporal task-queue config set --task-queue tq-rl-a --task-queue-type activity --queue-rps-limit default --queue-rps-limit-reason reset  -> rc=0
+[01:38:15] started temporal-server:49073 pid=8688
+[01:38:15] temporal server ready at 127.0.0.1:49073 extra=['--dynamic-config-value', 'matching.enableFairness=true']
+[01:38:15] started warm pid=8697
+[01:38:16] started shared-worker-fair pid=8704
+[01:38:22] S4 shared queue + fairness keys (matching.enableFairness=true): {'tenant_a_flood_s': 5.82, 'tenant_b_latencies_s': [4.8, 0.41, 0.41], 'tenant_b_max_s': 4.8, 'tenant_b_median_s': 0.41}
+[01:38:22] started shared-worker-nofair pid=8716
+[01:38:28] S4 control, same server, no fairness keys: {'tenant_a_flood_s': 5.73, 'tenant_b_latencies_s': [4.58, 1.89, 2.11], 'tenant_b_max_s': 4.58, 'tenant_b_median_s': 2.11}
+PASSED
+tests/test_tenancy.py::test_q4_retention_and_tenant_deletion [01:38:29] started temporal-server:45163 pid=8728
+[01:38:29] temporal server ready at 127.0.0.1:45163 extra=['--search-attribute', 'TenantId=Keyword', '--namespace', 'tenant-a', '--namespace', 'tenant-b']
+[01:38:29] $ temporal operator namespace create -n ret-1m --retention 1m  -> rc=1
+[01:38:29]     retention 1m: rc=1 Error: unable to create namespace ret-1m: A valid retention period is not set on request.
+[01:38:30] $ temporal operator namespace create -n ret-1h --retention 1h  -> rc=0
+[01:38:30]     retention 1h: rc=0 Namespace ret-1h successfully registered.
+[01:38:30] $ temporal operator namespace create -n ret-720h --retention 720h  -> rc=0
+[01:38:30]     retention 720h: rc=0 Namespace ret-720h successfully registered.
+[01:38:30] $ temporal operator namespace describe -n ret-720h -o json  -> rc=0
+[01:38:30]     ret-720h: retention=2592000s historyArchival=ARCHIVAL_STATE_DISABLED visibilityArchival=ARCHIVAL_STATE_DISABLED
+[01:38:32] before delete: raw-file occurrences tenant-a={'DELMARK-tenant-a-8a9220e7a8': 1, 'DELMARK-tenant-a-a47eb93c71': 1, 'DELMARK-tenant-a-68022e166e': 1} tenant-b={'DELMARK-tenant-b-c430744b50': 1, 'DELMARK-tenant-b-1c6e4d4fb9': 1}
+[01:38:32] $ temporal workflow count --query TenantId="tenant-a"  -> rc=0
+[01:38:32]     count tenant-a: Total: 3
+[01:38:32] $ temporal workflow delete --query TenantId="tenant-a" --reason 'A20 tenant deletion' --yes  -> rc=0
+[01:38:32]     Start batch against workflows matching query "TenantId=\"tenant-a\""? y/N yes
+Started batch for job ID: 9d2d99ea-a378-47d8-a4e3-426f1dc00f9e
+[01:39:07] tenant-a executions: last describe results ['RPCError', 'RPCError', 'RPCError']; seconds until NotFound per execution {'axiom.tenant-a.del1-e633': 1.1, 'axiom.tenant-a.del2-04b8': 1.1, 'axiom.tenant-a.del0-8334': 35.3} (closed one = axiom.tenant-a.del0-8334)
+[01:39:09] $ temporal workflow count --query TenantId="tenant-a"  -> rc=0
+[01:39:09]     count tenant-a after delete: Total: 0
+[01:39:09] $ temporal workflow count --query TenantId="tenant-b"  -> rc=0
+[01:39:09]     count tenant-b after delete: Total: 2
+[01:39:09] $ temporal batch list -o json  -> rc=0
+[01:39:09]     batch list: [{"jobId": "9d2d99ea-a378-47d8-a4e3-426f1dc00f9e", "state": "BATCH_OPERATION_STATE_COMPLETED", "startTime": "2026-10-21T22:38:32.453885Z", "closeTime": "2026-10-21T22:38:32.558225Z", "operationType": "BATCH_OPERATION_TYPE_DELETE_WORKFLOW"}]
+[01:39:09] after delete (server running): raw-file occurrences tenant-a={'DELMARK-tenant-a-8a9220e7a8': 2, 'DELMARK-tenant-a-a47eb93c71': 2, 'DELMARK-tenant-a-68022e166e': 2} tenant-b={'DELMARK-tenant-b-c430744b50': 2, 'DELMARK-tenant-b-1c6e4d4fb9': 2}
+[01:39:09] $ temporal workflow delete --workflow-id axiom.tenant-b.del1-8c98 --yes  -> rc=0
+[01:39:09]     Delete Workflow "axiom.tenant-b.del1-8c98"? y/N yes
+Delete workflow succeeded
+[01:39:11] single delete of a running execution -> describe: RPCError
+[01:39:13] after server stop: raw-file occurrences tenant-a={'DELMARK-tenant-a-8a9220e7a8': 2, 'DELMARK-tenant-a-a47eb93c71': 2, 'DELMARK-tenant-a-68022e166e': 2}
+[01:39:13] after VACUUM of a copy: tenant-a={'DELMARK-tenant-a-8a9220e7a8': 0, 'DELMARK-tenant-a-a47eb93c71': 0, 'DELMARK-tenant-a-68022e166e': 0} tenant-b={'DELMARK-tenant-b-c430744b50': 1, 'DELMARK-tenant-b-1c6e4d4fb9': 0}
+PASSED
+
+======================== 22 passed in 291.36s (0:04:51) ========================
+exit=0

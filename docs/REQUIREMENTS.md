@@ -25,7 +25,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 |---|---|---|
 | Authentication is **development token authentication** (generated key, inline JWKS). No production enterprise OIDC/SSO login, IdP integration test, revocation strategy or workload identity yet | AUTHZ-14, ADR 0008 | planned |
 | Risk acceptance is **single-step**; the request, authorise and renew flow is not built | RISK-02, ADR 0004 | planned |
-| **Workflow engine not selected**; Temporal and PostgreSQL-backed experiments only | ARC-02, ADR 0006 | implementing (comparison) |
+| **Workflow engine not yet confirmed**: ADR 0006 recommends a PostgreSQL-backed runner; both are experiments only, no product runner exists | ARC-02, ADR 0006 | awaiting decision |
 | No route back from planned/remediating to review | R7, DECISIONS.md | awaiting decision |
 | Not built: webhooks, merge/split execution, Defender/AWS context (Phase B remainder), investigation and AI, prioritisation (C), actions, approvals, workflow adapters, reporting and GRC (D), UI, Helm/AKS, observability, backup/restore, retention and deletion (F), evaluation dataset | sections 8 to 17 | planned |
 | **No connector is sandbox-validated or production-supported.** Four are fixture-tested (Trivy and SARIF with real tool output; Tenable and Azure Resource Graph with synthetic data and local fakes); the other 16 are planned; commercial ones need licensed accounts | INT-01..INT-20 | fixture-tested / planned / blocked for sandbox validation |
@@ -335,7 +335,7 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | ID | Requirement | Status | Notes |
 |---|---|---|---|
 | ARC-01 | Modular application with separately deployable workers and identities | implementing | API module and relay done; workers pending |
-| ARC-02 | Durable workflow engine selected through an experiment and ADR | implementing | ADR 0006 proposed; PostgreSQL-only comparison pending |
+| ARC-02 | Durable workflow engine selected through an experiment and ADR | implementing | Both experiments run and independently rerun; ADR 0006 recommends PostgreSQL-backed runner, awaiting confirmation; runner not built |
 | ARC-03 | Domain logic independent of scanner, cloud and model vendors | implementing | Holds for current code |
 | ARC-04 | Pinned dependencies and reproducible builds | verified | uv.lock with cooldown; images pinned by digest; Docker build succeeded |
 | ARC-05 | React and TypeScript frontend supporting real journeys | planned | |

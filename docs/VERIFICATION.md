@@ -140,7 +140,11 @@ and waits for the Compose `ingest-worker` to complete it.
 ### Run 8: workflow experiments, independent reruns
 * PostgreSQL-backed experiment (`experiments/workflow-pg-spike`): **26 passed in 96.53s** (my rerun; the original
   final run reported 26 passed in 95.52s).
-* Temporal experiment security and recovery probes: pending at the time of writing.
+* Temporal experiment with security and recovery probes (tests written in an earlier iteration whose run was stopped before
+  it reported): my clean rerun `rm -rf .run && uv sync --frozen && uv run --frozen pytest -v -s tests/` in
+  `experiments/workflow-spike`: **22 passed in 291.36s** (2026-10-22 01:34 to 01:39 local). The original
+  first full run had also reported 22 passed (252.90s); its second run was cut off mid-test. Log:
+  `docs/verification/2026-10-22-workflow/temporal-full-rerun.log`. Findings are summarised in ADR 0006.
 
 ### Run 9: strong-identifier conflict test (after commit 8bd94eb)
 New test `test_strong_identifier_conflict_creates_conflict_asset_and_review` first **failed: 30 conflict assets

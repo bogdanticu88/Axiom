@@ -353,3 +353,13 @@ leases, `due_at` timers, the existing outbox), run this same fault-injection sui
 compare the amount and complexity of code. Adopt Temporal if the platform's roadmap actually needs
 multi-step, long-running orchestration beyond single approved actions; otherwise PostgreSQL-only is
 the smaller, more governable choice.
+
+## Security and recovery probes (added 2026-10-22, later)
+
+Tests `tests/test_security.py`, `tests/test_recovery.py` and `tests/test_tenancy.py` (with `spike/secure_*`,
+`spike/codec.py`, `spike/tenant_load.py`) cover minimal-identifier payloads and an AES-GCM payload codec, signal
+authorisation, workflow-ID dedupe, per-tenant task queues and rate limits, retention and deletion, stale workers under
+SIGSTOP, cancellation and revocation, and backup restore. Work on them stopped before this
+section or SECURITY-AND-RECOVERY.md was written. An independent clean rerun of the whole suite produced **22 passed in 291.36s**;
+the full log is `docs/verification/2026-10-22-workflow/temporal-full-rerun.log` in the repository and the findings
+are summarised in `docs/adr/0006-workflow-engine.md`.

@@ -19,22 +19,23 @@ Development token authentication only (no production SSO); single-step risk acce
 workflow engine undecided (ADR 0006 pending); no ingestion, investigation, policies, actions, reporting, UI, Helm,
 observability, backup/restore, retention; no connectors at any support level. See REQUIREMENTS.md "Known gaps".
 
-## In-flight work at the time of writing
-* `experiments/workflow-pg-spike/`: PostgreSQL-backed workflow experiment (background agent). Check its RESULTS.md.
-* `experiments/workflow-spike/`: additional Temporal security and recovery probes (SECURITY-AND-RECOVERY.md).
-* Both feed ADR 0006. If they are incomplete when you resume, rerun their suites (commands in each README) before
-  relying on any result.
+## State after the Phase B checkpoint
+* Phase B core is built and verified (ADR 0009): import pipeline, fenced pages, replay safety, quarantine, coverage,
+  strong/weak identity with review candidates, case correlation and recurrence, Trivy/SARIF (fixture-tested with real
+  tool output), Tenable/Azure Resource Graph (fixture-tested with synthetic data and local fakes), interim worker.
+* Both workflow experiments are complete and independently rerun; **ADR 0006 is proposed and awaits the project owner's
+  confirmation** (recommendation: PostgreSQL-backed runner for Phases B-D, Temporal as named alternative).
 
 ## Next tasks (in order)
-1. Complete ADR 0006 from both experiments' observed results; record the decision and the requirements that stay
-   regardless of engine.
-2. Phase B ingestion (REQUIREMENTS section 8): migration 0003 with connections, ingestion runs, pages, quarantine,
-   source objects, observations and occurrence history; generic import pipeline with original evidence preservation,
-   replay deduplication and run coverage; Trivy JSON, SARIF 2.1.0 and Tenable export parsers with synthetic fixtures
-   (fixture-tested at most); Azure Resource Graph context adapter (fixture-tested; live validation blocked without a
-   subscription); asset identity candidates with explicit uncertainty.
-3. Build the chosen durable runner for actions and approvals (Phase D groundwork), then RISK-02 two-step acceptance.
-4. CI pipeline (DEP-08) running `scripts/verify/foundation.sh` equivalents.
+1. On confirmation of ADR 0006: build `axiom.jobs` (step timeouts, claim counter for poison runs, RLS-compatible
+   claiming, operator tooling, metrics, restore marker, CI kill suite) and move the ingestion dispatcher onto it.
+2. Phase D groundwork on that runner: action proposals, approvals bound to digest/scope/expiry/uses, reservations,
+   intents, reconciliation, idempotency-key storage (API-07); then RISK-02 request/authorise/renew.
+3. Phase B remainder: merge/split execution for confirmed identity candidates (AST-03), webhooks (ING-08), connector
+   health and freshness (ING-10), real CodeQL/Semgrep SARIF fixtures, production secret resolution (Key Vault /
+   workload identity), Defender for Cloud and AWS inventory (Phase E list).
+4. Production SSO (AUTHZ-14) and CI (DEP-08).
+5. Decide open item R7 (route back from planned/remediating to review).
 
 ## Commands
 ```

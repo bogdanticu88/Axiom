@@ -1,0 +1,92 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+============================= test session starts ==============================
+platform linux -- Python 3.13.16, pytest-9.1.1, pluggy-1.6.0 -- /home/dev/axiom/experiments/workflow-spike/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/dev/axiom/experiments/workflow-spike
+configfile: pyproject.toml
+collecting ... collected 22 items
+
+tests/test_recovery.py::test_q5_stale_worker_sigstop[naive] [01:20:07] started temporal-server:44827 pid=12153
+[01:20:08] temporal server ready at 127.0.0.1:44827 extra=['--search-attribute', 'TenantId=Keyword', '--namespace', 'tenant-a', '--namespace', 'tenant-b']
+[01:20:08] started ticket-service pid=12176
+[01:20:08] started wf-worker pid=12177
+[01:20:08] started act-A pid=12183
+[01:20:09] SIGSTOPped act-A pid=12183
+[01:20:09] started act-B pid=12246
+[01:20:18] workflow result 8.1s after SIGSTOP of act-A: SecureOutcome(status='completed', ticket_id='TCK-1e1a3831', reason_code='')
+[01:20:18] tickets while act-A is still stopped: 1
+[01:20:18] SIGCONTed act-A pid=12183
+[01:20:22] tickets after act-A resumed: 3 ['TCK-1e1a3831', 'TCK-f9b71818', 'TCK-851b2463']
+[01:20:22] act-A log (activity and SDK lines):
+[01:20:22]     [01:20:09] PRE-EFFECT attempt=1 pid=12183
+[01:20:22]     [01:20:18] RESUMED attempt=1 is_cancelled=False details=None
+[01:20:22]     [01:20:18] EFFECT APPLIED attempt=1 ticket=TCK-f9b71818 pid=12183
+[01:20:22]     [01:20:18] ACTIVITY EXIT attempt=1 CancelledError: Cancelled details=ActivityCancellationDetails(not_found=True, cancel_requested=False, paused=False, reset=False, timed_out=True, worker_shutdown=False)
+[01:20:22]     [01:20:18] EFFECT APPLIED attempt=2 ticket=TCK-851b2463 pid=12183
+[01:20:22]     [01:20:18] ACTIVITY EXIT attempt=2 CancelledError: Cancelled details=ActivityCancellationDetails(not_found=True, cancel_requested=False, paused=False, reset=False, timed_out=False, worker_shutdown=False)
+[01:20:22] act-B log:
+[01:20:22]     [01:20:17] EFFECT APPLIED attempt=3 ticket=TCK-1e1a3831 pid=12246
+[01:20:22]     [01:20:17] ACTIVITY RETURNING attempt=3 ticket=TCK-1e1a3831
+[01:20:22]     history #6 check_proposal Started attempt=1 identity=act-A last_failure=''
+[01:20:22]     history #7 check_proposal Completed identity=act-A
+[01:20:22]     history #18 verify_approval Started attempt=1 identity=act-A last_failure=''
+[01:20:22]     history #19 verify_approval Completed identity=act-A
+[01:20:22]     history #24 execute_effect Started attempt=3 identity=act-B last_failure='activity Heartbeat timeout'
+[01:20:22]     history #25 execute_effect Completed identity=act-B
+[01:20:22]     history #30 record_event Started attempt=1 identity=act-B last_failure=''
+[01:20:22]     history #31 record_event Completed identity=act-B
+[01:20:22] platform_db.execution_intents: 3 row(s)
+[01:20:22]     {"id": 1, "operation_key": "fbcee498e0869ed5...", "tenant_id": "tenant-a", "run_id": "rundb9e895f", "attempt": 1, "worker": "act-A", "recorded_at": "2026-10-21T22:20:09.927183+00:00"}
+[01:20:22]     {"id": 2, "operation_key": "fbcee498e0869ed5...", "tenant_id": "tenant-a", "run_id": "rundb9e895f", "attempt": 3, "worker": "act-B", "recorded_at": "2026-10-21T22:20:17.938757+00:00"}
+[01:20:22]     {"id": 3, "operation_key": "fbcee498e0869ed5...", "tenant_id": "tenant-a", "run_id": "rundb9e895f", "attempt": 2, "worker": "act-A", "recorded_at": "2026-10-21T22:20:18.134575+00:00"}
+[01:20:22] platform_db.execution_results: 1 row(s)
+[01:20:22]     {"id": 1, "operation_key": "fbcee498e0869ed5...", "outcome": "created", "ticket_id": "TCK-1e1a3831", "attempt": 3, "worker": "act-B", "recorded_at": "2026-10-21T22:20:17.970647+00:00"}
+[01:20:22] platform_db.workflow_events: 3 row(s)
+[01:20:22]     {"id": 1, "tenant_id": "tenant-a", "run_id": "rundb9e895f", "event": "completed", "detail": "TCK-1e1a3831", "recorded_at": "2026-10-21T22:20:18.015685+00:00"}
+[01:20:22]     {"id": 2, "tenant_id": "tenant-a", "run_id": "rundb9e895f", "event": "activity_observed_cancel", "detail": "attempt=1 detail...", "recorded_at": "2026-10-21T22:20:18.173940+00:00"}
+[01:20:22]     {"id": 3, "tenant_id": "tenant-a", "run_id": "rundb9e895f", "event": "activity_observed_cancel", "detail": "attempt=2 detail...", "recorded_at": "2026-10-21T22:20:18.180062+00:00"}
+[01:20:22] execute_effect attempts recorded by the server: 1
+[01:20:22] SIGCONTed act-A pid=12183
+PASSED
+tests/test_recovery.py::test_q5_stale_worker_sigstop[platform] [01:20:22] started ticket-service pid=13297
+[01:20:22] started wf-worker pid=13309
+[01:20:22] started act-A pid=13349
+[01:20:23] SIGSTOPped act-A pid=13349
+[01:20:23] started act-B pid=13451
+[01:20:38] workflow result 15.1s after SIGSTOP of act-A: SecureOutcome(status='completed', ticket_id='TCK-9fda4e97', reason_code='')
+[01:20:38] tickets while act-A is still stopped: 1
+[01:20:38] SIGCONTed act-A pid=13349
+[01:20:42] tickets after act-A resumed: 1 ['TCK-9fda4e97']
+[01:20:42] act-A log (activity and SDK lines):
+[01:20:42]     [01:20:23] PRE-EFFECT attempt=1 pid=13349
+[01:20:42]     [01:20:38] RESUMED attempt=1 is_cancelled=False details=None
+[01:20:42]     [01:20:38] STALE attempt=1 fence=2; no effect
+[01:20:42]     [01:20:38] ACTIVITY EXIT attempt=1 ApplicationError: StaleAttempt: stale attempt 1 < fence 2 details=None
+[01:20:42]     [2m2026-10-21T22:20:38.770752Z[0m [33m WARN[0m [2mtemporalio_sdk_core::worker::activities[0m[2m:[0m Activity not found on completion. This may happen if the activity has already been cancelled but completed anyway. [3mtask_token[0m[2m=[0mTaskToken(CiQwMWExNjA4Yy1lMmI0LTdhZDgtOTkyNS1mZDhl
+[01:20:42] act-B log:
+[01:20:42]     [01:20:27] EFFECT APPLIED attempt=2 ticket=TCK-9fda4e97 pid=13451
+[01:20:42]     [01:20:27] ACTIVITY RETURNING attempt=2 ticket=TCK-9fda4e97
+[01:20:42]     history #6 check_proposal Started attempt=1 identity=act-A last_failure=''
+[01:20:42]     history #7 check_proposal Completed identity=act-A
+[01:20:42]     history #18 verify_approval Started attempt=1 identity=act-A last_failure=''
+[01:20:42]     history #19 verify_approval Completed identity=act-A
+[01:20:42]     history #24 execute_effect Started attempt=2 identity=act-B last_failure='activity Heartbeat timeout'
+[01:20:42]     history #25 execute_effect Completed identity=act-B
+[01:20:42]     history #30 record_event Started attempt=2 identity=act-B last_failure='activity StartToClose timeout'
+[01:20:42]     history #31 record_event Completed identity=act-B
+[01:20:42] platform_db.execution_intents: 2 row(s)
+[01:20:42]     {"id": 1, "operation_key": "dc741dad500c9e35...", "tenant_id": "tenant-a", "run_id": "rune453abcb", "attempt": 1, "worker": "act-A", "recorded_at": "2026-10-21T22:20:23.622439+00:00"}
+[01:20:42]     {"id": 2, "operation_key": "dc741dad500c9e35...", "tenant_id": "tenant-a", "run_id": "rune453abcb", "attempt": 2, "worker": "act-B", "recorded_at": "2026-10-21T22:20:27.631861+00:00"}
+[01:20:42] platform_db.execution_results: 1 row(s)
+[01:20:42]     {"id": 1, "operation_key": "dc741dad500c9e35...", "outcome": "created", "ticket_id": "TCK-9fda4e97", "attempt": 2, "worker": "act-B", "recorded_at": "2026-10-21T22:20:27.666999+00:00"}
+[01:20:42] platform_db.workflow_events: 2 row(s)
+[01:20:42]     {"id": 1, "tenant_id": "tenant-a", "run_id": "rune453abcb", "event": "completed", "detail": "TCK-9fda4e97", "recorded_at": "2026-10-21T22:20:38.714498+00:00"}
+[01:20:42]     {"id": 2, "tenant_id": "tenant-a", "run_id": "rune453abcb", "event": "completed", "detail": "TCK-9fda4e97", "recorded_at": "2026-10-21T22:20:38.767139+00:00"}
+[01:20:42] execute_effect attempts recorded by the server: 1
+[01:20:42] SIGCONTed act-A pid=13349
+PASSED
+tests/test_recovery.py::test_q5_stale_worker_sigstop[heartbeat_gate] [01:20:42] started ticket-service pid=15295
+[01:20:42] started wf-worker pid=15311
+[01:20:43] started act-A pid=15366
+[01:20:44] SIGSTOPped act-A pid=15366
+[01:20:44] started act-B pid=15474
