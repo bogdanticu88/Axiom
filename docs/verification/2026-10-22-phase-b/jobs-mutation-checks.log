@@ -1,0 +1,7 @@
+job fingerprint check removed: CAUGHT (1 failed, 23 deselected in 2.03s)
+lookup before create removed: CAUGHT (2 failed, 1 passed, 21 deselected in 6.45s)
+poison claim limit removed: CAUGHT (1 failed, 23 deselected in 0.90s)
+heartbeat deadline guard removed (LEAST cap remains): NOT CAUGHT (1 passed, 23 deselected in 2.44s)
+heartbeat lease not capped at deadline: CAUGHT (1 failed, 23 deselected in 1.80s)
+effect-boundary revalidation removed: CAUGHT (1 failed, 23 deselected in 0.92s)
+finish not fenced: CAUGHT (1 failed, 23 deselected, 1 warning in 2.41s)

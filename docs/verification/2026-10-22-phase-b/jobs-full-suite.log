@@ -1,0 +1,4 @@
+=========================== short test summary info ============================
+SKIPPED [1] tests/integration/test_s3_store.py:29: AXIOM_TEST_S3_ENDPOINT / AXIOM_TEST_S3_BUCKET not set
+SKIPPED [1] tests/integration/test_s3_store.py:40: AXIOM_TEST_S3_ENDPOINT / AXIOM_TEST_S3_BUCKET not set
+148 passed, 2 skipped, 1 warning in 59.42s

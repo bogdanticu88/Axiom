@@ -11,7 +11,7 @@ completeness.
 | [0003](adr/0003-database-roles-and-migrations.md) | Database roles and migrations | accepted | Cluster roles provisioned separately; checksummed ledgered migrations |
 | [0004](adr/0004-case-command-guards.md) | Case command guards and closure routes | accepted | Service plus DB guards; asset-retirement route; deferral; open items R7 and RISK-02 |
 | [0005](adr/0005-evidence-storage.md) | Evidence storage and finalisation | accepted | API-streamed uploads, read-back hash verification, SeaweedFS for Compose |
-| [0006](adr/0006-workflow-engine.md) | Durable workflow engine | **proposed, awaiting confirmation** | Recommend PostgreSQL-backed job runner for Phases B-D with Temporal as named alternative and explicit revisit triggers |
+| [0006](adr/0006-workflow-engine.md) | Durable workflow engine | **accepted** (2026-10-22) | PostgreSQL-backed job runner for Phases B-D; Temporal as named alternative with explicit revisit triggers |
 | [0007](adr/0007-dependency-pinning.md) | Dependency pinning | accepted | uv lock with cooldown; digest-pinned images |
 | [0008](adr/0008-authentication.md) | Authentication | accepted for development | Dev token auth only; production SSO is a tracked gap |
 | [0009](adr/0009-ingestion-pipeline.md) | Ingestion pipeline, source identity, asset correlation | accepted for Phase B | Fenced page commits, coverage rules, strong/weak identifiers, no automatic merges |

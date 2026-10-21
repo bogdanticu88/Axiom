@@ -145,6 +145,27 @@ class Provisioner:
                          (binding_id, principal_id, role))
         return binding_id
 
+    def recovery_status(self) -> dict:
+        """Current database fingerprint, whether it is acknowledged, and effects whose outcome is uncertain."""
+        with self._connect() as conn:
+            fp = conn.execute("SELECT axiom.db_fingerprint() AS f").fetchone()["f"]
+            ack = conn.execute("SELECT * FROM axiom.recovery_acknowledgements WHERE fingerprint = %s", (fp,)).fetchone()
+            pending = conn.execute(
+                """SELECT count(*) AS n FROM axiom.effect_intents
+                    WHERE state IN ('prepared', 'executing', 'unknown') AND db_fingerprint <> %s""", (fp,)).fetchone()
+        return {"fingerprint": fp, "acknowledged": ack is not None, "uncertain_effects_from_other_fingerprints":
+                pending["n"]}
+
+    def acknowledge_recovery(self, acknowledged_by: str, note: str) -> str:
+        """Record that an operator has reconciled external effects after a restore (ADR 0006)."""
+        if not note.strip() or not acknowledged_by.strip():
+            raise ValueError("acknowledged_by and a note describing the reconciliation are required")
+        with self._connect() as conn:
+            fp = conn.execute("SELECT axiom.db_fingerprint() AS f").fetchone()["f"]
+            conn.execute("""INSERT INTO axiom.recovery_acknowledgements(fingerprint, acknowledged_by, note)
+                            VALUES (%s, %s, %s) ON CONFLICT (fingerprint) DO NOTHING""", (fp, acknowledged_by, note))
+        return fp
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Installation provisioning")
@@ -171,6 +192,10 @@ def main(argv: list[str] | None = None) -> int:
     rol.add_argument("--role", required=True)
     rol.add_argument("--scope", required=True)
     rol.add_argument("--reason", required=True)
+    sub.add_parser("recovery-status")
+    ack = sub.add_parser("acknowledge-recovery")
+    ack.add_argument("--by", required=True)
+    ack.add_argument("--note", required=True)
     args = parser.parse_args(argv)
     p = Provisioner(args.dsn)
     if args.command == "ensure-installation":
@@ -183,6 +208,10 @@ def main(argv: list[str] | None = None) -> int:
         out = {"principal_id": str(p.create_principal(args.name, provider_id=provider, subject=args.subject))}
     elif args.command == "add-member":
         out = {"membership_id": str(p.add_membership(UUID(args.tenant), UUID(args.principal)))}
+    elif args.command == "recovery-status":
+        out = p.recovery_status()
+    elif args.command == "acknowledge-recovery":
+        out = {"acknowledged_fingerprint": p.acknowledge_recovery(args.by, args.note)}
     else:
         out = {"binding_id": str(p.bootstrap_role(UUID(args.tenant), UUID(args.principal), args.role,
                                                    UUID(args.scope), args.reason))}

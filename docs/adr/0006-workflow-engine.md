@@ -1,7 +1,8 @@
 # ADR 0006: Durable workflow engine
 
-Status: **proposed** (2026-10-22). Recommendation below; confirmation requested before any production external
-effect depends on it. Routine work (ingestion runs) is not blocked: it already uses its own fenced runs (ADR 0009).
+Status: **accepted** (2026-10-22). The recommendation below was presented to the project owner, who replied "Proceed" at
+01:48 local time on 2026-10-22; that reply is recorded here as acceptance. The conditions in "Conditions before
+production effects rely on it" remain binding.
 
 ## The requirements do not change with the engine
 B07, B08, A02, A07, A08, A12, A15 and the action protocol (Plan 7) apply either way. Both experiments confirmed that
