@@ -56,7 +56,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | A01 | Reimport and replay: no duplicate occurrences, decisions or external actions | ing::test_replayed_import_creates_no_duplicates, ::test_resume_after_in_process_crash_skips_committed_pages, ::test_real_process_kill_then_resume | implementing | Occurrences, cases, events and decisions verified; external actions do not exist yet |
 | A02 | Lost acknowledgement after ticket creation reconciles or pauses | spike (Temporal) passed | implementing | Must be re-proven on the selected engine inside the platform (ADR 0006) |
 | A03 | Half a scan: keep cases, show partial coverage, close none | ing::test_partial_scan_closes_nothing_and_complete_rescan_records_absence | verified | |
-| A04 | Conflicting asset identifiers require review; no cross-tenant/deployment merge | ing::test_tenable_identity..., sync::test_tenable_host_and_azure_vm..., iso::test_cross_tenant_foreign_key_rejected | implementing | Weak overlaps verified; strong conflict path untested; merge execution not built |
+| A04 | Conflicting asset identifiers require review; no cross-tenant/deployment merge | ing::test_tenable_identity..., sync::test_tenable_host_and_azure_vm..., iso::test_cross_tenant_foreign_key_rejected | implementing | Weak overlaps and strong conflicts verified; merge execution not built |
 | A05 | Malicious instructions in scanner text change nothing | none | planned | Phase C adversarial suite |
 | A06 | Model conclusion citing nonexistent observation is rejected | none | planned | Phase C |
 | A07 | Revoked evidence access or approval before execution denies and records why | cases::test_permission_scope_and_revocation (permission part) | implementing | Approval revocation is Phase D |
@@ -220,7 +220,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | ING-12 | Source-reported fixes never close cases | `_correlate` | ing::test_tenable_identity_uncertainty_quarantine_and_source_fix | verified | |
 | ING-13 | Imported text is untrusted data | stored in `source_fields` only | ing::test_sarif_import_with_untrusted_text_changes_no_authority | verified (ingestion part) | A05 also needs Phase C model-path tests |
 | AST-01 | Identity prefers immutable provider identifiers and deployment digests | `ingestion/identity.py` | ing::, sync:: tests | verified | |
-| AST-02 | Conflicting identifiers require review; no automatic merge | candidates; `conflict` status | ing::test_tenable_identity..., sync::test_tenable_host_and_azure_vm_with_same_hostname_stay_separate | verified for weak overlaps | Strong-identifier conflict path implemented, not yet tested |
+| AST-02 | Conflicting identifiers require review; no automatic merge | candidates; `conflict` status | ing::test_tenable_identity..., sync::test_tenable_host_and_azure_vm_with_same_hostname_stay_separate | verified | ing::test_strong_identifier_conflict_creates_conflict_asset_and_review (found and fixed a bug: each record created a new conflict asset) |
 | AST-03 | Reversible merges and splits through recorded links | review decisions recorded only | api::test_identity_candidate_review_through_api | implementing | Merge/split execution not built |
 | AST-04 | No global uniqueness on IP, name or tag | weak identifiers never unique | sync::test_tenable_host_and_azure_vm... (3 assets share a hostname) | verified | |
 | AST-05 | Immutable asset versions with deployment digests | `asset_versions` | ing:: tests | implementing | Effective intervals pending |

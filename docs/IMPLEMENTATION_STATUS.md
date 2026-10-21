@@ -37,7 +37,7 @@ duplicate action (**not met in product code**: shown only in the Temporal experi
 | Original evidence preservation and re-verification | verified | ing::test_tampered_original_fails_the_run |
 | Source identities, observations, occurrence history | verified | ing::test_replayed_import..., ::test_partial_scan... |
 | Quarantine and partial-import coverage | verified | ing::, sync::, API quarantine listing |
-| Asset correlation with explicit uncertainty (strong/weak identifiers, candidates, review decisions) | verified for weak overlaps | strong-conflict path untested; merge/split execution **not built** |
+| Asset correlation with explicit uncertainty (strong/weak identifiers, candidates, review decisions) | verified | strong conflicts and weak overlaps; merge/split execution **not built** |
 | Case correlation and recurrence reopening | verified | ing::test_recurrence_after_verified_closure_reopens |
 | Trivy JSON | verified at **fixture-tested** level | real Trivy 0.76.1 output |
 | Generic SARIF 2.1.0 | verified at **fixture-tested** level | real Trivy SARIF + synthetic; real CodeQL/Semgrep not tested |

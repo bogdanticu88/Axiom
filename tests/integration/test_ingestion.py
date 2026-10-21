@@ -275,3 +275,32 @@ def test_recurrence_after_verified_closure_reopens(world, run, ctx_for, importer
     assert reopened["workflow"] == "investigating"
     events = q(run, analyst, "SELECT event_type, payload FROM axiom.case_events WHERE case_id = %s ORDER BY sequence", cid)
     assert events[-1]["event_type"] == "case.reopened" and events[-1]["payload"]["reason"] == "recurrence"
+
+
+def test_strong_identifier_conflict_creates_conflict_asset_and_review(world, run, ctx_for, importer):
+    """AST-02: a record whose strong identifiers belong to two different assets is never merged."""
+    analyst = ctx_for("analyst")
+    records = json.loads((FIX / "tenable/synthetic-vulns-chunk-1.json").read_bytes())
+    importer(json.dumps([records[0]]).encode(), "tenable_vm")              # asset X: tenable uuid U1
+    sarif_like_declared = {"identifiers": [{"namespace": "source_asset", "value": "cmdb:pay-db-01"}],
+                           "kind": "host", "display_name": "pay-db-01 (CMDB)"}
+    data = (FIX / "sarif/trivy-debian-bullseye.subset.sarif").read_bytes()
+    importer(data, "sarif", declared=sarif_like_declared)                  # asset Y: cmdb id C1
+    # A record claiming BOTH U1 and C1 links two existing assets: conflict, no merge.
+    conflicting = {"identifiers": [{"namespace": "tenable_asset_uuid", "value": records[0]["asset"]["uuid"]},
+                                   {"namespace": "source_asset", "value": "cmdb:pay-db-01"}],
+                   "kind": "host", "display_name": "conflicting claim"}
+    result, _ = importer(data, "sarif", declared=conflicting)
+    assert result["status"] == "completed"
+    conflict_assets = q(run, analyst, "SELECT id FROM axiom.assets WHERE identity_status = 'conflict'")
+    assert len(conflict_assets) == 1
+    cands = q(run, analyst, "SELECT asset_ids FROM axiom.identity_candidates WHERE method = 'strong_identifier_conflict'")
+    assert len(cands) == 1 and len(cands[0]["asset_ids"]) == 3
+    # The strong identifiers stay with their original owners (unique per tenant).
+    owners = q(run, analyst, "SELECT namespace, count(DISTINCT asset_id) AS n FROM axiom.asset_identifiers "
+                             "WHERE strength = 'strong' AND namespace IN ('tenable_asset_uuid', 'source_asset') "
+                             "GROUP BY namespace")
+    assert {o["namespace"]: o["n"] for o in owners} == {"tenable_asset_uuid": 1, "source_asset": 1}
+    importer(data, "sarif", declared=conflicting)                         # same claim again, next run
+    assert len(q(run, analyst, "SELECT id FROM axiom.assets WHERE identity_status = 'conflict'")) == 1
+    assert len(q(run, analyst, "SELECT 1 FROM axiom.identity_candidates WHERE method = 'strong_identifier_conflict'")) == 1

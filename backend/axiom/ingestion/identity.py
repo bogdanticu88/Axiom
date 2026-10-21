@@ -20,7 +20,7 @@ from uuid import UUID
 import psycopg
 from psycopg.types.json import Jsonb
 
-from ..adapters.base import Identifier, SubjectHints
+from ..adapters.base import Identifier, SubjectHints, stable_digest
 from ..db import TenantContext
 
 
@@ -47,6 +47,16 @@ def resolve(conn: psycopg.Connection, ctx: TenantContext, subject: SubjectHints,
     for r in rows:
         owners.setdefault(r["asset_id"], []).append({"namespace": r["namespace"], "value": r["value"]})
     candidates: list[tuple[str, list[UUID], list[dict]]] = []
+    claim = None
+    if len(owners) > 1:
+        # The same conflicting claim must resolve to the same holding asset on every record and every run,
+        # instead of creating a new conflict asset each time.
+        claim = Identifier("identity_claim", stable_digest(sorted((i.namespace, i.value) for i in strong)))
+        held = conn.execute(
+            """SELECT asset_id FROM axiom.asset_identifiers WHERE namespace = 'identity_claim' AND value = %s
+                 AND valid_until IS NULL""", (claim.value,)).fetchone()
+        if held:
+            owners = {held["asset_id"]: [{"namespace": claim.namespace, "value": claim.value}]}
     if len(owners) == 1:
         asset_id, created, status = next(iter(owners)), False, None
     else:
@@ -75,10 +85,14 @@ def resolve(conn: psycopg.Connection, ctx: TenantContext, subject: SubjectHints,
                      AND method = 'weak_identifier_overlap'""", (pair,)).fetchone()
             if not exists:
                 candidates.append(("weak_identifier_overlap", pair, matched))
-    owned_elsewhere = {(r["namespace"], r["value"]) for r in rows if r["asset_id"] != asset_id}
+    owned_elsewhere = {(r["namespace"], r["value"]) for r in conn.execute(
+        """SELECT namespace, value FROM axiom.asset_identifiers WHERE strength = 'strong' AND valid_until IS NULL
+             AND asset_id <> %s AND (namespace, value) IN (SELECT * FROM unnest(%s::text[], %s::text[]))""",
+        (asset_id, [i.namespace for i in strong], [i.value for i in strong]))}
     current = {(r["namespace"], r["value"]) for r in conn.execute(
         "SELECT namespace, value FROM axiom.asset_identifiers WHERE asset_id = %s AND valid_until IS NULL", (asset_id,))}
-    pending = [i for i in subject.identifiers
+    claimed = [claim] if claim is not None and created else []
+    pending = claimed + [i for i in subject.identifiers
                if (i.namespace, i.value) not in current
                and (i.strength == "weak" or (i.namespace, i.value) not in owned_elsewhere)]
     return Resolution(asset_id, created, status or "resolved", pending, candidates)

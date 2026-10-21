@@ -141,3 +141,9 @@ and waits for the Compose `ingest-worker` to complete it.
 * PostgreSQL-backed experiment (`experiments/workflow-pg-spike`): **26 passed in 96.53s** (my rerun; the original
   final run reported 26 passed in 95.52s).
 * Temporal experiment security and recovery probes: pending at the time of writing.
+
+### Run 9: strong-identifier conflict test (after commit 8bd94eb)
+New test `test_strong_identifier_conflict_creates_conflict_asset_and_review` first **failed: 30 conflict assets
+instead of 1** (each record of a conflicting import created its own holding asset and review candidate). Fixed with
+a stable `identity_claim` key on the holding asset. Full suite afterwards: **124 passed, 2 skipped** (S3 not
+configured for that run); ingestion file with the re-import assertion: 13 passed.

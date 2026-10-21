@@ -30,6 +30,7 @@ class SupportLevel(StrEnum):
 STRONG_NAMESPACES = frozenset({
     "image_repository", "tenable_asset_uuid", "azure_resource_id", "azure_vm_id", "aws_arn",
     "repository_uri", "source_asset",
+    "identity_claim",   # platform-generated key for an unresolved conflicting claim (see ingestion/identity.py)
 })
 WEAK_NAMESPACES = frozenset({"hostname", "fqdn", "ipv4", "ipv6", "mac_address", "netbios_name", "display_name"})
 
