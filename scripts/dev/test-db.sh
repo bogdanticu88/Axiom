@@ -15,7 +15,7 @@ PG_BIN="${PG_BIN:-/usr/lib/postgresql/16/bin}"
 DATA="${AXIOM_TEST_PGDATA:-/var/tmp/axiom-test-pg}"
 PORT="${AXIOM_TEST_PGPORT:-55432}"
 SOCK="${AXIOM_TEST_PGSOCK:-/var/tmp/axiom-test-pg-sock}"
-ENV_FILE="$ROOT/.env.test"
+ENV_FILE="${AXIOM_TEST_ENV_FILE:-$ROOT/.env.test}"
 
 as_pg() {
   if [ "$(id -u)" = "0" ]; then su postgres -s /bin/bash -c "$*"; else bash -c "$*"; fi

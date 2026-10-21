@@ -448,3 +448,79 @@ def test_cross_tenant_resource_references_are_invisible(world, run, ctx_for, sce
 def test_list_respects_scope(world, run, ctx_for, scenario):
     assert run(ctx_for("marketing_analyst"), lambda s: s.cases.list()) == []
     assert len(run(ctx_for("viewer"), lambda s: s.cases.list())) == 1
+
+
+def test_deferral_stays_open_with_review_date(world, run, ctx_for, scenario):
+    """CASE-12."""
+    cid = scenario["case"]["id"]
+    analyst = ctx_for("analyst")
+    advance_to_review(run, analyst, cid, scenario["evidence"]["id"])
+    with pytest.raises(ValidationFailed):
+        run(analyst, lambda s: s.cases.defer(cid, 2, review_at=datetime.now(timezone.utc) - timedelta(days=1),
+                                             rationale="past"))
+    with pytest.raises(ValidationFailed):
+        run(analyst, lambda s: s.cases.defer(cid, 2, review_at=datetime.now(timezone.utc) + timedelta(days=400),
+                                             rationale="too far"))
+    when = datetime.now(timezone.utc) + timedelta(days=14)
+    case = run(analyst, lambda s: s.cases.defer(cid, 2, review_at=when, rationale="vendor patch due"))
+    assert case["workflow"] == "review_required" and case["disposition"] == "defer" and case["review_at"] == when
+
+
+def test_remediation_target_must_be_affected_asset(world, run, ctx_for, scenario):
+    """CASE-08 negative path: a deployment of an unrelated asset is rejected (service and DB)."""
+    cid = scenario["case"]["id"]
+    analyst, owner = ctx_for("analyst"), ctx_for("owner")
+    advance_to_review(run, analyst, cid, scenario["evidence"]["id"])
+    run(analyst, lambda s: s.cases.plan_remediation(cid, 2, owner_principal_id=world["owner"], rationale="fix"))
+    run(owner, lambda s: s.cases.record_external_work(cid, 3, external_reference="JIRA-1", rationale="ticket"))
+
+    def other_asset(s):
+        a = s.assets.create_asset(scope_id=world.a.project, kind="container_image", display_name="other")
+        return s.assets.record_version(asset_id=a["id"], observed_at=datetime.now(timezone.utc),
+                                       deployment_digest="sha256:" + "d" * 64)
+    unrelated = run(analyst, other_asset)
+    with pytest.raises(psycopg.errors.CheckViolation, match="not a deployment of an asset affected"):
+        run(owner, lambda s: s.cases.report_change(cid, 4, target_asset_version_id=unrelated["id"],
+                                                   change_reference="deploy x", rationale="wrong asset"))
+    assert run(analyst, lambda s: s.cases.get(cid))["workflow"] == "remediating"
+
+
+def test_decisions_record_authority(world, run, ctx_for, scenario):
+    """AUTHZ-15 / B02 (authority part)."""
+    cid = scenario["case"]["id"]
+    analyst = ctx_for("analyst")
+    run(analyst, lambda s: s.cases.start_investigation(cid, 0, "go"))
+    decision = run(analyst, lambda s: s.conn.execute(
+        "SELECT authority, actor_principal_id FROM axiom.decisions WHERE case_id = %s", (cid,)).fetchone())
+    binding = run(analyst, lambda s: s.conn.execute(
+        "SELECT id FROM axiom.role_bindings WHERE principal_id = %s", (world["analyst"],)).fetchone())
+    assert decision["actor_principal_id"] == world["analyst"]
+    assert decision["authority"]["permission"] == "investigation.request"
+    assert decision["authority"]["binding_ids"] == [str(binding["id"])]
+    assert decision["authority"]["roles"] == ["analyst"]
+
+
+def test_citing_evidence_requires_read_permission_for_its_classification(world, run, ctx_for, scenario, upload, dbinfo):
+    """AUTHZ-16: an analyst cannot cite restricted evidence they cannot read."""
+    from axiom.provisioning import Provisioner
+    Provisioner(dbinfo.admin_cli_dsn).bootstrap_role(world.a.id, world["analyst2"], "evidence_reader_restricted",
+                                                     world.a.project, "restricted uploader")
+    restricted = upload(ctx_for("analyst2"), world.a.project, b"restricted proof", classification="restricted")
+    cid = scenario["case"]["id"]
+    analyst = ctx_for("analyst")
+    run(analyst, lambda s: s.cases.start_investigation(cid, 0, "go"))
+    with pytest.raises(PermissionDenied):
+        run(analyst, lambda s: s.cases.record_assessment(cid, 1, assessment="supported", rationale="r",
+                                                          limitations="none", evidence=[EvidenceRef(restricted["id"])]))
+
+
+def test_audit_detail_redacts_secret_like_keys(world, run, ctx_for):
+    """AUD-03."""
+    from axiom import audit
+    ctx = ctx_for("analyst")
+    event_id = run(ctx, lambda s: audit.record(s.conn, ctx, action="test.redaction", resource_type="test",
+                                               resource_id=None, detail={"api_key": "abc", "Authorization": "Bearer x",
+                                                                         "note": "kept"}))
+    detail = run(ctx, lambda s: s.conn.execute("SELECT detail FROM axiom.audit_events WHERE id = %s",
+                                               (event_id,)).fetchone()["detail"])
+    assert detail == {"api_key": "[redacted]", "Authorization": "[redacted]", "note": "kept"}

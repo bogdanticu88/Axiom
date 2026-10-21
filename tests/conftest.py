@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_env() -> dict[str, str] | None:
-    path = ROOT / ".env.test"
+    path = Path(os.environ.get("AXIOM_TEST_ENV_FILE", ROOT / ".env.test"))
     if not path.exists():
         return None
     env: dict[str, str] = {}

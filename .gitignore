@@ -1,8 +1,33 @@
-.env.test
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+dev-idp/
+
+# Generated dependencies and caches
 .venv/
+node_modules/
 __pycache__/
 *.pyc
 .pytest_cache/
-node_modules/
+.mypy_cache/
+.ruff_cache/
 dist/
+build/
+
+# Local data: database clusters, dumps, object storage, evidence, verification scratch
 .var/
+pgdata/
+*.dump
+*.sql.gz
+*.backup
+uploads/
+evidence-store/
+
+# Preservation artifacts are produced outside the repository
+*.bundle
+*.tar.gz

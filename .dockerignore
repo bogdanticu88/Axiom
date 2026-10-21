@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+**/.env
+*.pem
+*.key
+.venv
+**/__pycache__
+.pytest_cache
+.var
+experiments
+docs
+tests
+deployments
+node_modules
