@@ -90,3 +90,54 @@ database trigger independently rejected the forced wrong-digest pass.
 Production SSO; any connector; ingestion; investigation; policies; actions and approvals in product code; reporting;
 UI; Helm/AKS; backups and restore; retention and deletion; load, latency or cost; behaviour on a managed PostgreSQL
 service. Nothing here demonstrates production readiness.
+
+## Run 4: restore test of the preservation artifacts (2026-10-22 ~22:00Z, separate run)
+Artifacts in `/home/dev/preservation/` (kept as release archives):
+```
+ac6b5fb745c13379f24bde6f5c17919f33894351cdc6847c07cb0ef7cb474d0d  axiom-foundation-20261022-18f0878-source.tar.gz
+9c7f7ca23276739e209e7a1989e4a0bdb9d0b57893a1fadbc8917f1e5ab36829  axiom-foundation-20261022-18f0878.bundle
+32c9cd7cb3d254bc2c272d8bc7cbc53b8fea15a56267901c0bb12dcf268adec1  axiom-foundation-20261022-18f0878-MANIFEST.txt
+```
+* `sha256sum -c SHA256SUMS`: all OK.
+* `git clone <bundle>`: HEAD 18f0878, tag foundation-checkpoint-1 present, tree identical to the repository HEAD;
+  `git bundle verify`: "is okay".
+* Extracted source archive into an empty directory: 27 required paths present; no `.env`, `.env.test`, `*.pem`,
+  `.venv` or data directories; no private keys; 101 files.
+* From the extracted copy: `uv sync --frozen` then `pytest tests -q` against the disposable cluster:
+  **92 passed, 2 skipped** (both S3 tests, skipped because no S3 endpoint was configured for this run), 1 warning.
+
+## Phase B runs (2026-10-22, after the foundation checkpoint)
+
+### Run 5: development suite with Phase B
+`uv run pytest tests -q` on the long-lived test cluster: first attempt **1 failed, 122 passed, 2 skipped**. The
+failure was a real authorisation bug: listing identity candidates required `asset.read` at the tenant root, so
+project-scoped analysts got 403. Fixed by filtering candidates to readable scopes; rerun **123 passed, 2 skipped**
+(S3 tests skipped: no endpoint configured for that run).
+
+Mutation checks on the ingestion pipeline: forcing every run's coverage to "complete" made
+`test_partial_scan...` and `test_tenable_identity...` fail (expected); removing the service-side lease check left
+`test_stale_worker_is_fenced` passing because the database fence trigger still refused the stale page (expected,
+defence in depth). Code restored and compared byte-for-byte afterwards.
+
+### Run 6: full verification on a separate fresh cluster (2026-10-22 22:29Z)
+`scripts/verify/foundation.sh`. Log: `docs/verification/2026-10-22-phase-b/foundation-verify.log`.
+* Migrations: database 1 `applied: 0001, 0002, 0003`, re-run `applied: none`; database 2 in the same cluster
+  `applied: 0001, 0002, 0003`; edited migration rejected (checksum mismatch).
+* Structural audit: 40 tables with forced RLS, 2 global catalogue tables without, 0 not owned by `axiom_owner`;
+  `axiom_app` not superuser, not BYPASSRLS, not an owner member.
+* Fresh SeaweedFS; **125 passed, 0 skipped, 1 warning in 39.76s**. Per file: unit rules 31, adapters 12, cases 27,
+  isolation 16, evidence/outbox 11, ingestion 12, sync 5, API 9, S3 2.
+
+### Run 7: Compose fresh-install smoke with ingestion (2026-10-22 22:24Z to 22:28Z)
+`scripts/verify/compose-smoke.sh` now also uploads the real Trivy fixture, imports it through `/api/v1/imports`,
+and waits for the Compose `ingest-worker` to complete it.
+* First attempt (BUILD=1): **failed** at the final re-initialisation check. The script slept a fixed 15 seconds and
+  read the recreated init container's logs before it had run. Fixed to wait for the container to exit.
+* Before the fix, two further runs passed (one with BUILD=1). After the fix, two consecutive runs passed:
+  `SMOKE PASS (axiom-smoke-222712)` and `SMOKE PASS (axiom-smoke-222808)`, each including
+  `Trivy import via API + ingest-worker: completed complete 30`. Logs: `docs/verification/2026-10-22-phase-b/`.
+
+### Run 8: workflow experiments, independent reruns
+* PostgreSQL-backed experiment (`experiments/workflow-pg-spike`): **26 passed in 96.53s** (my rerun; the original
+  final run reported 26 passed in 95.52s).
+* Temporal experiment security and recovery probes: pending at the time of writing.

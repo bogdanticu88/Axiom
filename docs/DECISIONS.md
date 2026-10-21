@@ -14,6 +14,7 @@ completeness.
 | [0006](adr/0006-workflow-engine.md) | Durable workflow engine | **pending** | Temporal vs PostgreSQL-backed comparison in progress |
 | [0007](adr/0007-dependency-pinning.md) | Dependency pinning | accepted | uv lock with cooldown; digest-pinned images |
 | [0008](adr/0008-authentication.md) | Authentication | accepted for development | Dev token auth only; production SSO is a tracked gap |
+| [0009](adr/0009-ingestion-pipeline.md) | Ingestion pipeline, source identity, asset correlation | accepted for Phase B | Fenced page commits, coverage rules, strong/weak identifiers, no automatic merges |
 
 ## Proposed specification changes awaiting approval
 | Ref | Proposal | Why | Status |

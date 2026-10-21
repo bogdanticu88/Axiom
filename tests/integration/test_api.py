@@ -158,3 +158,65 @@ def test_pagination(client, as_, world):
     page2 = client.get("/api/v1/cases", headers=analyst, params={"limit": 3, "cursor": page1["next_cursor"]}).json()
     ids = [c["id"] for c in page1["items"] + page2["items"]]
     assert len(ids) == len(set(ids)) == 5
+
+
+def test_ingestion_journey_through_api(client, as_, world, db, object_store):
+    """Operator/analyst journey: upload a real Trivy report, import it, inspect run, cases and asset."""
+    from pathlib import Path
+    from axiom.domains.evidence.service import EvidenceService
+    from axiom.ingestion.pipeline import IngestionService
+    from axiom.ingestion.sync import SyncService
+    from axiom.workers.ingest import run_once
+    fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+    analyst = as_("analyst")
+    report = (fixtures / "trivy/debian-bullseye-20230612-slim.subset.json").read_bytes()
+    ev = upload(client, analyst, world.a.project, report)
+    r = client.post("/api/v1/imports", headers=analyst, json={"evidence_id": ev, "adapter": "trivy_json",
+                                                             "scope_id": str(world.a.project)})
+    assert r.status_code == 202 and r.json()["status"] == "queued", r.text
+    run_id = r.json()["id"]
+    ingestion = IngestionService(db, object_store)
+    assert run_once(db, ingestion, SyncService(db, ingestion, EvidenceService(db, object_store, max_bytes=10**7)),
+                    "api-test-worker") >= 1
+    got = client.get(f"/api/v1/ingestion-runs/{run_id}", headers=analyst).json()
+    assert got["status"] == "completed" and got["coverage"] == "complete" and got["quarantined"] == []
+    listed = client.get("/api/v1/ingestion-runs", headers=as_("viewer")).json()["items"]
+    assert any(i["id"] == run_id for i in listed)
+    cases = client.get("/api/v1/cases", headers=analyst, params={"limit": 200}).json()["items"]
+    assert cases and all(c["workflow"] == "received" for c in cases)
+    history = client.get(f"/api/v1/cases/{cases[0]['id']}/history", headers=analyst).json()
+    assert history["events"][0]["event_type"] == "case.created"
+    adapters = {a["name"]: a["support_level"] for a in client.get("/api/v1/adapters", headers=analyst).json()["items"]}
+    assert adapters["trivy_json"] == "fixture-tested" and adapters["jira"] == "planned"
+    # Unknown adapter and a body smuggling a tenant are rejected.
+    assert client.post("/api/v1/imports", headers=analyst, json={"evidence_id": ev, "adapter": "nessus_xml",
+                                                                "scope_id": str(world.a.project)}).status_code == 422
+    assert client.post("/api/v1/imports", headers=analyst, json={"evidence_id": ev, "adapter": "trivy_json",
+                       "scope_id": str(world.a.project), "tenant_id": str(world.b.id)}).status_code == 422
+
+
+def test_identity_candidate_review_through_api(client, as_, world, db, object_store):
+    from pathlib import Path
+    from axiom.ingestion.pipeline import IngestionService
+    fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+    analyst = as_("analyst")
+    ev = upload(client, analyst, world.a.project, (fixtures / "tenable/synthetic-vulns-chunk-1.json").read_bytes())
+    run_id = client.post("/api/v1/imports", headers=analyst, json={
+        "evidence_id": ev, "adapter": "tenable_vm", "scope_id": str(world.a.project)}).json()["id"]
+    IngestionService(db, object_store).execute(world.a.id, world.a.system, __import__("uuid").UUID(run_id),
+                                               worker_id="api-test")
+    run = client.get(f"/api/v1/ingestion-runs/{run_id}", headers=analyst).json()
+    assert run["coverage"] == "partial" and run["quarantined"][0]["reason_code"] == "missing_asset_uuid"
+    cands = client.get("/api/v1/identity-candidates", headers=analyst).json()["items"]
+    assert len(cands) == 1 and len(cands[0]["assets"]) == 2
+    cid = cands[0]["id"]
+    assert client.post(f"/api/v1/identity-candidates/{cid}/resolve", headers=as_("viewer"), json={
+        "expected_version": 0, "outcome": "confirmed_same", "rationale": "x"}).status_code == 403
+    r = client.post(f"/api/v1/identity-candidates/{cid}/resolve", headers=analyst, json={
+        "expected_version": 0, "outcome": "confirmed_distinct", "rationale": "different VMs behind one DNS name"})
+    assert r.status_code == 200 and r.json()["status"] == "confirmed_distinct"
+    assert client.post(f"/api/v1/identity-candidates/{cid}/resolve", headers=analyst, json={
+        "expected_version": 0, "outcome": "dismissed", "rationale": "again"}).status_code == 409
+    asset = client.get(f"/api/v1/assets/{cands[0]['assets'][0]['id']}", headers=analyst).json()
+    assert {i["strength"] for i in asset["identifiers"]} == {"strong", "weak"}
+    assert client.get(f"/api/v1/assets/{cands[0]['assets'][0]['id']}", headers=as_("consultant", tenant="b")).status_code == 404

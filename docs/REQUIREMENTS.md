@@ -16,7 +16,7 @@ Test references are abbreviated: `cases::name` = tests/integration/test_cases.py
 `evo::` = test_evidence_outbox.py, `api::` = test_api.py, `s3::` = test_s3_store.py, `unit::` = tests/unit/test_rules.py,
 `spike::` = experiments/workflow-spike/tests/test_scenarios.py.
 
-Last updated: 2026-10-22.
+Last updated: 2026-10-22 (Phase B checkpoint).
 
 
 ## Known gaps at this checkpoint (explicit)
@@ -27,8 +27,8 @@ Last updated: 2026-10-22.
 | Risk acceptance is **single-step**; the request, authorise and renew flow is not built | RISK-02, ADR 0004 | planned |
 | **Workflow engine not selected**; Temporal and PostgreSQL-backed experiments only | ARC-02, ADR 0006 | implementing (comparison) |
 | No route back from planned/remediating to review | R7, DECISIONS.md | awaiting decision |
-| Not built: ingestion (Phase B), investigation and AI, prioritisation (C), actions, approvals, workflow adapters, reporting and GRC (D), UI, Helm/AKS, observability, backup/restore, retention and deletion (F), evaluation dataset | sections 8 to 17 | planned |
-| **No connector exists at any support level**; all 20 catalogue entries are planned; commercial ones need licensed accounts for sandbox validation | INT-01..INT-20 | planned / blocked for sandbox validation |
+| Not built: webhooks, merge/split execution, Defender/AWS context (Phase B remainder), investigation and AI, prioritisation (C), actions, approvals, workflow adapters, reporting and GRC (D), UI, Helm/AKS, observability, backup/restore, retention and deletion (F), evaluation dataset | sections 8 to 17 | planned |
+| **No connector is sandbox-validated or production-supported.** Four are fixture-tested (Trivy and SARIF with real tool output; Tenable and Azure Resource Graph with synthetic data and local fakes); the other 16 are planned; commercial ones need licensed accounts | INT-01..INT-20 | fixture-tested / planned / blocked for sandbox validation |
 
 ---
 
@@ -39,7 +39,7 @@ Last updated: 2026-10-22.
 | B01 | Original observations remain distinguishable from conclusions and human decisions | `evidence_objects`, `decisions`, `verification_runs` are separate append-only records | iso::test_append_only_tables_reject_mutation_even_for_owner | implementing | `observations` table and model-analysis records arrive in Phases B/C |
 | B02 | Consequential decisions reference evidence snapshot, policy version and actor authority | `decisions.authority` JSON (bindings, roles, evaluated_at); `decision_evidence` | api::test_analyst_journey_to_verified_closure (evidence link), cases::test_decisions_record_authority | implementing | Authority and evidence verified; snapshot and policy columns null until Phase C |
 | B03 | Missing, stale or contradictory evidence cannot justify dismissal, priority reduction or verified closure | `record_assessment`, `dismiss`, `verification_outcome`, `validate_closure` trigger | cases::test_definite_assessment_requires_verified_evidence, ::test_inconclusive_assessment_cannot_be_dismissed, ::test_wrong_deployment_digest_is_inconclusive, ::test_partial_coverage_... | implementing | Verified for dismissal and verified closure; priority-reduction path is Phase C; staleness needs observation freshness (Phase B) |
-| B04 | Failed or partial synchronisation never implies remediation | No command closes on absence | none | planned | Ingestion pipeline (Phase B) |
+| B04 | Failed or partial synchronisation never implies remediation | coverage rules; absence and source fixes never touch cases | ing::test_partial_scan..., ::test_tenable_identity..., sync::test_interrupted_sync_keeps_committed_pages_as_partial | verified | |
 | B05 | Untrusted content cannot grant authority, change policy or choose tool destinations | Authority only from tokens and bindings | none | planned | Investigation tools and gateway (Phase C) |
 | B06 | Records, jobs, objects, credentials, caches and model requests enforce tenant boundaries | RLS, composite FKs, `TenantObjectStore`, tx-bound context | iso::*, evo::test_cross_tenant_evidence_is_not_found, api::test_cross_tenant_access_through_api_is_denied | implementing | Verified for database, API and object storage; jobs, credentials, caches and model requests do not exist yet |
 | B07 | Approvals bind to exact action, arguments, resources, tenant, validity and use count | Experiment only | spike::approval digest mismatch, expired approval | implementing | Platform action tables not built (Phase D / ADR 0006) |
@@ -53,16 +53,16 @@ Last updated: 2026-10-22.
 
 | ID | Scenario | Verification | Status | Notes |
 |---|---|---|---|---|
-| A01 | Reimport and replay: no duplicate occurrences, decisions or actions | none | planned | `record_occurrence` is idempotent on source identity but untested; import pipeline is Phase B |
+| A01 | Reimport and replay: no duplicate occurrences, decisions or external actions | ing::test_replayed_import_creates_no_duplicates, ::test_resume_after_in_process_crash_skips_committed_pages, ::test_real_process_kill_then_resume | implementing | Occurrences, cases, events and decisions verified; external actions do not exist yet |
 | A02 | Lost acknowledgement after ticket creation reconciles or pauses | spike (Temporal) passed | implementing | Must be re-proven on the selected engine inside the platform (ADR 0006) |
-| A03 | Half a scan: keep cases, show partial coverage, close none | none | planned | Phase B |
-| A04 | Conflicting asset identifiers require review; no cross-tenant/deployment merge | iso::test_cross_tenant_foreign_key_rejected (tenant part) | planned | Identity candidates are Phase B |
+| A03 | Half a scan: keep cases, show partial coverage, close none | ing::test_partial_scan_closes_nothing_and_complete_rescan_records_absence | verified | |
+| A04 | Conflicting asset identifiers require review; no cross-tenant/deployment merge | ing::test_tenable_identity..., sync::test_tenable_host_and_azure_vm..., iso::test_cross_tenant_foreign_key_rejected | implementing | Weak overlaps verified; strong conflict path untested; merge execution not built |
 | A05 | Malicious instructions in scanner text change nothing | none | planned | Phase C adversarial suite |
 | A06 | Model conclusion citing nonexistent observation is rejected | none | planned | Phase C |
 | A07 | Revoked evidence access or approval before execution denies and records why | cases::test_permission_scope_and_revocation (permission part) | implementing | Approval revocation is Phase D |
 | A08 | Changed arguments after approval require new approval | spike digest mismatch | implementing | Phase D in platform |
 | A09 | External ticket closure without deployment proof keeps the case open | cases::test_no_closure_path_from_remediating | implementing | Domain side verified; Jira/ServiceNow sync must preserve it (Phase D) |
-| A10 | Losing a connector or model preserves work and resumes with bounded retry | none | planned | Phases B/C |
+| A10 | Losing a connector or model preserves work and resumes with bounded retry | sync::test_interrupted_sync..., adp::test_tenable_client_bounded_retries... | implementing | Connector part verified against fakes; model part is Phase C |
 | A11 | Risk acceptance expiry reopens review and notifies the owner | cases::test_risk_acceptance_limits_owner_and_expiry_reopens | implementing | Reopen and notification event verified; scheduled sweep process and notification delivery not built |
 | A12 | Worker restarts at each durable boundary: no lost decisions or repeated effects | spike worker/server kills passed | implementing | ADR 0006 |
 | A13 | Cross-tenant access via API, jobs, object paths, exports, caches is denied and audited | api::test_cross_tenant_access_through_api_is_denied, evo::test_tenant_object_store_refuses_foreign_keys, iso::test_tenant_selection_and_security_events | implementing | Jobs, exports and caches not built; 404s inside a tenant are not yet audited as denials |
@@ -176,7 +176,8 @@ Last updated: 2026-10-22.
 | TEN-15 | Cross-client portfolio via separate authorised aggregation path | none | none | planned | |
 | TEN-16 | Suspension and revocation block new actions and cancel waiting work | tenant status in policies | iso::test_suspended_tenant_is_inaccessible | implementing | Waiting work cancellation pending |
 | TEN-17 | Document that a compromised application choosing tenant context exceeds context-based RLS | ADR 0002, README | review | verified | Documentation requirement |
-| TEN-18 | Provider webhooks resolve tenant from authenticated connection | none | none | planned | Phase B |
+| TEN-18 | Provider webhooks resolve tenant from authenticated connection | none | none | planned | |
+| TEN-19 | Workers take tenant and principal from trusted persisted records (`axiom_auth.active_tenant_workers`), never from payloads | workers/ingest.py | sync::test_tenable_sync_end_to_end_and_checkpoint (dispatch path) | verified | |
 
 ## 7. Audit, outbox and API conventions (S 2 B12, P 3-4, D 8)
 
@@ -199,28 +200,36 @@ Last updated: 2026-10-22.
 | API-08 | Versioned contracts and generated OpenAPI under contracts/ | OpenAPI served at /api/v1/openapi.json | manual check (200) | implementing | Not exported or diff-checked yet |
 | API-09 | Permission denial distinct from dependency failure; hidden records return 404 | error mapping | api::test_cross_tenant_access_through_api_is_denied | verified | |
 
-## 8. Ingestion and assets (S 5, P 5, D 3, 5) - Phase B
+## 8. Ingestion and assets (S 5, P 5, D 3-5) - Phase B (ADR 0009)
 
-| ID | Requirement | Status | Notes |
-|---|---|---|---|
-| ING-01 | Generic import pipeline retaining original files, provenance, timestamps, scope and source-specific fields | planned | |
-| ING-02 | Adapters declare operations, schema versions, limits and capability status | planned | |
-| ING-03 | Pagination, provider rate limits, bounded retry classification | planned | |
-| ING-04 | Resumable checkpoints advanced only after durable writes | planned | |
-| ING-05 | Replay deduplication by tenant/source identity and observation version, not CVE | planned | Occurrence uniqueness exists in schema |
-| ING-06 | Run coverage complete/partial/failed/unknown per declared scope | planned | |
-| ING-07 | Provider deletions/tombstones are observations, not closure | planned | |
-| ING-08 | Webhooks: signature verification, replay protection, tenant-bound connection | planned | |
-| ING-09 | Visible quarantine of invalid records | planned | |
-| ING-10 | Connector health, freshness and operations UI | planned | |
-| AST-01 | Identity prefers immutable provider identifiers and deployment digests | planned | |
-| AST-02 | Conflicting identifiers block automatic merge and require review | planned | A04 |
-| AST-03 | Reversible merges and splits through recorded links | planned | |
-| AST-04 | No global uniqueness on IP, name or tag | implemented_unverified | No such constraints exist |
-| AST-05 | Immutable asset versions with effective intervals | implementing | `asset_versions` immutable; intervals pending |
-| AST-06 | Business context versions with effective dates (owner, criticality, classification) | planned | Journey J03 |
-| AST-07 | Asset relationships for deployment and exposure paths, unknown allowed | planned | |
-| AST-08 | No cross-tenant asset links | verified | Composite FKs, iso::test_cross_tenant_foreign_key_rejected |
+`ing::` = tests/integration/test_ingestion.py, `sync::` = test_sync.py, `adp::` = tests/unit/test_adapters.py.
+
+| ID | Requirement | Implementation | Verification | Status | Notes |
+|---|---|---|---|---|---|
+| ING-01 | Import pipeline retaining original files, provenance, timestamps, scope and source-specific fields | `ingestion/pipeline.py`, migration 0003 | ing::test_trivy_import_preserves_original_and_correlates, ::test_tampered_original_fails_the_run | verified | |
+| ING-02 | Adapters declare formats, operations, versions and support level | `adapters/base.py`, `catalogue.py`, `/api/v1/adapters` | adp::test_identifier_strength_and_catalogue_honesty, api::test_ingestion_journey_through_api | verified | Limits and permissions documentation per adapter still to write |
+| ING-03 | Pagination, provider rate limits, bounded retry classification | Tenable and Resource Graph clients | adp::test_tenable_export_client_flow..., ::test_tenable_client_bounded_retries..., ::test_resource_graph_pages_and_parser | verified (against fakes) | Not validated against live services |
+| ING-04 | Resumable checkpoints advanced only after durable writes | page commits, fenced; checkpoints in finalisation | ing::test_resume_after_in_process_crash..., ::test_real_process_kill_then_resume, sync::test_tenable_sync_complete_advances_checkpoint... | verified | |
+| ING-05 | Replay deduplication by tenant/source identity and observation version, not CVE | source_records, occurrence uniqueness | ing::test_replayed_import_creates_no_duplicates, adp::test_trivy_real_report | verified | |
+| ING-06 | Run coverage complete/partial/failed/unknown | `_finalise` | ing::test_partial_scan..., ::test_tenable_identity..., sync:: tests | verified | |
+| ING-07 | Provider deletions/tombstones are observations, not closure | `tombstone` observation type and absence rules | ing::test_partial_scan_closes_nothing_and_complete_rescan_records_absence (absence part) | implementing | No source in scope emits tombstones yet |
+| ING-08 | Webhooks: signature verification, replay protection, tenant-bound connection | none | none | planned | |
+| ING-09 | Visible quarantine of invalid records | `quarantined_records`, run API | ing::test_tenable_identity..., api::test_identity_candidate_review_through_api | verified | |
+| ING-10 | Connector health, freshness and operations UI | run listing API only | api::test_ingestion_journey_through_api | implementing | Health/freshness metrics and UI planned |
+| ING-11 | Stale ingestion workers cannot commit (fencing) | lease token + `ingestion_page_fence` trigger | ing::test_stale_worker_is_fenced (also passes with the service check removed) | verified | |
+| ING-12 | Source-reported fixes never close cases | `_correlate` | ing::test_tenable_identity_uncertainty_quarantine_and_source_fix | verified | |
+| ING-13 | Imported text is untrusted data | stored in `source_fields` only | ing::test_sarif_import_with_untrusted_text_changes_no_authority | verified (ingestion part) | A05 also needs Phase C model-path tests |
+| AST-01 | Identity prefers immutable provider identifiers and deployment digests | `ingestion/identity.py` | ing::, sync:: tests | verified | |
+| AST-02 | Conflicting identifiers require review; no automatic merge | candidates; `conflict` status | ing::test_tenable_identity..., sync::test_tenable_host_and_azure_vm_with_same_hostname_stay_separate | verified for weak overlaps | Strong-identifier conflict path implemented, not yet tested |
+| AST-03 | Reversible merges and splits through recorded links | review decisions recorded only | api::test_identity_candidate_review_through_api | implementing | Merge/split execution not built |
+| AST-04 | No global uniqueness on IP, name or tag | weak identifiers never unique | sync::test_tenable_host_and_azure_vm... (3 assets share a hostname) | verified | |
+| AST-05 | Immutable asset versions with deployment digests | `asset_versions` | ing:: tests | implementing | Effective intervals pending |
+| AST-06 | Business context versions with effective dates and basis | `business_context_versions` | sync::test_azure_resource_graph_sync_context_and_identity | implementing | Source-tag assertions done; user assertions (journey J03) pending |
+| AST-07 | Asset relationships (deployment and exposure paths) | none | none | planned | |
+| AST-08 | No cross-tenant asset links | composite FKs; RLS | iso::test_cross_tenant_foreign_key_rejected, api::test_identity_candidate_review_through_api | verified | |
+| AST-09 | Declared subjects recorded as importer assertions | `declared_by_importer` origin | ing::test_sarif_without_subject_fails_until_declared | verified | |
+| CORR-01 | Correlate occurrences into cases per asset and vulnerability without discarding scanner identities | `_correlate` | ing::test_trivy_import_preserves_original_and_correlates | verified | Cross-scanner correlation not attempted |
+| CORR-02 | Recurrence reopens cases (new occurrence after closure; old deployment seen after verified closure) | `_correlate` | ing::test_recurrence_after_verified_closure_reopens | verified | |
 
 ## 9. Investigation and AI (S 6, P 6) - Phase C
 
@@ -300,18 +309,18 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 
 | ID | Integration | Adapter type | Support level | Validation dependency |
 |---|---|---|---|---|
-| INT-01 | Tenable (Vulnerability Management) | scanner | planned | Tenable account and API keys |
+| INT-01 | Tenable (Vulnerability Management): export chunk parser and export API client | scanner | **fixture-tested** (synthetic chunks, local fake API) | Tenable account and API keys for sandbox validation |
 | INT-02 | Qualys VMDR | scanner | planned | Qualys subscription |
 | INT-03 | Rapid7 InsightVM | scanner | planned | InsightVM console or cloud API access |
 | INT-04 | CodeQL (via SARIF / GitHub code scanning API) | scanner | planned | Public SARIF samples; GitHub token for API |
 | INT-05 | Semgrep | scanner | planned | OSS CLI output fixtures; Semgrep AppSec Platform account for API |
 | INT-06 | Snyk | scanner | planned | Snyk org and token |
-| INT-07 | Trivy | scanner | planned | Open source; fixtures generated locally |
-| INT-08 | Generic SARIF 2.1.0 | scanner | planned | OASIS schema and samples |
+| INT-07 | Trivy JSON (SchemaVersion 2, container images) | scanner | **fixture-tested** (real Trivy 0.76.1 output) | Other report types (fs, sbom, k8s) not tested |
+| INT-08 | Generic SARIF 2.1.0 | scanner | **fixture-tested** (real Trivy SARIF, synthetic code-scanning) | Real CodeQL/Semgrep output not yet tested |
 | INT-09 | OWASP ZAP | scanner (DAST) | planned | Open source; local target |
 | INT-10 | Burp Suite DAST | scanner (DAST) | planned | PortSwigger licence |
 | INT-11 | Microsoft Defender for Cloud | scanner/context | planned | Azure subscription |
-| INT-12 | Azure Resource Graph | context | planned | Azure subscription |
+| INT-12 | Azure Resource Graph | context | **fixture-tested** (synthetic pages, local fake API) | Azure subscription and workload identity for sandbox validation |
 | INT-13 | AWS Security Hub | scanner/context | planned | AWS account |
 | INT-14 | AWS resource inventory (e.g. AWS Config) | context | planned | AWS account |
 | INT-15 | Jira | workflow | planned | Jira Cloud site |

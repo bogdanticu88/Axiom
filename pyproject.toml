@@ -14,12 +14,12 @@ dependencies = [
   "psycopg-pool",
   "pyjwt[crypto]",
   "boto3",
+  "httpx",
 ]
 
 [dependency-groups]
 dev = [
   "pytest",
-  "httpx",
 ]
 
 [tool.uv]

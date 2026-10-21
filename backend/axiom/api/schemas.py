@@ -142,3 +142,38 @@ class DelegationLimit(Body):
     scope_id: UUID
     max_priority: Literal["low", "medium", "high", "urgent"]
     max_duration_days: int = Field(ge=1, le=730)
+
+
+class DeclaredIdentifier(Body):
+    namespace: str = Field(pattern=r"^[a-z0-9_]+$")
+    value: str = Field(min_length=1, max_length=2048)
+
+
+class DeclaredSubject(Body):
+    identifiers: list[DeclaredIdentifier] = Field(min_length=1, max_length=20)
+    kind: Literal["host", "container_image", "workload", "cloud_resource", "repository", "application", "unknown"]
+    display_name: str | None = Field(default=None, max_length=500)
+    deployment_digest: str | None = Field(default=None, pattern=r"^[a-z0-9]+:[0-9a-f]{32,128}$")
+    version_label: str | None = Field(default=None, max_length=200)
+
+
+class RequestImport(Body):
+    evidence_id: UUID
+    adapter: str = Field(pattern=r"^[a-z0-9_]+$")
+    scope_id: UUID
+    declared_subject: DeclaredSubject | None = None
+
+
+class CreateConnection(Body):
+    adapter: Literal["tenable_vm", "azure_resource_graph"]
+    scope_id: UUID
+    display_name: str = Field(min_length=1, max_length=200)
+    base_url: str | None = Field(default=None, max_length=500)
+    credential_ref: str | None = Field(default=None, pattern=r"^secretref:[A-Za-z0-9._/-]+$")
+    config: dict = Field(default_factory=dict)
+
+
+class ResolveCandidate(Body):
+    expected_version: int = Field(ge=0)
+    outcome: Literal["confirmed_same", "confirmed_distinct", "dismissed"]
+    rationale: str = Field(min_length=1, max_length=5000)

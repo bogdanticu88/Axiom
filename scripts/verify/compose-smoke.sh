@@ -38,7 +38,7 @@ for i in $(seq 1 60); do
   [ "$(dc ps api --format '{{.Health}}')" = "healthy" ] && break; sleep 2
 done
 [ "$(dc ps api --format '{{.Health}}')" = "healthy" ] || fail "api not healthy"
-dc logs app-init --no-color | grep -q "applied: 0001, 0002" || fail "migrations not applied on fresh install"
+dc logs app-init --no-color | grep -q "applied: 0001, 0002, 0003" || fail "migrations not applied on fresh install"
 echo "ok   fresh install: migrations applied, api healthy"
 B="http://127.0.0.1:$PORT/api/v1"
 tok() { dc exec -T api python -m axiom.devtools mint --dir /var/lib/axiom/dev-idp --sub "$1"; }
@@ -70,9 +70,26 @@ echo "ok   case create, start-investigation, stale version -> 409"
 echo "ok   consultant in other tenant -> 404; non-member tenant selection -> 403"
 N=$(dc exec -T postgres psql -U postgres -d axiom -tAc "SELECT count(*) FROM axiom.audit_events a JOIN axiom.case_events e ON e.audit_event_id=a.id AND e.tenant_id=a.tenant_id WHERE e.case_id='$CASE'")
 [ "$N" = 2 ] || fail "expected 2 audited case events, got $N"; echo "ok   case events linked to audit rows: $N"
+FIX="$ROOT/tests/fixtures/trivy/debian-bullseye-20230612-slim.subset.json"
+FSHA=$(sha256sum "$FIX" | cut -d' ' -f1); FSIZE=$(stat -c %s "$FIX")
+FEV=$(curl -sf "${H[@]}" -H 'Content-Type: application/json' -d "{\"scope_id\":\"$PAY\",\"sha256\":\"$FSHA\",\"size\":$FSIZE,\"media_type\":\"application/json\",\"classification\":\"internal\"}" "$B/evidence" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+curl -sf "${H[@]}" -X PUT --data-binary @"$FIX" "$B/evidence/$FEV/content" >/dev/null
+curl -sf "${H[@]}" -X POST "$B/evidence/$FEV/finalise" >/dev/null
+RUN=$(curl -sf "${H[@]}" -H 'Content-Type: application/json' -d "{\"evidence_id\":\"$FEV\",\"adapter\":\"trivy_json\",\"scope_id\":\"$PAY\"}" "$B/imports" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])') || fail "import request"
+ST=""
+for i in $(seq 1 40); do
+  ST=$(curl -sf "${H[@]}" "$B/ingestion-runs/$RUN" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["status"],d["coverage"],d["counts"].get("findings"))')
+  case "$ST" in completed*|failed*) break;; esac; sleep 2
+done
+[ "$ST" = "completed complete 30" ] || fail "import via worker: $ST"
+NC=$(curl -sf "${H[@]}" "$B/cases?limit=200" | python3 -c 'import sys,json;print(len(json.load(sys.stdin)["items"]))')
+echo "ok   Trivy import via API + ingest-worker: $ST; cases visible: $NC"
 dc up -d --no-build --force-recreate db-init app-init >/dev/null 2>&1
-sleep 15
-dc logs app-init --no-color | tail -5 | grep -q "already seeded" || fail "re-init not idempotent"
+for i in $(seq 1 60); do   # wait for the recreated one-shot container to finish (no fixed sleep)
+  [ "$(dc ps -a app-init --format '{{.State}}')" = "exited" ] && break; sleep 2
+done
+[ "$(dc ps -a app-init --format '{{.State}} {{.ExitCode}}')" = "exited 0" ] || fail "re-init did not exit cleanly"
+dc logs app-init --no-color | grep -q "already seeded" || fail "re-init not idempotent"
 dc logs app-init --no-color | grep -q "applied: none" || fail "re-migration applied something"
 echo "ok   re-running init: migrations 'applied: none', seed 'already seeded'"
 echo "SMOKE PASS ($P)"

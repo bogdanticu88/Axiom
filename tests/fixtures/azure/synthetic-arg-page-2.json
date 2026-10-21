@@ -1,0 +1,6 @@
+{"totalRecords": 3, "count": 1, "resultTruncated": "false", "facets": [],
+ "data": [
+  {"id": "/subscriptions/00000000-1111-4222-8333-444444444444/resourceGroups/rg-web/providers/Microsoft.Compute/virtualMachines/web-01",
+   "name": "web-01", "type": "microsoft.compute/virtualmachines", "location": "northeurope", "subscriptionId": "00000000-1111-4222-8333-444444444444",
+   "resourceGroup": "rg-web", "tags": {"owner": "web-team"}, "properties": {"vmId": "1b2c3d4e-5f60-4718-8293-a4b5c6d7e8f9"}}
+ ]}

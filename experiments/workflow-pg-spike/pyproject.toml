@@ -1,0 +1,18 @@
+[project]
+name = "workflow-pg-spike"
+version = "0.0.0"
+description = "Bounded experiment: a PostgreSQL-only durable workflow runner for remediation actions, under the same fault tests as the Temporal spike"
+requires-python = ">=3.13"
+dependencies = [
+    "psycopg[binary]",
+    "psycopg-pool",
+    "pytest",
+]
+
+[tool.uv]
+exclude-newer = "2026-10-14T00:00:00Z"
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "tests"]

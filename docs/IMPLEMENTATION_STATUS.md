@@ -1,6 +1,6 @@
 # Implementation status
 
-Last updated: 2026-10-22 (foundation checkpoint). Requirement-level detail is in REQUIREMENTS.md.
+Last updated: 2026-10-22 (Phase B checkpoint). Requirement-level detail is in REQUIREMENTS.md.
 
 Capability states used here:
 **verified** (built and exercised by tests that were run), **implemented** (built, not yet exercised),
@@ -29,9 +29,29 @@ Capability states used here:
 finalisation is safe (met for API-streamed uploads); workflow survives crash/restart and approval waiting without
 duplicate action (**not met in product code**: shown only in the Temporal experiment).
 
-## Phase B: Ingestion and inventory - not started
-Generic import pipeline, Tenable, Trivy, SARIF, Azure context, asset history, deduplication, quarantine, connector
-operations UI. Schema has minimal `assets`, `asset_versions`, `finding_occurrences` and links used by case verification.
+## Phase B: Ingestion and inventory - incomplete (core verified)
+
+| Item | State | Evidence / gap |
+|---|---|---|
+| Import pipeline: runs, fenced page commits, resume, replay safety | verified | ing:: tests incl. real SIGKILL resume; ADR 0009 |
+| Original evidence preservation and re-verification | verified | ing::test_tampered_original_fails_the_run |
+| Source identities, observations, occurrence history | verified | ing::test_replayed_import..., ::test_partial_scan... |
+| Quarantine and partial-import coverage | verified | ing::, sync::, API quarantine listing |
+| Asset correlation with explicit uncertainty (strong/weak identifiers, candidates, review decisions) | verified for weak overlaps | strong-conflict path untested; merge/split execution **not built** |
+| Case correlation and recurrence reopening | verified | ing::test_recurrence_after_verified_closure_reopens |
+| Trivy JSON | verified at **fixture-tested** level | real Trivy 0.76.1 output |
+| Generic SARIF 2.1.0 | verified at **fixture-tested** level | real Trivy SARIF + synthetic; real CodeQL/Semgrep not tested |
+| Tenable export (parser + API client + sync) | verified at **fixture-tested** level | synthetic chunks, local fake API; **no live Tenable validation** |
+| Azure Resource Graph context (client + sync + tag context) | verified at **fixture-tested** level | synthetic pages, local fake API; **no live Azure validation**; production credential resolution (Key Vault / workload identity) not built |
+| Connections with secret references; checkpoints after complete runs | verified | sync:: tests |
+| Ingestion worker | **interim** | dispatcher pending ADR 0006; included in Compose and smoke-tested |
+| API: imports, runs, quarantine, connections, sync, adapters, identity candidates, asset view | verified | api:: tests, Compose smoke |
+| Webhooks, connector health/freshness metrics, connector operations UI | not started | ING-08, ING-10 |
+| Defender for Cloud, AWS inventory and other Phase E connectors | not started | catalogue lists them as planned |
+
+**Phase B gate** (Plan 8): repeat import is stable (met); partial ingestion is visible (met); ambiguous assets stay
+separate (met for weak overlaps); live access validates advertised API operations (**not met**: no vendor accounts,
+so no adapter is advertised beyond fixture-tested).
 
 ## Phase C: Investigation and prioritisation - not started
 ## Phase D: Remediation and GRC lifecycle - not started
@@ -51,7 +71,8 @@ All 20 catalogue connectors are at "planned". None is fixture-tested, sandbox-va
 | Request/authorise/renew risk acceptance | not started (single-step only) |
 | Approvals and external actions in product code | not started (experiment only) |
 | Production SSO | not started |
-| Ingestion, correlation, connectors | not started |
+| Ingestion and correlation | verified core (see Phase B) |
+| Connectors | 4 fixture-tested, 16 planned, none sandbox-validated |
 | Investigation, model gateway, policy engine | not started |
 | Reporting, GRC, exports | not started |
 | Web UI | not started |

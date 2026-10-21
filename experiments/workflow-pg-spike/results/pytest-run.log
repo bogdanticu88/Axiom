@@ -1,0 +1,501 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+============================= test session starts ==============================
+platform linux -- Python 3.13.16, pytest-9.1.1, pluggy-1.6.0 -- /home/dev/axiom/experiments/workflow-pg-spike/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/dev/axiom/experiments/workflow-pg-spike
+configfile: pyproject.toml
+collecting ... collected 26 items
+
+tests/test_scenarios.py::test_00_worker_role_is_least_privilege [01:07:08.659] created database wfspike_3652edf3
+[01:07:08.663] wfspike_worker attributes: {'rolsuper': False, 'rolcreatedb': False, 'rolcreaterole': False, 'rolbypassrls': False}
+[01:07:08.668] worker: 'CREATE TABLE wf.x (i int)' -> InsufficientPrivilege: permission denied for schema wf
+[01:07:08.669] worker: 'DELETE FROM wf.run_events' -> InsufficientPrivilege: permission denied for table run_events
+[01:07:08.669] worker: 'TRUNCATE wf.run_events' -> InsufficientPrivilege: permission denied for table run_events
+PASSED[01:07:08.710] dropped database wfspike_3652edf3
+
+tests/test_scenarios.py::test_01_worker_sigkill_while_awaiting_approval [01:07:08.766] created database wfspike_831a1b71
+[01:07:08.768] started ticket-service pid=3915
+[01:07:08.819] started worker-1 pid=3916
+[01:07:08.976] created run 06678dcd-8eb3-4353-932c-12d4c9cbc885 tenant=tenant-a 
+[01:07:09.984] while awaiting approval: state=awaiting_approval lease={'lease_owner': None, 'fencing_token': 0}
+[01:07:09.990] SIGKILLed worker-1 pid=3916 rc=-9
+[01:07:09.990] started worker-2 pid=3928
+[01:07:10.147] approved run 06678dcd-8eb3-4353-932c-12d4c9cbc885 (approval 1) 
+[01:07:10.358] completed 0.22s after approval
+[01:07:10.378] external tickets: [('TCK-0eb25111', '5445a3b846a7', 1)]
+[01:07:10.382]   run: {"state": "completed", "attempts": 1, "handler_version": 1, "detail": "created TCK-0eb25111 (handler v1)"}
+[01:07:10.384]   wf.job_leases: 1 row(s)
+[01:07:10.384]     {"lease_owner": null, "fencing_token": 1, "lease_expires_at": null}
+[01:07:10.388]   wf.execution_intents: 1 row(s)
+[01:07:10.388]     {"key": "5445a3b846a7", "fencing_token": 1, "state": "succeeded", "attempt": 1}
+[01:07:10.390]   wf.execution_results: 1 row(s)
+[01:07:10.390]     {"outcome": "created", "ticket_id": "TCK-0eb25111", "fencing_token": 1, "handler_version": 1}
+[01:07:10.393]   wf.run_events: 5 row(s)
+[01:07:10.393]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:07:10.393]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=33983f26b3ad5a73"}
+[01:07:10.393]     {"event": "claimed", "worker": "worker-2", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:07:10.393]     {"event": "gate_passed", "worker": "worker-2", "fencing_token": 1, "detail": "attempt 1 approval 1"}
+[01:07:10.393]     {"event": "completed", "worker": "worker-2", "fencing_token": 1, "detail": "created TCK-0eb25111 (handler v1)"}
+PASSED[01:07:10.443] dropped database wfspike_831a1b71
+
+tests/test_scenarios.py::test_02_approval_digest_mismatch [01:07:10.493] created database wfspike_f9a3a7af
+[01:07:10.495] started ticket-service pid=3951
+[01:07:10.546] started worker-1 pid=3952
+[01:07:10.703] created run 8d9619ce-ba72-426a-a3d4-e833ac3ff2b7 tenant=tenant-a 
+[01:07:10.707] approved run 8d9619ce-ba72-426a-a3d4-e833ac3ff2b7 (approval 1) 
+[01:07:10.921] state=approval_mismatch detail=approved digest ad0bfd964f6d1546 != proposal digest 33983f26b3ad5a73
+[01:07:10.924]   run: {"state": "approval_mismatch", "attempts": 0, "handler_version": 1, "detail": "approved digest ad0bfd964f6d1546 != proposal digest 33983f26b3ad5a73"}
+[01:07:10.927]   wf.job_leases: 1 row(s)
+[01:07:10.927]     {"lease_owner": null, "fencing_token": 1, "lease_expires_at": null}
+[01:07:10.931]   wf.execution_intents: 0 row(s)
+[01:07:10.933]   wf.execution_results: 0 row(s)
+[01:07:10.936]   wf.run_events: 4 row(s)
+[01:07:10.936]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:07:10.936]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=ad0bfd964f6d1546"}
+[01:07:10.936]     {"event": "claimed", "worker": "worker-1", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:07:10.936]     {"event": "approval_mismatch", "worker": "worker-1", "fencing_token": 1, "detail": "approved digest ad0bfd964f6d1546 != proposal digest 33983f26b3ad5a73"}
+PASSED[01:07:10.959] dropped database wfspike_f9a3a7af
+
+tests/test_scenarios.py::test_03a_expired_approval_not_used [01:07:11.009] created database wfspike_84defc81
+[01:07:11.011] started ticket-service pid=3978
+[01:07:11.067] created run 1dc7a044-9fdd-4a73-9825-8e8fa087801e tenant=tenant-a 
+[01:07:11.073] approved run 1dc7a044-9fdd-4a73-9825-8e8fa087801e (approval 1) {'valid_for_s': 1.0}
+[01:07:13.074] started worker-1 pid=3984
+[01:07:13.232] state=approval_expired detail=approval 1 expired at 2026-10-22T01:07:12.070137+03:00
+PASSED[01:07:13.282] dropped database wfspike_84defc81
+
+tests/test_scenarios.py::test_03b_approval_deadline_timer [01:07:13.334] created database wfspike_9049faac
+[01:07:13.336] started ticket-service pid=3999
+[01:07:13.387] started worker-1 pid=4000
+[01:07:13.545] created run ca7c2816-26e8-44ad-a1ea-0925ebeb6f35 tenant=tenant-a {'approval_window_s': 2}
+[01:07:15.844] timer fired: state=approval_expired after 2.30s (window 2s); detail=approval deadline passed without approval; finished_at - approval_deadline = 0.199s
+[01:07:15.847] late approval -> Rejected: run ca7c2816-26e8-44ad-a1ea-0925ebeb6f35 is approval_expired, not awaiting_approval
+[01:07:15.850] events: ['created', 'claimed', 'approval_deadline_timer_fired']
+PASSED[01:07:15.904] dropped database wfspike_9049faac
+
+tests/test_scenarios.py::test_04_lost_ack[reconcile_by_lookup-svc_flags0-w2_env0-1-adopted] [01:07:15.957] created database wfspike_cda9a5e5
+[01:07:15.959] started ticket-service pid=4041
+[01:07:16.010] started worker-1 pid=4042
+[01:07:16.168] created run 456769cc-606c-485a-82e1-a999241d7aa0 tenant=tenant-a 
+[01:07:16.175] approved run 456769cc-606c-485a-82e1-a999241d7aa0 (approval 1) 
+[01:07:16.383] ticket exists (1), result rows=0, intent={'state': 'executing', 'fencing_token': 1}; SIGKILL worker-1
+[01:07:16.387] SIGKILLed worker-1 pid=4042 rc=-9
+[01:07:16.388] started worker-2 pid=4057
+[01:07:19.562] completed 3.02s after worker-2 start (lease ttl 3.0s)
+[01:07:19.566] external tickets (1): [('TCK-9f38e3ef', 1)]
+[01:07:19.569]   run: {"state": "completed", "attempts": 1, "handler_version": 1, "detail": "adopted TCK-9f38e3ef found by lookup"}
+[01:07:19.571]   wf.job_leases: 1 row(s)
+[01:07:19.571]     {"lease_owner": null, "fencing_token": 2, "lease_expires_at": null}
+[01:07:19.574]   wf.execution_intents: 1 row(s)
+[01:07:19.574]     {"key": "24d6a71f3291", "fencing_token": 2, "state": "reconciled", "attempt": 1}
+[01:07:19.577]   wf.execution_results: 1 row(s)
+[01:07:19.577]     {"outcome": "adopted", "ticket_id": "TCK-9f38e3ef", "fencing_token": 2, "handler_version": 1}
+[01:07:19.580]   wf.run_events: 6 row(s)
+[01:07:19.580]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:07:19.580]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=33983f26b3ad5a73"}
+[01:07:19.580]     {"event": "claimed", "worker": "worker-1", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:07:19.580]     {"event": "gate_passed", "worker": "worker-1", "fencing_token": 1, "detail": "attempt 1 approval 1"}
+[01:07:19.580]     {"event": "claimed", "worker": "worker-2", "fencing_token": 2, "detail": "state=executing attempts=1"}
+[01:07:19.580]     {"event": "reconciled_adopted", "worker": "worker-2", "fencing_token": 2, "detail": "adopted TCK-9f38e3ef found by lookup"}
+PASSED[01:07:19.629] dropped database wfspike_cda9a5e5
+
+tests/test_scenarios.py::test_04_lost_ack[negative_control_no_reconcile-svc_flags1-w2_env1-2-created] [01:07:19.678] created database wfspike_82a172ed
+[01:07:19.680] started ticket-service pid=4108
+[01:07:19.731] started worker-1 pid=4109
+[01:07:19.888] created run bbcc5963-450d-4b78-8ce4-ace6d6585879 tenant=tenant-a 
+[01:07:19.894] approved run bbcc5963-450d-4b78-8ce4-ace6d6585879 (approval 1) 
+[01:07:20.155] ticket exists (1), result rows=0, intent={'state': 'executing', 'fencing_token': 1}; SIGKILL worker-1
+[01:07:20.158] SIGKILLed worker-1 pid=4109 rc=-9
+[01:07:20.159] started worker-2 pid=4124
+[01:07:23.232] completed 2.92s after worker-2 start (lease ttl 3.0s)
+[01:07:23.237] external tickets (2): [('TCK-3e654979', 1), ('TCK-75842171', 2)]
+[01:07:23.240]   run: {"state": "completed", "attempts": 2, "handler_version": 1, "detail": "created TCK-75842171 (handler v1)"}
+[01:07:23.243]   wf.job_leases: 1 row(s)
+[01:07:23.243]     {"lease_owner": null, "fencing_token": 2, "lease_expires_at": null}
+[01:07:23.245]   wf.execution_intents: 1 row(s)
+[01:07:23.245]     {"key": "a8bb90da698f", "fencing_token": 2, "state": "succeeded", "attempt": 2}
+[01:07:23.248]   wf.execution_results: 1 row(s)
+[01:07:23.248]     {"outcome": "created", "ticket_id": "TCK-75842171", "fencing_token": 2, "handler_version": 1}
+[01:07:23.252]   wf.run_events: 7 row(s)
+[01:07:23.252]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:07:23.252]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=33983f26b3ad5a73"}
+[01:07:23.252]     {"event": "claimed", "worker": "worker-1", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:07:23.252]     {"event": "gate_passed", "worker": "worker-1", "fencing_token": 1, "detail": "attempt 1 approval 1"}
+[01:07:23.252]     {"event": "claimed", "worker": "worker-2", "fencing_token": 2, "detail": "state=executing attempts=1"}
+[01:07:23.252]     {"event": "gate_passed", "worker": "worker-2", "fencing_token": 2, "detail": "attempt 2 approval 1"}
+[01:07:23.252]     {"event": "completed", "worker": "worker-2", "fencing_token": 2, "detail": "created TCK-75842171 (handler v1)"}
+PASSED[01:07:23.306] dropped database wfspike_82a172ed
+
+tests/test_scenarios.py::test_04_lost_ack[no_reconcile_but_external_dedupe-svc_flags2-w2_env2-1-deduplicated_by_external] [01:07:23.362] created database wfspike_8b26ddce
+[01:07:23.365] started ticket-service pid=4173
+[01:07:23.416] started worker-1 pid=4174
+[01:07:23.573] created run 97ede4d7-e1b9-4505-b21d-a3d200a77bc7 tenant=tenant-a 
+[01:07:23.578] approved run 97ede4d7-e1b9-4505-b21d-a3d200a77bc7 (approval 1) 
+[01:07:23.789] ticket exists (1), result rows=0, intent={'state': 'executing', 'fencing_token': 1}; SIGKILL worker-1
+[01:07:23.794] SIGKILLed worker-1 pid=4174 rc=-9
+[01:07:23.795] started worker-2 pid=4189
+[01:07:26.872] completed 2.93s after worker-2 start (lease ttl 3.0s)
+[01:07:26.877] external tickets (1): [('TCK-d6ab0342', 1)]
+[01:07:26.880]   run: {"state": "completed", "attempts": 2, "handler_version": 1, "detail": "deduplicated_by_external TCK-d6ab0342 (handler v1)"}
+[01:07:26.882]   wf.job_leases: 1 row(s)
+[01:07:26.882]     {"lease_owner": null, "fencing_token": 2, "lease_expires_at": null}
+[01:07:26.885]   wf.execution_intents: 1 row(s)
+[01:07:26.885]     {"key": "7b0f59691304", "fencing_token": 2, "state": "succeeded", "attempt": 2}
+[01:07:26.888]   wf.execution_results: 1 row(s)
+[01:07:26.888]     {"outcome": "deduplicated_by_external", "ticket_id": "TCK-d6ab0342", "fencing_token": 2, "handler_version": 1}
+[01:07:26.890]   wf.run_events: 7 row(s)
+[01:07:26.890]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:07:26.890]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=33983f26b3ad5a73"}
+[01:07:26.890]     {"event": "claimed", "worker": "worker-1", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:07:26.890]     {"event": "gate_passed", "worker": "worker-1", "fencing_token": 1, "detail": "attempt 1 approval 1"}
+[01:07:26.890]     {"event": "claimed", "worker": "worker-2", "fencing_token": 2, "detail": "state=executing attempts=1"}
+[01:07:26.890]     {"event": "gate_passed", "worker": "worker-2", "fencing_token": 2, "detail": "attempt 2 approval 1"}
+[01:07:26.890]     {"event": "completed", "worker": "worker-2", "fencing_token": 2, "detail": "deduplicated_by_external TCK-d6ab0342 (handler v1)"}
+PASSED[01:07:26.946] dropped database wfspike_8b26ddce
+
+tests/test_scenarios.py::test_05a_no_lookup_parks_for_operator [01:07:26.995] created database wfspike_3b234ef5
+[01:07:26.997] started ticket-service pid=4238
+[01:07:27.049] started worker-1 pid=4239
+[01:07:27.206] created run aedcd9a4-7c6f-4f54-b418-764bcd78e589 tenant=tenant-a 
+[01:07:27.212] approved run aedcd9a4-7c6f-4f54-b418-764bcd78e589 (approval 1) 
+[01:07:27.417] SIGKILLed worker-1 pid=4239 rc=-9
+[01:07:27.418] started worker-2 pid=4250
+[01:07:30.516] parked: outcome of an earlier attempt is unknown and the external system cannot be searched by idempotency key
+[01:07:33.523] after 3s parked: state=needs_operator_reconciliation tickets=1
+[01:07:33.538]   run: {"state": "completed", "attempts": 1, "handler_version": 1, "detail": "operator bob@example.test adopted TCK-098f6a06"}
+[01:07:33.543]   wf.job_leases: 1 row(s)
+[01:07:33.543]     {"lease_owner": null, "fencing_token": 2, "lease_expires_at": null}
+[01:07:33.545]   wf.execution_intents: 1 row(s)
+[01:07:33.545]     {"key": "9fbf1d45b1e6", "fencing_token": 1, "state": "reconciled", "attempt": 1}
+[01:07:33.548]   wf.execution_results: 1 row(s)
+[01:07:33.548]     {"outcome": "operator_adopted", "ticket_id": "TCK-098f6a06", "fencing_token": null, "handler_version": 1}
+[01:07:33.551]   wf.run_events: 7 row(s)
+[01:07:33.551]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:07:33.551]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=33983f26b3ad5a73"}
+[01:07:33.551]     {"event": "claimed", "worker": "worker-1", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:07:33.551]     {"event": "gate_passed", "worker": "worker-1", "fencing_token": 1, "detail": "attempt 1 approval 1"}
+[01:07:33.551]     {"event": "claimed", "worker": "worker-2", "fencing_token": 2, "detail": "state=executing attempts=1"}
+[01:07:33.551]     {"event": "needs_operator_reconciliation", "worker": "worker-2", "fencing_token": 2, "detail": "outcome of an earlier attempt is unknown and the external system cannot be searched by idempotency key"}
+[01:07:33.551]     {"event": "operator_adopt", "worker": "bob@example.test", "fencing_token": null, "detail": "operator bob@example.test adopted TCK-098f6a06"}
+PASSED[01:07:33.608] dropped database wfspike_3b234ef5
+
+tests/test_scenarios.py::test_05b_crash_while_prepared_needs_no_lookup [01:07:33.661] created database wfspike_1efc7c77
+[01:07:33.663] started ticket-service pid=4365
+[01:07:33.714] started worker-1 pid=4366
+[01:07:33.923] created run 7c7618ae-7bb9-4cdc-9045-1d042cbd741d tenant=tenant-a 
+[01:07:33.930] approved run 7c7618ae-7bb9-4cdc-9045-1d042cbd741d (approval 1) 
+[01:07:34.083] intent: {'state': 'prepared', 'attempt': 1}; SIGKILL worker-1
+[01:07:34.087] SIGKILLed worker-1 pid=4366 rc=-9
+[01:07:34.087] started worker-2 pid=4378
+[01:07:37.374]   run: {"state": "completed", "attempts": 2, "handler_version": 1, "detail": "created TCK-c8531215 (handler v1)"}
+[01:07:37.378]   wf.job_leases: 1 row(s)
+[01:07:37.378]     {"lease_owner": null, "fencing_token": 2, "lease_expires_at": null}
+[01:07:37.381]   wf.execution_intents: 1 row(s)
+[01:07:37.381]     {"key": "1bb40ed94a77", "fencing_token": 2, "state": "succeeded", "attempt": 2}
+[01:07:37.383]   wf.execution_results: 1 row(s)
+[01:07:37.383]     {"outcome": "created", "ticket_id": "TCK-c8531215", "fencing_token": 2, "handler_version": 1}
+[01:07:37.386]   wf.run_events: 7 row(s)
+[01:07:37.386]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:07:37.386]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=33983f26b3ad5a73"}
+[01:07:37.386]     {"event": "claimed", "worker": "worker-1", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:07:37.386]     {"event": "gate_passed", "worker": "worker-1", "fencing_token": 1, "detail": "attempt 1 approval 1"}
+[01:07:37.386]     {"event": "claimed", "worker": "worker-2", "fencing_token": 2, "detail": "state=executing attempts=1"}
+[01:07:37.386]     {"event": "gate_passed", "worker": "worker-2", "fencing_token": 2, "detail": "attempt 2 approval 1"}
+[01:07:37.386]     {"event": "completed", "worker": "worker-2", "fencing_token": 2, "detail": "created TCK-c8531215 (handler v1)"}
+PASSED[01:07:37.445] dropped database wfspike_1efc7c77
+
+tests/test_scenarios.py::test_06a_stale_worker_refused_at_gate [01:07:37.489] created database wfspike_26b4140d
+[01:07:37.491] started ticket-service pid=4429
+[01:07:37.542] started worker-A pid=4430
+[01:07:37.700] created run 03ca07e6-2671-4448-a05c-972ce0fd7a08 tenant=tenant-a 
+[01:07:37.705] approved run 03ca07e6-2671-4448-a05c-972ce0fd7a08 (approval 1) 
+[01:07:37.906] sent SIGSTOP to worker-A pid=4430
+[01:07:37.909] A holds token 1; waiting for lease expiry
+[01:07:40.936] started worker-B pid=4496
+[01:07:41.207] B completed; lease token now 2
+[01:07:41.207] sent SIGCONT to worker-A pid=4430
+[01:07:42.258] A log: [01:07:41.208] worker-A: HOOK WFSPIKE_PAUSE_BEFORE_GATE_FILE: resumed run=03ca07e6-2671-4448-a05c-972ce0fd7a08 token=1
+[01:07:42.258] A log: [01:07:41.212] worker-A: FENCED, refusing to act: run=03ca07e6-2671-4448-a05c-972ce0fd7a08 my token=1, current token=2 owner=None live=False
+[01:07:42.258] A log: [01:07:41.213] worker-A: heartbeat: lease on run=03ca07e6-2671-4448-a05c-972ce0fd7a08 token=1 is gone
+[01:07:42.262]   run: {"state": "completed", "attempts": 1, "handler_version": 1, "detail": "created TCK-14d7be79 (handler v1)"}
+[01:07:42.265]   wf.job_leases: 1 row(s)
+[01:07:42.265]     {"lease_owner": null, "fencing_token": 2, "lease_expires_at": null}
+[01:07:42.268]   wf.execution_intents: 1 row(s)
+[01:07:42.268]     {"key": "01a7d30abc84", "fencing_token": 2, "state": "succeeded", "attempt": 1}
+[01:07:42.271]   wf.execution_results: 1 row(s)
+[01:07:42.271]     {"outcome": "created", "ticket_id": "TCK-14d7be79", "fencing_token": 2, "handler_version": 1}
+[01:07:42.273]   wf.run_events: 7 row(s)
+[01:07:42.273]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:07:42.273]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=33983f26b3ad5a73"}
+[01:07:42.273]     {"event": "claimed", "worker": "worker-A", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:07:42.273]     {"event": "claimed", "worker": "worker-B", "fencing_token": 2, "detail": "state=ready attempts=0"}
+[01:07:42.273]     {"event": "gate_passed", "worker": "worker-B", "fencing_token": 2, "detail": "attempt 1 approval 1"}
+[01:07:42.273]     {"event": "completed", "worker": "worker-B", "fencing_token": 2, "detail": "created TCK-14d7be79 (handler v1)"}
+[01:07:42.273]     {"event": "fenced_refused", "worker": "worker-A", "fencing_token": 1, "detail": "run=03ca07e6-2671-4448-a05c-972ce0fd7a08 my token=1, current token=2 owner=None live=False"}
+PASSED[01:07:42.300] dropped database wfspike_26b4140d
+
+tests/test_scenarios.py::test_06b_stale_worker_paused_after_gate[svc_flags0-2] [01:07:42.358] created database wfspike_a394d60d
+[01:07:42.362] started ticket-service pid=4535
+[01:07:42.413] started worker-A pid=4537
+[01:07:42.575] created run 9ce46675-c77d-48a2-a3d0-24369737abd1 tenant=tenant-a 
+[01:07:42.583] approved run 9ce46675-c77d-48a2-a3d0-24369737abd1 (approval 1) 
+[01:07:42.784] sent SIGSTOP to worker-A pid=4537
+[01:07:45.817] started worker-B pid=4597
+[01:07:46.079] sent SIGCONT to worker-A pid=4537
+[01:07:47.131] external tickets (2): [('TCK-d4f29546', 2), ('TCK-62667670', 1)]
+[01:07:47.131] A: [01:07:46.099] worker-A: run=9ce46675-c77d-48a2-a3d0-24369737abd1 token=1 POST /tickets -> 201 {'id': 'TCK-62667670'}
+[01:07:47.135]   run: {"state": "completed", "attempts": 2, "handler_version": 1, "detail": "created TCK-d4f29546 (handler v1)"}
+[01:07:47.138]   wf.job_leases: 1 row(s)
+[01:07:47.138]     {"lease_owner": null, "fencing_token": 2, "lease_expires_at": null}
+[01:07:47.141]   wf.execution_intents: 1 row(s)
+[01:07:47.142]     {"key": "d3ee72e28da7", "fencing_token": 2, "state": "succeeded", "attempt": 2}
+[01:07:47.144]   wf.execution_results: 1 row(s)
+[01:07:47.144]     {"outcome": "created", "ticket_id": "TCK-d4f29546", "fencing_token": 2, "handler_version": 1}
+[01:07:47.147]   wf.run_events: 9 row(s)
+[01:07:47.147]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:07:47.147]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=33983f26b3ad5a73"}
+[01:07:47.147]     {"event": "claimed", "worker": "worker-A", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:07:47.147]     {"event": "gate_passed", "worker": "worker-A", "fencing_token": 1, "detail": "attempt 1 approval 1"}
+[01:07:47.147]     {"event": "claimed", "worker": "worker-B", "fencing_token": 2, "detail": "state=executing attempts=1"}
+[01:07:47.147]     {"event": "reconciled_absent", "worker": "worker-B", "fencing_token": 2, "detail": "lookup found no ticket for the operation key"}
+[01:07:47.147]     {"event": "gate_passed", "worker": "worker-B", "fencing_token": 2, "detail": "attempt 2 approval 1"}
+[01:07:47.147]     {"event": "completed", "worker": "worker-B", "fencing_token": 2, "detail": "created TCK-d4f29546 (handler v1)"}
+[01:07:47.147]     {"event": "stale_effect_result", "worker": "worker-A", "fencing_token": 1, "detail": "call under stale token 1 returned ticket TCK-62667670; NOT recorded as result (run=9ce46675-c77d-48a2-a3d0-24369737abd1 my token=1, current token=2 owner=None live=False)"}
+PASSED[01:07:47.207] dropped database wfspike_a394d60d
+
+tests/test_scenarios.py::test_06b_stale_worker_paused_after_gate[svc_flags1-1] [01:07:47.284] created database wfspike_6ed94095
+[01:07:47.287] started ticket-service pid=4625
+[01:07:47.339] started worker-A pid=4626
+[01:07:47.498] created run b3f54667-1238-445c-9b7e-e4ff64fc13f7 tenant=tenant-a 
+[01:07:47.506] approved run b3f54667-1238-445c-9b7e-e4ff64fc13f7 (approval 1) 
+[01:07:47.707] sent SIGSTOP to worker-A pid=4626
+[01:07:50.744] started worker-B pid=4711
+[01:07:51.004] sent SIGCONT to worker-A pid=4626
+[01:07:52.056] external tickets (1): [('TCK-318060d0', 2)]
+[01:07:52.056] A: [01:07:51.024] worker-A: run=b3f54667-1238-445c-9b7e-e4ff64fc13f7 token=1 POST /tickets -> 409 {'error': 'stale fencing token 1 < 2', 'created': False}
+[01:07:52.060]   run: {"state": "completed", "attempts": 2, "handler_version": 1, "detail": "created TCK-318060d0 (handler v1)"}
+[01:07:52.063]   wf.job_leases: 1 row(s)
+[01:07:52.063]     {"lease_owner": null, "fencing_token": 2, "lease_expires_at": null}
+[01:07:52.066]   wf.execution_intents: 1 row(s)
+[01:07:52.066]     {"key": "f7364d75eeb6", "fencing_token": 2, "state": "succeeded", "attempt": 2}
+[01:07:52.068]   wf.execution_results: 1 row(s)
+[01:07:52.068]     {"outcome": "created", "ticket_id": "TCK-318060d0", "fencing_token": 2, "handler_version": 1}
+[01:07:52.071]   wf.run_events: 9 row(s)
+[01:07:52.071]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:07:52.071]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=33983f26b3ad5a73"}
+[01:07:52.071]     {"event": "claimed", "worker": "worker-A", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:07:52.071]     {"event": "gate_passed", "worker": "worker-A", "fencing_token": 1, "detail": "attempt 1 approval 1"}
+[01:07:52.071]     {"event": "claimed", "worker": "worker-B", "fencing_token": 2, "detail": "state=executing attempts=1"}
+[01:07:52.071]     {"event": "reconciled_absent", "worker": "worker-B", "fencing_token": 2, "detail": "lookup found no ticket for the operation key"}
+[01:07:52.071]     {"event": "gate_passed", "worker": "worker-B", "fencing_token": 2, "detail": "attempt 2 approval 1"}
+[01:07:52.071]     {"event": "completed", "worker": "worker-B", "fencing_token": 2, "detail": "created TCK-318060d0 (handler v1)"}
+[01:07:52.071]     {"event": "external_rejected_stale_token", "worker": "worker-A", "fencing_token": 1, "detail": "{\"error\": \"stale fencing token 1 < 2\", \"created\": false}"}
+PASSED[01:07:52.130] dropped database wfspike_6ed94095
+
+tests/test_scenarios.py::test_06b_stale_worker_paused_after_gate[svc_flags2-1] [01:07:52.176] created database wfspike_75623a6d
+[01:07:52.178] started ticket-service pid=4736
+[01:07:52.229] started worker-A pid=4737
+[01:07:52.386] created run a7788e95-b84f-406a-bb52-1eaf59e3ce46 tenant=tenant-a 
+[01:07:52.392] approved run a7788e95-b84f-406a-bb52-1eaf59e3ce46 (approval 1) 
+[01:07:52.594] sent SIGSTOP to worker-A pid=4737
+[01:07:55.613] started worker-B pid=4783
+[01:07:55.872] sent SIGCONT to worker-A pid=4737
+[01:07:56.924] external tickets (1): [('TCK-6ed9d820', 2)]
+[01:07:56.924] A: [01:07:55.890] worker-A: run=a7788e95-b84f-406a-bb52-1eaf59e3ce46 token=1 POST /tickets -> 200 {'id': 'TCK-6ed9d820', 'deduplicated': True}
+[01:07:56.928]   run: {"state": "completed", "attempts": 2, "handler_version": 1, "detail": "created TCK-6ed9d820 (handler v1)"}
+[01:07:56.931]   wf.job_leases: 1 row(s)
+[01:07:56.931]     {"lease_owner": null, "fencing_token": 2, "lease_expires_at": null}
+[01:07:56.934]   wf.execution_intents: 1 row(s)
+[01:07:56.934]     {"key": "14af9ad77585", "fencing_token": 2, "state": "succeeded", "attempt": 2}
+[01:07:56.937]   wf.execution_results: 1 row(s)
+[01:07:56.937]     {"outcome": "created", "ticket_id": "TCK-6ed9d820", "fencing_token": 2, "handler_version": 1}
+[01:07:56.939]   wf.run_events: 9 row(s)
+[01:07:56.939]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:07:56.939]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=33983f26b3ad5a73"}
+[01:07:56.939]     {"event": "claimed", "worker": "worker-A", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:07:56.939]     {"event": "gate_passed", "worker": "worker-A", "fencing_token": 1, "detail": "attempt 1 approval 1"}
+[01:07:56.939]     {"event": "claimed", "worker": "worker-B", "fencing_token": 2, "detail": "state=executing attempts=1"}
+[01:07:56.939]     {"event": "reconciled_absent", "worker": "worker-B", "fencing_token": 2, "detail": "lookup found no ticket for the operation key"}
+[01:07:56.939]     {"event": "gate_passed", "worker": "worker-B", "fencing_token": 2, "detail": "attempt 2 approval 1"}
+[01:07:56.939]     {"event": "completed", "worker": "worker-B", "fencing_token": 2, "detail": "created TCK-6ed9d820 (handler v1)"}
+[01:07:56.939]     {"event": "stale_effect_result", "worker": "worker-A", "fencing_token": 1, "detail": "call under stale token 1 returned ticket TCK-6ed9d820; NOT recorded as result (run=a7788e95-b84f-406a-bb52-1eaf59e3ce46 my token=1, current token=2 owner=None live=False)"}
+PASSED[01:07:57.001] dropped database wfspike_75623a6d
+
+tests/test_scenarios.py::test_07a_concurrency_exactly_once [01:07:57.059] created database wfspike_b7eaf20a
+[01:07:57.062] started ticket-service pid=4808
+[01:07:57.113] started worker-1 pid=4809
+[01:07:57.265] started worker-2 pid=4817
+[01:07:57.416] started worker-3 pid=4825
+[01:07:57.568] started worker-4 pid=4833
+[01:07:57.726] created run 202b8e05-9c30-4a92-8ef4-ba76c585d782 tenant=tenant-a 
+[01:07:57.736] created run 5bf0678a-3dca-4daf-95d1-8ef9d84aa9b7 tenant=tenant-b 
+[01:07:58.397] created and approved 50 runs
+[01:07:58.504] 50 runs completed in 0.79s with 4 workers
+[01:07:58.641] stats: {'tickets': 50, 'distinct_keys': 50, 'states': [{'state': 'completed', 'n': 50}], 'outcomes': [{'outcome': 'created', 'n': 50}], 'completions_by_worker': [{'worker': 'worker-1', 'n': 12}, {'worker': 'worker-2', 'n': 14}, {'worker': 'worker-3', 'n': 17}, {'worker': 'worker-4', 'n': 7}], 'runs_claimed_more_than_once': 0, 'runs_gated_more_than_once': 0}
+PASSED[01:07:58.711] dropped database wfspike_b7eaf20a
+
+tests/test_scenarios.py::test_07b_concurrency_with_worker_kills [01:07:58.772] created database wfspike_f47cc2cd
+[01:07:58.775] started ticket-service pid=5052
+[01:07:58.826] started worker-1 pid=5053
+[01:07:58.979] started worker-2 pid=5061
+[01:07:59.130] started worker-3 pid=5069
+[01:07:59.282] started worker-4 pid=5077
+[01:07:59.439] created run ae809f3b-ff67-4d91-ae73-7306049edccd tenant=tenant-a 
+[01:07:59.449] created run b52333b4-6c5a-4ebd-91cd-cfd9c55196cf tenant=tenant-b 
+[01:07:59.994] created and approved 50 runs
+[01:08:00.000] SIGKILLed worker-1 pid=5053 rc=-9
+[01:08:00.008] SIGKILLed worker-2 pid=5061 rc=-9
+[01:08:00.012] started worker-5 pid=5203
+[01:08:03.116] stats: {'tickets': 50, 'distinct_keys': 50, 'states': [{'state': 'completed', 'n': 50}], 'outcomes': [{'outcome': 'adopted', 'n': 2}, {'outcome': 'created', 'n': 48}], 'completions_by_worker': [{'worker': 'worker-1', 'n': 3}, {'worker': 'worker-2', 'n': 3}, {'worker': 'worker-3', 'n': 16}, {'worker': 'worker-4', 'n': 15}, {'worker': 'worker-5', 'n': 11}], 'runs_claimed_more_than_once': 2, 'runs_gated_more_than_once': 0}
+PASSED[01:08:03.176] dropped database wfspike_f47cc2cd
+
+tests/test_scenarios.py::test_08_revocation_and_cancel_before_effect[revoke_approval-denied-revoked] [01:08:03.234] created database wfspike_7f3a0ca8
+[01:08:03.236] started ticket-service pid=5332
+[01:08:03.287] started worker-1 pid=5333
+[01:08:03.445] created run be06ac69-07bb-4890-aa20-aa50c153d09b tenant=tenant-a 
+[01:08:03.451] approved run be06ac69-07bb-4890-aa20-aa50c153d09b (approval 1) 
+[01:08:03.657] revoke_approval applied while the worker holds the run before its gate
+[01:08:03.768] state=denied detail=approval 1 revoked at 2026-10-22T01:08:03.656346+03:00
+PASSED[01:08:03.822] dropped database wfspike_7f3a0ca8
+
+tests/test_scenarios.py::test_08_revocation_and_cancel_before_effect[revoke_permission-denied-no longer holds approve_remediation] [01:08:03.877] created database wfspike_502e8de5
+[01:08:03.880] started ticket-service pid=5352
+[01:08:03.931] started worker-1 pid=5353
+[01:08:04.089] created run 1782a969-ac6c-4216-9033-d37270646ac0 tenant=tenant-a 
+[01:08:04.093] approved run 1782a969-ac6c-4216-9033-d37270646ac0 (approval 1) 
+[01:08:04.299] revoke_permission applied while the worker holds the run before its gate
+[01:08:04.409] state=denied detail=approver alice@example.test no longer holds approve_remediation
+PASSED[01:08:04.467] dropped database wfspike_502e8de5
+
+tests/test_scenarios.py::test_08_revocation_and_cancel_before_effect[cancel-cancelled-cancel requested] [01:08:04.537] created database wfspike_0a9d35fd
+[01:08:04.540] started ticket-service pid=5372
+[01:08:04.591] started worker-1 pid=5373
+[01:08:04.748] created run e4da98ad-b322-47ca-9072-8a901ef4bea9 tenant=tenant-a 
+[01:08:04.754] approved run e4da98ad-b322-47ca-9072-8a901ef4bea9 (approval 1) 
+[01:08:04.961] cancel applied while the worker holds the run before its gate
+[01:08:05.071] state=cancelled detail=cancel requested before the effect
+PASSED[01:08:05.133] dropped database wfspike_0a9d35fd
+
+tests/test_scenarios.py::test_09a_transient_errors_then_success [01:08:05.188] created database wfspike_f22ffefd
+[01:08:05.191] started ticket-service pid=5393
+[01:08:05.292] started worker-1 pid=5394
+[01:08:05.450] created run 020071e0-ffb6-4ee1-84ec-9773092e2972 tenant=tenant-a {'max_attempts': 5}
+[01:08:05.456] approved run 020071e0-ffb6-4ee1-84ec-9773092e2972 (approval 1) 
+[01:08:07.353] state=completed attempts=3 gaps between attempts=[0.63, 1.023]s (backoff 0.5s, 1.0s + poll)
+[01:08:07.355] retry events: ["attempt 1 failed (HTTP 503 {'error': 'transient failure (injected)', 'created': False}); retry in 0.5s", "attempt 2 failed (HTTP 503 {'error': 'transient failure (injected)', 'created': False}); retry in 1.0s"]
+PASSED[01:08:07.419] dropped database wfspike_f22ffefd
+
+tests/test_scenarios.py::test_09b_retries_exhausted_dead_letter [01:08:07.501] created database wfspike_1bde9930
+[01:08:07.507] started ticket-service pid=5445
+[01:08:07.610] started worker-1 pid=5446
+[01:08:07.767] created run b9927dc9-d54e-4b07-8bf4-e61f4ea30c77 tenant=tenant-a {'max_attempts': 3}
+[01:08:07.773] approved run b9927dc9-d54e-4b07-8bf4-e61f4ea30c77 (approval 1) 
+[01:08:09.659] state=dead_lettered attempts=3 detail=3 attempts exhausted; last: HTTP 503 {'error': 'transient failure (injected)', 'created': False}
+PASSED[01:08:11.718] dropped database wfspike_1bde9930
+
+tests/test_scenarios.py::test_09c_ambiguous_failure_reconciles [01:08:11.770] created database wfspike_7bc8bef2
+[01:08:11.772] started ticket-service pid=5526
+[01:08:11.823] started worker-1 pid=5527
+[01:08:11.982] created run bef40194-9f68-4cfd-b3df-8465267d2e55 tenant=tenant-a 
+[01:08:11.987] approved run bef40194-9f68-4cfd-b3df-8465267d2e55 (approval 1) 
+[01:08:12.829]   run: {"state": "completed", "attempts": 1, "handler_version": 1, "detail": "adopted TCK-e15bf872 found by lookup"}
+[01:08:12.832]   wf.job_leases: 1 row(s)
+[01:08:12.832]     {"lease_owner": null, "fencing_token": 2, "lease_expires_at": null}
+[01:08:12.834]   wf.execution_intents: 1 row(s)
+[01:08:12.834]     {"key": "32225fd414d7", "fencing_token": 2, "state": "reconciled", "attempt": 1}
+[01:08:12.837]   wf.execution_results: 1 row(s)
+[01:08:12.837]     {"outcome": "adopted", "ticket_id": "TCK-e15bf872", "fencing_token": 2, "handler_version": 1}
+[01:08:12.840]   wf.run_events: 7 row(s)
+[01:08:12.840]     {"event": "created", "worker": "api", "fencing_token": null, "detail": "handler_version=1 window=3600s"}
+[01:08:12.840]     {"event": "approved", "worker": "alice@example.test", "fencing_token": null, "detail": "approval 1 by alice@example.test digest=33983f26b3ad5a73"}
+[01:08:12.840]     {"event": "claimed", "worker": "worker-1", "fencing_token": 1, "detail": "state=ready attempts=0"}
+[01:08:12.840]     {"event": "gate_passed", "worker": "worker-1", "fencing_token": 1, "detail": "attempt 1 approval 1"}
+[01:08:12.840]     {"event": "retry_scheduled", "worker": "worker-1", "fencing_token": 1, "detail": "attempt 1 outcome unknown (HTTP 500 {'error': 'internal error after commit (injected)'}); retry in 0.5s"}
+[01:08:12.840]     {"event": "claimed", "worker": "worker-1", "fencing_token": 2, "detail": "state=retry_wait attempts=1"}
+[01:08:12.840]     {"event": "reconciled_adopted", "worker": "worker-1", "fencing_token": 2, "detail": "adopted TCK-e15bf872 found by lookup"}
+PASSED[01:08:12.867] dropped database wfspike_7bc8bef2
+
+tests/test_scenarios.py::test_10_tenant_fairness [01:08:12.921] created database wfspike_868bd1d6
+[01:08:12.922] started ticket-service pid=5562
+[01:08:13.387] started worker-1 pid=5652
+[01:08:13.538] started worker-2 pid=5660
+[01:08:13.692] started worker-3 pid=5670
+[01:08:13.844] started worker-4 pid=5679
+[01:08:15.776] fairness: {'limit': None, 'small_completion_positions_of_44': [41, 42, 43, 44], 'small_latency_s': [2.13, 2.14, 2.24, 2.28], 'big_latency_p50_s': 1.5, 'big_latency_max_s': 2.15, 'makespan_s': 2.38}
+[01:08:15.844] dropped database wfspike_868bd1d6
+[01:08:15.904] created database wfspike_56726525
+[01:08:15.906] started ticket-service pid=5751
+[01:08:16.378] started worker-1 pid=5841
+[01:08:16.530] started worker-2 pid=5849
+[01:08:16.732] started worker-3 pid=5860
+[01:08:16.883] started worker-4 pid=5868
+[01:08:20.174] fairness: {'limit': 2, 'small_completion_positions_of_44': [6, 7, 10, 11], 'small_latency_s': [0.74, 0.87, 0.89, 1.02], 'big_latency_p50_s': 2.25, 'big_latency_max_s': 3.73, 'makespan_s': 3.79}
+[01:08:20.233] dropped database wfspike_56726525
+PASSED
+tests/test_scenarios.py::test_11_handler_versioning [01:08:20.298] created database wfspike_1a4b6633
+[01:08:20.301] started ticket-service pid=5953
+[01:08:20.352] started worker-v1 pid=5954
+[01:08:20.509] created run 6f69d277-87de-434e-aca3-cd03a49cb3cf tenant=tenant-a {'handler_version': 1}
+[01:08:20.514] created run 9cf9f146-5f22-4d49-a697-ab6877a59103 tenant=tenant-a {'handler_version': 1}
+[01:08:20.514] deploy v2: stop the v1-only worker, start a v2-only worker; new runs are created with handler_version=2
+[01:08:20.518] started worker-v2 pid=5964
+[01:08:20.674] created run 48c8ce8e-e4f8-4cb3-b499-889d98b08ef4 tenant=tenant-a {'handler_version': 2}
+[01:08:20.679] approved run 6f69d277-87de-434e-aca3-cd03a49cb3cf (approval 1) 
+[01:08:22.911] after 2s: r1 (v1) state=ready; r2 (v2) state=completed; drain_status={1: 2}
+[01:08:22.922] migrating a completed run -> Rejected: cannot migrate: {'state': 'completed', 'handler_version': 2, 'leased': None, 'intents': 1}
+[01:08:23.140] keep the old handler until drained: start a worker that supports v1 and v2
+[01:08:23.143] started worker-v1v2 pid=5998
+[01:08:23.416] results: r1 v1 by worker-v1v2, r2 v2 by worker-v2, r3 v2 by worker-v2; ticket meta={'6ae413efd864': {'handler_version': 2, 'labels': ['axiom-remediation']}, '8c26ea1b8460': {'handler_version': 2, 'labels': ['axiom-remediation']}, 'dfa0959d8259': None}; drain={}
+PASSED[01:08:23.483] dropped database wfspike_1a4b6633
+
+tests/test_scenarios.py::test_12_backup_restore [01:08:23.544] created database wfspike_a411be82
+[01:08:23.548] started ticket-service pid=6017
+[01:08:23.599] started worker-1 pid=6018
+[01:08:24.050] pg_dump taken (20729 bytes); (run state, intent state) at dump: {'R1': ('executing', 'executing'), 'R2': ('ready', None), 'R3': ('awaiting_approval', None)}
+[01:08:24.051] the original world continues after the backup: worker-1 crashes, worker-2 finishes everything
+[01:08:24.055] SIGKILLed worker-1 pid=6018 rc=-9
+[01:08:24.055] started worker-2 pid=6040
+[01:08:27.154] original world: tickets=3; outcomes=[{'outcome': 'adopted', 'n': 1}, {'outcome': 'created', 'n': 2}]
+[01:08:27.156] started ticket-service-runbook pid=6134
+[01:08:27.255] created database wfspike_8a64a560
+[01:08:27.323] [runbook] mark_restored(): 3 non-terminal run(s) flagged reconcile_required
+[01:08:27.324] started worker-runbook pid=6139
+[01:08:27.610] [runbook] tickets=3; per run (state, outcome, tickets for its key): {'R1': ('completed', 'adopted', 1), 'R2': ('completed', 'adopted', 1), 'R3': ('completed', 'adopted', 1)}
+[01:08:27.698] dropped database wfspike_8a64a560
+[01:08:27.699] started ticket-service-intents_only pid=6162
+[01:08:27.789] created database wfspike_373fb35a
+[01:08:27.843] started worker-intents_only pid=6166
+[01:08:30.124] [intents_only] tickets=4; per run (state, outcome, tickets for its key): {'R1': ('completed', 'adopted', 1), 'R2': ('completed', 'created', 2), 'R3': ('awaiting_approval', None, 1)}
+[01:08:30.175] dropped database wfspike_373fb35a
+[01:08:30.176] started ticket-service-no_reconcile pid=6187
+[01:08:30.265] created database wfspike_838f4c02
+[01:08:30.320] started worker-no_reconcile pid=6191
+[01:08:32.615] [no_reconcile] tickets=5; per run (state, outcome, tickets for its key): {'R1': ('completed', 'created', 2), 'R2': ('completed', 'created', 2), 'R3': ('awaiting_approval', None, 1)}
+[01:08:32.973] dropped database wfspike_838f4c02
+PASSED[01:08:33.343] dropped database wfspike_a411be82
+
+tests/test_scenarios.py::test_13_postgres_server_crash [01:08:33.924] initdb done: /var/tmp/wfspike-pg
+[01:08:34.040] private cluster started on 127.0.0.1:55499 (postmaster pid 6259)
+[01:08:34.107] created database wfspike_bcfbb981
+[01:08:34.109] started ticket-service pid=6269
+[01:08:34.160] started worker-1 pid=6270
+[01:08:34.315] started worker-2 pid=6278
+[01:08:34.475] created run 5a76bda2-c8b2-4bb9-bdfd-5ba15b5f9fb9 tenant=tenant-a 
+[01:08:34.486] created run ed2f59a5-d1c2-4c5b-9648-4f9c5fd54ce0 tenant=tenant-b 
+[01:08:34.670] created and approved 20 runs
+[01:08:35.204] before crash: [{'state': 'awaiting_approval', 'n': 1}, {'state': 'completed', 'n': 5}, {'state': 'executing', 'n': 2}, {'state': 'ready', 'n': 13}]
+[01:08:36.610] SIGKILLed postmaster 6259 and 10 child processes
+[01:08:39.613] 3s with the server down: workers alive=[True, True], worker-loop errors=0, pool reconnect failures=18, tickets so far=7
+[01:08:39.832] private cluster started on 127.0.0.1:55499 (postmaster pid 6347)
+[01:08:39.832] server.log: 2026-10-22 01:08:33.961 EEST [6259] LOG:  database system is ready to accept connections
+[01:08:39.832] server.log: 2026-10-22 01:08:39.651 EEST [6350] LOG:  database system was interrupted; last known up at 2026-10-22 01:08:33 EEST
+[01:08:39.832] server.log: 2026-10-22 01:08:39.722 EEST [6350] LOG:  database system was not properly shut down; automatic recovery in progress
+[01:08:39.832] server.log: 2026-10-22 01:08:39.729 EEST [6350] LOG:  redo starts at 0/14EF3E0
+[01:08:39.832] server.log: 2026-10-22 01:08:39.741 EEST [6350] LOG:  redo done at 0/1962DD8 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.01 s
+[01:08:39.832] server.log: 2026-10-22 01:08:39.782 EEST [6347] LOG:  database system is ready to accept connections
+[01:08:43.767] stats: {'tickets': 21, 'distinct_keys': 21, 'states': [{'state': 'completed', 'n': 21}], 'outcomes': [{'outcome': 'adopted', 'n': 1}, {'outcome': 'created', 'n': 20}], 'completions_by_worker': [{'worker': 'worker-1', 'n': 9}, {'worker': 'worker-2', 'n': 11}], 'runs_claimed_more_than_once': 1, 'runs_gated_more_than_once': 0}
+[01:08:43.831] dropped database wfspike_bcfbb981
+[01:08:44.053] private cluster removed: True
+PASSED
+
+======================== 26 passed in 95.52s (0:01:35) =========================

@@ -71,6 +71,13 @@ class Provisioner:
                          (system_id, f"system:{slug}"))
             conn.execute("INSERT INTO axiom.memberships(tenant_id, id, principal_id, status) VALUES (%s, %s, %s, 'active')",
                          (tenant_id, uuid.uuid4(), system_id))
+            conn.execute("UPDATE axiom.tenants SET system_principal_id = %s, record_version = record_version + 1 "
+                         "WHERE id = %s", (system_id, tenant_id))
+            # The system principal's authority is an explicit, auditable role binding.
+            conn.execute(
+                """INSERT INTO axiom.role_bindings(tenant_id, id, principal_id, role_id, scope_id, granted_by, reason)
+                   VALUES (%s, %s, %s, 'ingestion_worker', %s, NULL, 'tenant system principal: ingestion runs')""",
+                (tenant_id, uuid.uuid4(), system_id, scope_id))
             self._audit(conn, tenant_id, "tenant.create", "tenant", tenant_id,
                         {"slug": slug, "root_scope_id": str(scope_id), "system_principal_id": str(system_id)})
         return TenantBootstrap(tenant_id, scope_id, system_id)

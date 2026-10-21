@@ -34,6 +34,10 @@ from ..domains.cases.service import CaseService, EvidenceRef
 from ..domains.evidence.objectstore import FilesystemObjectStore, ObjectStore, S3ObjectStore
 from ..domains.evidence.service import EvidenceService
 from ..domains.tenancy.service import TenancyService
+from ..adapters.catalogue import catalogue as adapter_catalogue
+from ..ingestion.pipeline import IngestionService
+from ..ingestion.review import IdentityReview
+from ..ingestion.sync import SyncService
 from ..errors import DomainError, NotFound, Unauthenticated, ValidationFailed
 from . import schemas as s
 
@@ -69,7 +73,10 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
     owns_db = db is None
     authenticator = Authenticator(database, TokenVerifier(settings.trusted_issuers,
                                                           leeway_seconds=settings.token_leeway_seconds))
-    evidence = EvidenceService(database, store or build_object_store(settings), max_bytes=settings.evidence_max_bytes)
+    object_store = store or build_object_store(settings)
+    evidence = EvidenceService(database, object_store, max_bytes=settings.evidence_max_bytes)
+    ingestion = IngestionService(database, object_store)
+    sync = SyncService(database, ingestion, evidence)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -300,6 +307,55 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
     @api.post("/delegation-limits", status_code=201)
     def delegation_limit(ctx: Ctx, body: s.DelegationLimit):
         return tenancy(ctx, lambda t: t.set_delegation_limit(**body.model_dump()))
+
+    # --------------------------------------------------------------- ingestion
+    @api.get("/adapters")
+    def adapters(ctx: Ctx):
+        return {"items": adapter_catalogue()}
+
+    @api.post("/imports", status_code=202)
+    def request_import(ctx: Ctx, body: s.RequestImport):
+        declared = body.declared_subject.model_dump() if body.declared_subject else None
+        return jsonable_encoder(ingestion.request_import(ctx, evidence_id=body.evidence_id, adapter=body.adapter,
+                                                         scope_id=body.scope_id, declared_subject=declared))
+
+    @api.get("/ingestion-runs")
+    def list_runs(ctx: Ctx, status: str | None = None, limit: Annotated[int, Query(ge=1, le=200)] = 50):
+        def read(conn, authz: Authorizer):
+            scopes = authz.readable_scopes("ingestion.read")
+            return conn.execute(
+                """WITH RECURSIVE covered(id) AS (SELECT id FROM axiom.scopes WHERE id = ANY(%(s)s)
+                       UNION SELECT c.id FROM axiom.scopes c JOIN covered ON c.parent_id = covered.id)
+                   SELECT id, scope_id, connection_id, source_kind, adapter, status, coverage, coverage_reason, counts,
+                          created_at, finished_at FROM axiom.ingestion_runs
+                    WHERE scope_id IN (SELECT id FROM covered) AND (%(st)s::text IS NULL OR status = %(st)s)
+                    ORDER BY created_at DESC LIMIT %(l)s""", {"s": scopes, "st": status, "l": limit}).fetchall()
+        return {"items": in_tx(ctx, read)}
+
+    @api.get("/ingestion-runs/{run_id}")
+    def get_run(ctx: Ctx, run_id: UUID):
+        return jsonable_encoder(ingestion.get_run(ctx, run_id))
+
+    @api.post("/connections", status_code=201)
+    def create_connection(ctx: Ctx, body: s.CreateConnection):
+        return jsonable_encoder(sync.create_connection(ctx, **body.model_dump()))
+
+    @api.post("/connections/{connection_id}/sync", status_code=202)
+    def request_sync(ctx: Ctx, connection_id: UUID):
+        return jsonable_encoder(sync.request_sync(ctx, connection_id))
+
+    @api.get("/identity-candidates")
+    def identity_candidates(ctx: Ctx):
+        return {"items": in_tx(ctx, lambda conn, authz: IdentityReview(conn, ctx, authz).list_open())}
+
+    @api.post("/identity-candidates/{candidate_id}/resolve")
+    def resolve_candidate(ctx: Ctx, candidate_id: UUID, body: s.ResolveCandidate):
+        return in_tx(ctx, lambda conn, authz: IdentityReview(conn, ctx, authz).resolve(
+            candidate_id, expected_version=body.expected_version, outcome=body.outcome, rationale=body.rationale))
+
+    @api.get("/assets/{asset_id}")
+    def get_asset(ctx: Ctx, asset_id: UUID):
+        return in_tx(ctx, lambda conn, authz: IdentityReview(conn, ctx, authz).asset(asset_id))
 
     @api.get("/audit-events")
     def audit_events(ctx: Ctx, resource_id: str | None = None, limit: Annotated[int, Query(ge=1, le=500)] = 100):

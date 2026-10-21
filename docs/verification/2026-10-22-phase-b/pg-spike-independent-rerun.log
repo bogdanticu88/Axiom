@@ -1,0 +1,28 @@
+PASSED[01:12:48.625] dropped database wfspike_6b628f71
+PASSED[01:12:50.454] dropped database wfspike_35c93cf6
+PASSED[01:12:50.999] dropped database wfspike_a2f28891
+PASSED[01:12:53.333] dropped database wfspike_587cca8a
+PASSED[01:12:55.956] dropped database wfspike_461544ac
+PASSED[01:12:59.596] dropped database wfspike_c49486fc
+PASSED[01:13:03.290] dropped database wfspike_7e6dfe86
+PASSED[01:13:06.930] dropped database wfspike_ff83cceb
+PASSED[01:13:13.758] dropped database wfspike_5f4f20f7
+PASSED[01:13:17.398] dropped database wfspike_53972990
+PASSED[01:13:22.276] dropped database wfspike_d038f401
+PASSED[01:13:27.153] dropped database wfspike_7c7f5283
+PASSED[01:13:32.026] dropped database wfspike_4d0d6748
+PASSED[01:13:36.913] dropped database wfspike_5821e2a8
+PASSED[01:13:38.736] dropped database wfspike_cc56aa1b
+PASSED[01:13:43.506] dropped database wfspike_cc1c6d61
+PASSED[01:13:44.137] dropped database wfspike_db7381c9
+PASSED[01:13:44.774] dropped database wfspike_5cb4ee9c
+PASSED[01:13:45.383] dropped database wfspike_d92c594f
+PASSED[01:13:47.585] dropped database wfspike_2ca16571
+PASSED[01:13:51.817] dropped database wfspike_b32c2d48
+PASSED[01:13:52.984] dropped database wfspike_57a78122
+PASSED
+PASSED[01:14:03.402] dropped database wfspike_dc2cd3a1
+PASSED[01:14:12.743] dropped database wfspike_7aac4241
+PASSED
+======================== 26 passed in 96.53s (0:01:36) =========================
+exit=0

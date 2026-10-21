@@ -1,0 +1,10 @@
+{"totalRecords": 3, "count": 2, "resultTruncated": "false", "$skipToken": "c3ludGhldGljLXBhZ2UtMg==", "facets": [],
+ "data": [
+  {"id": "/subscriptions/00000000-1111-4222-8333-444444444444/resourceGroups/rg-payments/providers/Microsoft.Compute/virtualMachines/pay-db-01",
+   "name": "pay-db-01", "type": "microsoft.compute/virtualmachines", "location": "westeurope", "subscriptionId": "00000000-1111-4222-8333-444444444444",
+   "resourceGroup": "rg-payments", "tags": {"owner": "payments-team", "criticality": "high", "env": "prod"},
+   "properties": {"vmId": "9a8b7c6d-5e4f-4321-8765-0fedcba98765", "osProfile": {"computerName": "pay-db-01"}}},
+  {"id": "/subscriptions/00000000-1111-4222-8333-444444444444/resourceGroups/rg-payments/providers/Microsoft.ContainerRegistry/registries/acmepay",
+   "name": "acmepay", "type": "microsoft.containerregistry/registries", "location": "westeurope", "subscriptionId": "00000000-1111-4222-8333-444444444444",
+   "resourceGroup": "rg-payments", "tags": {}}
+ ]}

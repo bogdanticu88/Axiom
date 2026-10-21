@@ -1,0 +1,22 @@
+[
+  {"asset": {"uuid": "11111111-2222-4333-8444-555555555555", "hostname": "pay-db-01", "fqdn": "pay-db-01.corp.example.invalid", "ipv4": "10.20.0.11", "operating_system": ["Linux Kernel 5.15"], "network_id": "00000000-0000-0000-0000-000000000000", "tracked": true},
+   "plugin": {"id": 900001, "name": "Synthetic OpenSSL < 3.0.15 Multiple Vulnerabilities", "family": "Misc.", "cve": ["CVE-2099-0001", "CVE-2099-0002"], "cvss3_base_score": 7.5, "has_patch": true, "exploit_available": false},
+   "port": {"port": 443, "protocol": "TCP", "service": "www"},
+   "scan": {"uuid": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "started_at": "2026-10-20T01:00:00.000Z"},
+   "severity": "high", "severity_id": 3, "severity_default_id": 3, "severity_modification_type": "NONE",
+   "state": "OPEN", "first_found": "2026-09-01T01:02:03.000Z", "last_found": "2026-10-20T01:05:00.000Z",
+   "finding_id": "f1f1f1f1-0000-4000-8000-000000000001", "source": "NESSUS", "output": "Installed version : 3.0.1"},
+  {"asset": {"uuid": "11111111-2222-4333-8444-555555555555", "hostname": "pay-db-01", "ipv4": "10.20.0.11"},
+   "plugin": {"id": 900002, "name": "Synthetic SSH Weak Key Exchange", "family": "Misc."},
+   "port": {"port": 22, "protocol": "TCP", "service": "ssh"},
+   "severity": "low", "state": "FIXED", "first_found": "2026-08-01T00:00:00.000Z", "last_found": "2026-10-01T00:00:00.000Z",
+   "last_fixed": "2026-10-20T01:05:00.000Z", "finding_id": "f1f1f1f1-0000-4000-8000-000000000002", "source": "NESSUS"},
+  {"asset": {"uuid": "66666666-7777-4888-8999-000000000000", "hostname": "pay-db-01", "ipv4": "10.20.0.11"},
+   "plugin": {"id": 900001, "name": "Synthetic OpenSSL < 3.0.15 Multiple Vulnerabilities", "cve": ["CVE-2099-0001"]},
+   "port": {"port": 443, "protocol": "TCP"},
+   "severity": "high", "state": "REOPENED", "first_found": "2026-07-01T00:00:00.000Z", "last_found": "2026-10-20T01:06:00.000Z",
+   "finding_id": "f1f1f1f1-0000-4000-8000-000000000003", "source": "NESSUS"},
+  {"asset": {"hostname": "orphan-without-uuid"},
+   "plugin": {"id": 900003, "name": "Record missing asset.uuid"}, "port": {"port": 0, "protocol": "TCP"},
+   "severity": "medium", "state": "OPEN", "first_found": "2026-10-01T00:00:00.000Z", "last_found": "2026-10-20T00:00:00.000Z"}
+]
