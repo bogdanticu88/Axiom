@@ -60,3 +60,4 @@ virtual environments or uploaded evidence; generate new credentials (`deployment
 ## Checkpoint record
 | Date | Commit | Tag | Notes |
 |---|---|---|---|
+| 2026-10-22 | 1c60fe570017e50beb40f0501f5cb6dc0657f2a2 | foundation-checkpoint-1 | Foundation checkpoint; verification runs 1-3 in VERIFICATION.md; experiments excluded (in progress) |
