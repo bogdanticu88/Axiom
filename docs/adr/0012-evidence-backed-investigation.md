@@ -321,9 +321,77 @@ transaction can bind only one principal.
 
 ### Trust boundary that remains
 The runtime database role is trusted to bind the principal the API authenticated. A compromised runtime credential
-can bind any principal of its tenant and act as it; the database guards do not defend against that.
+can bind any principal and act as it; the database guards do not defend against that. (Corrected by amendment 4:
+"of its tenant" understated it, the credential is shared by every tenant.)
 `axiom.holds_permission` still duplicates `access.evaluate` in SQL.
 
 ### Tests
 `tests/integration/test_authority_review_cp7.py` (9 tests). Reproducer output against checkpoint 6 is in
 `docs/verification/2026-10-22-checkpoint7/reproducers-on-cp6.txt`.
+
+## Amendment 4 (2026-10-22, checkpoint 8): the database identity boundary, stated precisely
+
+### How tenant and actor context are established
+1. The API authenticates the caller: a bearer token validated against a configured issuer, or a server-side browser
+   session created after OIDC sign-in. The principal is resolved from (issuer, audience or client, subject) through
+   `axiom_auth` functions, and tenant membership is checked against the selected tenant.
+2. `Database.tenant_tx` opens a transaction on the shared runtime login `axiom_app` and calls
+   `axiom.bind_context(tenant, principal)`. The binding lives in a transaction-local setting tagged with the
+   transaction's start time and backend process, so it cannot outlive the transaction or reach the next user of a
+   pooled connection.
+3. Row-level security filters every tenant table by the bound tenant. Decision, approval and claim-review guards
+   require the recorded actor to be the bound principal and, for workloads, check the workload's real role bindings.
+
+The database checks the **consistency** of what the application tells it. It does not and cannot check that the
+application authenticated anyone: `bind_context` accepts any tenant and principal from any holder of the runtime
+login.
+
+### Database credentials
+| Login | Used by | Scope |
+|---|---|---|
+| `axiom_app` (member of `axiom_runtime`) | API and job worker | every tenant of the installation; one credential |
+| `axiom_relay_app` (`axiom_relay`) | outbox relay | outbox rows only |
+| `axiom_admin_cli` (`axiom_provisioner`) | provisioning CLI | tenants, principals, memberships, bootstrap roles; no case or evidence data |
+| `axiom_migrator` (can `SET ROLE axiom_owner`) | migrations | schema owner |
+No credential is tenant-specific. A dedicated installation is the only way today to give a tenant its own credential.
+
+### What a holder of the application credential can do (tested, `tests/integration/test_database_identity_boundary.py`)
+* **Select another tenant:** yes. It binds any tenant, with any principal, member or not, and reads that tenant's
+  rows. RLS still keeps each transaction to one tenant.
+* **Select another actor:** yes. It binds any principal of any tenant.
+* **Approve its own work through impersonation:** yes. Separation of duties is checked between principals; binding the
+  approver's identity approves the analyst's proposal, and the records name the approver.
+* **Forge audit attribution:** yes. Audit rows record the bound principal, which the credential chooses.
+* **Use permissions a person does not hold:** for people, permission checks are the application's; the database only
+  requires the recorded actor to be the bound principal. (Workload results are checked against real bindings.)
+* **Rewrite history:** no. Decisions, events, audit, approvals and verification records are append-only for this
+  role, and for the schema owner.
+* **Escape the role:** no. It cannot assume the owner or authentication roles, turn off row security, or read
+  sessions and federated identities directly.
+* **Break structural rules:** no. Case transitions need matching events, closures need valid records, workload
+  principals cannot hold human roles, a principal's kind cannot change.
+
+### What the checkpoint-7 fixes (D1, D2) prevent, and what they do not
+D1 and D2 assumed an attacker who runs SQL with the runtime credential inside a transaction already bound to one
+principal. That attacker can always start a new transaction and bind any principal, so neither fix removes a
+capability from them. What the fixes do give: a code path that writes another actor's ID into a decision, approval
+or review (for example taken from a request body), or that re-binds mid-transaction, now fails instead of committing
+a record whose actor differs from the principal the request ran as. They are integrity checks against application
+defects. The no-switch rule is itself enforced only by `bind_context`: the runtime role can overwrite the setting
+directly (tested). The checkpoint-7 description of D1 and D2 as demonstrated defects with an "unauthorised result" is
+narrowed accordingly: the inconsistency was real; an escalation beyond the credential's existing power was not.
+D3 (revocation racing a command) is unaffected by this narrowing: it concerns two legitimate requests.
+
+### Guarantees that depend on the application process staying trusted
+Authentication; tenant selection; actor attribution in decisions, approvals, reviews and audit; human permission
+checks; separation of duties between people. Guarantees that do not: append-only history, structural case and
+closure rules, workload role rules, and the absence of privilege escalation within the database.
+
+### Decision
+Impersonation within the installation by a holder of the application credential is an **accepted trust
+assumption**, as ADR 0002 and the data and access design (section 10) already state; no requirement asks the database
+to authenticate people. Narrowing it would need new identity infrastructure, for example per-workload credentials,
+database-verified session or token proofs, or tenant-dedicated installations. None is added here because none is
+required yet; a tenant that needs it should get a dedicated installation. The runtime credential should be treated as
+equivalent to administrator access to every tenant: stored as a mounted secret, reachable only by the API and worker,
+and rotated if either is suspected compromised.

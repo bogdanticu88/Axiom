@@ -29,7 +29,7 @@ Test references are abbreviated: `cases::name` = tests/integration/test_cases.py
 `sso::` = tests/integration/test_oidc_sso.py (local Keycloak 26.4.2). `oidcu::` = tests/unit/test_oidc_validation.py.
 `ui::` = tests/integration/test_analyst_ui.py (Chromium, local Keycloak). `ovr::` = tests/integration/test_authority_and_overrides.py.
 `uiw::` = tests/integration/test_analyst_ui_workflows.py (Chromium, local Keycloak). `sab::` = tests/integration/test_system_authority_boundary.py.
-`cp7::` = tests/integration/test_authority_review_cp7.py. `vw::` = tests/integration/test_verification_worker.py (local TLS **fixture** check endpoint). `vcu::` = tests/unit/test_verification_checks.py. `uicp7::` = tests/integration/test_analyst_ui_cp7.py (Chromium, local Keycloak). `sref::` = tests/unit/test_secretrefs.py.
+`cp7::` = tests/integration/test_authority_review_cp7.py. `dib::` = tests/integration/test_database_identity_boundary.py. `vw::` = tests/integration/test_verification_worker.py (local TLS **fixture** check endpoint). `vcu::` = tests/unit/test_verification_checks.py. `uicp7::` = tests/integration/test_analyst_ui_cp7.py (Chromium, local Keycloak). `sref::` = tests/unit/test_secretrefs.py.
 `smoke` = scripts/verify/compose-smoke.sh with scripts/verify/compose_ui_check.py (fresh Compose install, Chromium).
 
 Last updated: 2026-10-22 (checkpoint 7: adversarial authority review and fixes, sign-in review, mounted-file secrets, verification worker, change-report and focused accessibility browser checks). Counts are generated from this file by `scripts/dev/register-counts.py` (also a CI stage, which fails on any row without a recognised status).
@@ -180,7 +180,7 @@ Last updated: 2026-10-22 (checkpoint 7: adversarial authority review and fixes, 
 | ID | Requirement | Implementation | Verification | Status | Notes |
 |---|---|---|---|---|---|
 | TEN-01 | Forced RLS and composite tenant-aware FKs on all tenant-owned tables | migrations 0001-0002 | iso::test_no_context_sees_nothing, ::test_cross_tenant_foreign_key_rejected, structural audit in VERIFICATION.md | verified | |
-| TEN-02 | Transaction-local, transaction-bound tenant context; no switching inside a transaction | `axiom.bind_context`, `axiom.current_tenant` | iso::test_cannot_switch..., ::test_session_level..., ::test_pool_reuse... | verified | |
+| TEN-02 | Transaction-local, transaction-bound tenant context; no switching inside a transaction | `axiom.bind_context`, `axiom.current_tenant` | iso::test_cannot_switch..., ::test_session_level..., ::test_pool_reuse..., dib::test_context_ends_with_the_transaction_after_commit_rollback_and_failure, dib::test_the_no_switch_rule_is_enforced_by_bind_context_only | verified | Transaction-local and pool-safe: verified. The no-switch rule is enforced by `bind_context` and catches application defects; the runtime role can overwrite the setting directly, so it is not a barrier to a holder of that credential (ADR 0012 amendment 4) |
 | TEN-03 | Runtime roles never owners, superusers or BYPASSRLS; startup check | provisioning assertion; `verify_runtime_role` | iso::test_runtime_role_self_check | verified | |
 | TEN-04 | Separate migration, runtime, authentication, relay and provisioning identities | db/provision_roles.sql | iso::test_provisioner_cannot_read..., ::test_relay_reads_only_outbox, ::test_runtime_cannot_read_identity_tables_directly | verified | Backup and operations roles planned |
 | TEN-05 | Background jobs take tenant from trusted persisted identity, never payloads | outbox rows carry tenant; job worker binds tenant and system principal from `axiom_auth.active_tenant_workers` | evo::test_outbox_relay..., job::*, ingjob::* | verified | |
@@ -195,7 +195,7 @@ Last updated: 2026-10-22 (checkpoint 7: adversarial authority review and fixes, 
 | TEN-14 | Shared and dedicated installation modes on one codebase | `installations.deployment_profile`, dedicated single-tenant trigger | none | implemented_unverified | |
 | TEN-15 | Cross-client portfolio via separate authorised aggregation path | none | none | planned | |
 | TEN-16 | Suspension and revocation block new actions and cancel waiting work | tenant status in policies | iso::test_suspended_tenant_is_inaccessible | implementing | Waiting work cancellation pending |
-| TEN-17 | Document that a compromised application choosing tenant context exceeds context-based RLS | ADR 0002, README | review | verified | Documentation requirement |
+| TEN-17 | Document that a compromised application choosing tenant context exceeds context-based RLS | ADR 0002, README | review | verified | Documentation requirement; checkpoint 8 states the capability precisely and tests it: any tenant, any principal, impersonated approvals and audit attribution, while history stays append-only (dib::*, ADR 0012 amendment 4) |
 | TEN-18 | Provider webhooks resolve tenant from authenticated connection | none | none | planned | |
 | TEN-19 | Workers take tenant and principal from trusted persisted records (`axiom_auth.active_tenant_workers`), never from payloads | jobs/worker.py, workers/jobs.py | sync::test_tenable_sync_end_to_end_and_checkpoint (dispatch path), test_jobs (all) | verified | |
 
