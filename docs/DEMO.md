@@ -16,11 +16,21 @@ also shows that the same verification refuses to pass two deployments that were 
 | Check service | `scripts/demo/check_service.py`, a local HTTPS service implementing `axiom-check/2` by rescanning the running container with Trivy | see below |
 | People's inputs | Business context, claim reviews, the redeployed digest, the change reports | `manual` |
 
-## Reproduce
+## Prerequisites
 
-Requirements: Docker, Python 3.13 with the project environment (`uv sync`), Node 22 for the UI build, and network
-access on the first run to pull the base and scanner images and to download the Trivy database and two wheels from
-PyPI. Behind a TLS-intercepting proxy, set `BUILD_CA` to its CA bundle.
+* Linux or macOS with Docker (daemon running, about 3 GB free for images) and the Docker CLI on `PATH`.
+* Python 3.13 with the project environment (`uv sync`, which creates `.venv`), Node 22 to build the analyst UI if
+  `frontend/dist` is missing, and Playwright's Chromium (`.venv/bin/playwright install chromium` if not present).
+* The test PostgreSQL that `scripts/dev/test-db.sh start` sets up, and the local Keycloak image
+  (`quay.io/keycloak/keycloak:26.4.2`) that the UI tests start.
+* Free local ports: 5000 (registry), 18081 and 18082 (demo services), 18443 (check service), plus the ports the UI
+  tests use for Keycloak and the API.
+* Network access on the first run only: the base image `public.ecr.aws/docker/library/python:3.13-slim`, the
+  registry and Trivy images from `mirror.gcr.io`, two wheels from PyPI (hash-pinned), and the Trivy vulnerability
+  database (`mirror.gcr.io/aquasec/trivy-db:2`). Behind a TLS-intercepting proxy, set `BUILD_CA` to that proxy's CA
+  bundle; otherwise leave it unset.
+
+## Reproduce
 
 ```
 scripts/demo/run.sh demo-out            # about two minutes once images are cached
@@ -35,11 +45,38 @@ test is skipped, so CI does not need Docker images or the scanner. Output in `de
 * `scans/*.json`: the raw Trivy reports that were imported
 * `case-history.json`, `evidence-package.json`: the exported history of the closed case
 * `screenshots/`: the UI at the approval, verification, closure and the two controls
-* `check-service.log`, `pytest.log`, `lab.json`
+* `check-service.log`, `pytest.log`, `lab.json` (Trivy database metadata and the deployed digests)
 
-Image builds are not bit-for-bit reproducible, so digests differ between runs; each run records its own. The Trivy
-database changes daily. If a new advisory is published for Jinja2 3.1.6, the remediated deployment will no longer
-verify, and the demonstration will fail instead of passing.
+## The scanner database is a moving dependency
+
+The outcome depends on the Trivy database present in the `axiom-demo-trivy-cache` volume. `lab.py up` downloads it
+when the cache is empty or past its `NextUpdate` time, and scans never update it. The database changes daily, so the
+same images can produce different findings on different days:
+
+* if a new advisory is published for Jinja2 3.1.6, the remediated deployment no longer verifies and the
+  demonstration fails instead of passing;
+* if the selected advisories were withdrawn or renamed, the test cannot find its cases and fails;
+* the count of operating-system findings in the base image changes freely and does not affect the outcome.
+
+Image builds are not bit-for-bit reproducible either (timestamps), so digests differ between runs; each run records
+its own. To interpret a past run, compare against the run's `lab.json` and raw scans, not against a fresh scan.
+
+## Recorded run
+
+The run at commit `185af5b98fcb3eac46b52c736ffd2ecd58702877` (verification run 21; records in
+`docs/verification/2026-10-22-after-checkpoint8/demo/`):
+
+| Item | Value |
+|---|---|
+| Scanner | Trivy 0.76.1, image `mirror.gcr.io/aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c` |
+| Database | schema version 2, `UpdatedAt` 2026-10-22T19:14:47Z, `NextUpdate` 2026-10-23T19:14:47Z, `DownloadedAt` 2026-10-22T20:15:30Z |
+| Scan times | 2026-10-22T20:45:09Z (both services) |
+| Base OS reported | Debian 13.7; 176 findings per image in total |
+| Jinja2 3.1.2 findings (both images, source GHSA, severity MEDIUM) | CVE-2024-22195 (fixed 3.1.3), CVE-2024-34064 (3.1.4), CVE-2024-56201 (3.1.5), CVE-2024-56326 (3.1.5), CVE-2025-27516 (3.1.6) |
+| Demonstrated case | CVE-2024-22195 on `pkg:pypi/jinja2@3.1.2`, orders-api |
+| Control A | CVE-2024-22195 on reports-api, change reported against the unchanged deployment: `failed`, `condition_present` |
+| Control B | CVE-2024-34064 on reports-api, fixed image pushed but not deployed: `inconclusive`, `different_deployment` |
+| Digests | orders-api before `sha256:6fac686f…`, after `sha256:014fada1…`; reports-api `sha256:1b656a1c…` throughout; full values in `results.json` |
 
 ## The steps
 

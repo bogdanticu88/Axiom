@@ -9,8 +9,10 @@ multi-client installation and dedicated single-enterprise installations from one
 isolation, database roles, evidence storage, the case workflow), ingestion, a durable job runner, the action and
 approval protocol, risk acceptance, policies, ownership, SLA clocks, reporting, evidence-backed investigation against a
 **deterministic fake model** (no language model has been called), an analyst UI, OIDC sign-in tested **only against a
-local Keycloak**, and a verification worker tested **only against a local fixture endpoint**. Connectors are at most
-**fixture-tested**; none has been validated against a live service. Details: `docs/IMPLEMENTATION_STATUS.md`.
+local Keycloak**, and a verification worker tested **only against local endpoints** (a test fixture and the
+demonstration check service). Connectors are at most **fixture-tested**; none has been validated against a live
+service. Details: `docs/IMPLEMENTATION_STATUS.md`. A local end-to-end demonstration, from a real Trivy scan to a
+verified closure with two negative controls, is described in `docs/DEMO.md`.
 
 ## Why Axiom exists
 
@@ -107,3 +109,15 @@ row-level security with transaction-bound context. Runtime database identities n
 superuser or BYPASSRLS; the API refuses to start otherwise. RLS is defence in depth: an attacker who fully controls the
 application process can choose any tenant context, so tenants needing stronger separation belong on a dedicated
 installation (ADR 0002).
+
+## Known limits that matter before any deployment
+* **The application database credential is a master key.** One runtime login serves every tenant. Whoever holds it
+  can read and change any tenant's data, act as any user (including approving someone else's proposal) and attribute
+  audit records to anyone. It cannot rewrite recorded history. Keep it as a mounted secret reachable only by the API
+  and the workers; a tenant that needs stronger separation needs a dedicated installation (ADR 0012 amendment 4).
+* **A verification endpoint can report false results.** Axiom binds each answer to the request, the asset and the
+  reported deployment, but the result itself is the endpoint's claim. A dishonest or compromised endpoint can make
+  Axiom record a false pass or a false failure. Closing a case stays a person's decision (docs/DEMO.md).
+* **Suspending a tenant does not cancel its work.** A job running at that moment is left in state `running` until the
+  tenant is reactivated; queued jobs wait. The recovery procedure is in docs/INSTALL-COMPOSE.md ("Suspending a
+  tenant"). Cancellation of waiting work is not implemented.

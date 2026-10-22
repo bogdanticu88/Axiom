@@ -62,14 +62,18 @@ Trusted: the operator's proxy and network (the API trusts that only the proxy re
 and its role configuration (ADR 0003), the object store, the configured identity provider's discovery and JWKS (over
 HTTPS in production), the secret files the deployment mounts, and the runtime database credential. That credential
 (`axiom_app`) is shared by the API and the job worker for every tenant of the installation. Whoever holds it can bind
-any tenant and any principal, read that tenant's rows and record decisions, approvals and audit entries in that
-principal's name. The database keeps history append-only and enforces structural rules, but it does not authenticate
+any tenant and any principal, so its compromise means cross-tenant access and impersonation of any user: the holder
+can read any tenant's rows and record decisions, approvals and audit entries in any principal's name. The database keeps history append-only and enforces structural rules, but it does not authenticate
 people (ADR 0012 amendment 4, ADR 0002).
 
 Not trusted: browsers, request bodies and headers, token claims other than those validated (issuer, audience,
 authorised party, expiry, issue time, nonce, subject), group or role claims (never used), callback query parameters
 (only `state`, `code`, `iss` and `error` are read, and checked against stored state and configuration), check
 endpoint and tracker responses (validated, preserved as evidence, never followed on redirect).
+
+Validation binds a check endpoint's answer to the request, the asset and the reported deployment; it cannot show
+that the answer is true. In effect the endpoint's result is trusted: a dishonest or compromised endpoint can make
+Axiom record a false pass or a false failure, and a person decides whether to close (docs/DEMO.md).
 
 ## Verified versus assumed
 

@@ -1,0 +1,138 @@
+{
+  "note": "Extracted from the raw Trivy reports of the run at 185af5b (the raw reports are delivered with the artifact package, not committed). Selected findings: every Jinja2 entry.",
+  "trivy_image": "mirror.gcr.io/aquasec/trivy@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c",
+  "trivy_db": {
+    "Version": 2,
+    "NextUpdate": "2026-10-23T19:14:47.059491102Z",
+    "UpdatedAt": "2026-10-22T19:14:47.059491382Z",
+    "DownloadedAt": "2026-10-22T20:15:30.726542656Z"
+  },
+  "scans": {
+    "orders-api": {
+      "raw_report_sha256": "eef07e090d72f626e31bfc97b9f73e4c782a8b8ee7d1ffc29e8ba30e11931143",
+      "trivy_version": "0.76.1",
+      "artifact": "localhost:5000/axiom-demo/orders-api@sha256:6fac686fd8aa73ffd73e5572e368183c242af55fa4b9dbc7146275977d59a97d",
+      "created_at": "2026-10-22T20:45:09.433565504Z",
+      "os": {
+        "Family": "debian",
+        "Name": "13.7"
+      },
+      "total_findings": 176,
+      "jinja2_findings": [
+        {
+          "VulnerabilityID": "CVE-2024-22195",
+          "PkgName": "Jinja2",
+          "InstalledVersion": "3.1.2",
+          "FixedVersion": "3.1.3",
+          "Severity": "MEDIUM",
+          "Status": "fixed",
+          "PURL": "pkg:pypi/jinja2@3.1.2",
+          "DataSource": "ghsa"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-34064",
+          "PkgName": "Jinja2",
+          "InstalledVersion": "3.1.2",
+          "FixedVersion": "3.1.4",
+          "Severity": "MEDIUM",
+          "Status": "fixed",
+          "PURL": "pkg:pypi/jinja2@3.1.2",
+          "DataSource": "ghsa"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-56201",
+          "PkgName": "Jinja2",
+          "InstalledVersion": "3.1.2",
+          "FixedVersion": "3.1.5",
+          "Severity": "MEDIUM",
+          "Status": "fixed",
+          "PURL": "pkg:pypi/jinja2@3.1.2",
+          "DataSource": "ghsa"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-56326",
+          "PkgName": "Jinja2",
+          "InstalledVersion": "3.1.2",
+          "FixedVersion": "3.1.5",
+          "Severity": "MEDIUM",
+          "Status": "fixed",
+          "PURL": "pkg:pypi/jinja2@3.1.2",
+          "DataSource": "ghsa"
+        },
+        {
+          "VulnerabilityID": "CVE-2025-27516",
+          "PkgName": "Jinja2",
+          "InstalledVersion": "3.1.2",
+          "FixedVersion": "3.1.6",
+          "Severity": "MEDIUM",
+          "Status": "fixed",
+          "PURL": "pkg:pypi/jinja2@3.1.2",
+          "DataSource": "ghsa"
+        }
+      ]
+    },
+    "reports-api": {
+      "raw_report_sha256": "2443c850ac3e8aabad1eadfb5a562ce60b02d705d15134b9f0463fd315138e3a",
+      "trivy_version": "0.76.1",
+      "artifact": "localhost:5000/axiom-demo/reports-api@sha256:1b656a1caa8deb1f3afab3b8124cb4bd09ce1b56830299bf65d640ee7977a64e",
+      "created_at": "2026-10-22T20:45:09.768475275Z",
+      "os": {
+        "Family": "debian",
+        "Name": "13.7"
+      },
+      "total_findings": 176,
+      "jinja2_findings": [
+        {
+          "VulnerabilityID": "CVE-2024-22195",
+          "PkgName": "Jinja2",
+          "InstalledVersion": "3.1.2",
+          "FixedVersion": "3.1.3",
+          "Severity": "MEDIUM",
+          "Status": "fixed",
+          "PURL": "pkg:pypi/jinja2@3.1.2",
+          "DataSource": "ghsa"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-34064",
+          "PkgName": "Jinja2",
+          "InstalledVersion": "3.1.2",
+          "FixedVersion": "3.1.4",
+          "Severity": "MEDIUM",
+          "Status": "fixed",
+          "PURL": "pkg:pypi/jinja2@3.1.2",
+          "DataSource": "ghsa"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-56201",
+          "PkgName": "Jinja2",
+          "InstalledVersion": "3.1.2",
+          "FixedVersion": "3.1.5",
+          "Severity": "MEDIUM",
+          "Status": "fixed",
+          "PURL": "pkg:pypi/jinja2@3.1.2",
+          "DataSource": "ghsa"
+        },
+        {
+          "VulnerabilityID": "CVE-2024-56326",
+          "PkgName": "Jinja2",
+          "InstalledVersion": "3.1.2",
+          "FixedVersion": "3.1.5",
+          "Severity": "MEDIUM",
+          "Status": "fixed",
+          "PURL": "pkg:pypi/jinja2@3.1.2",
+          "DataSource": "ghsa"
+        },
+        {
+          "VulnerabilityID": "CVE-2025-27516",
+          "PkgName": "Jinja2",
+          "InstalledVersion": "3.1.2",
+          "FixedVersion": "3.1.6",
+          "Severity": "MEDIUM",
+          "Status": "fixed",
+          "PURL": "pkg:pypi/jinja2@3.1.2",
+          "DataSource": "ghsa"
+        }
+      ]
+    }
+  }
+}

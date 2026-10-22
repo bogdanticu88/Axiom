@@ -59,7 +59,10 @@ recorded authority, citation classification, audit redaction) are included and p
 | Evidence access and integrity controls | evo::test_upload_finalise_and_audited_download, ::test_digest_mismatch..., ::test_oversize..., ::test_only_uploader..., ::test_finalise_before_upload_rejected, ::test_classification_permissions_and_denial_audit, ::test_cross_tenant_evidence_is_not_found, ::test_storage_tampering..., ::test_tenant_object_store_refuses_foreign_keys, s3::test_s3_roundtrip_and_size_limit, s3::test_s3_evidence_finalise_and_tamper_detection |
 
 ## Run 2: Compose fresh-install smoke test (2026-10-22 21:53Z, separate from run 1)
-Command: `BUILD=1 BUILD_CA=/root/.ccr/ca-bundle.crt scripts/verify/compose-smoke.sh`. Throwaway project
+Command: `BUILD=1 BUILD_CA=<proxy CA bundle> scripts/verify/compose-smoke.sh`. Environment note: the build sandbox
+for this run reached package registries through a TLS-intercepting proxy, so `BUILD_CA` pointed at that proxy's CA
+bundle (`/root/.ccr/ca-bundle.crt`, a path that exists only in that sandbox). Later CI runs used the same setting.
+Users do not need this path; without such a proxy, leave `BUILD_CA` unset. Throwaway project
 `axiom-smoke-215350`, new volumes, generated secrets, `down -v` afterwards. Image rebuilt from the working tree
 (`sha256:1ec695eb...`). Log: `docs/verification/2026-10-22/compose-smoke.log`.
 

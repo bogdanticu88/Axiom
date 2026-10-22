@@ -76,8 +76,38 @@ python -m axiom.provisioning --dsn "host=... dbname=axiom user=axiom_admin_cli p
     create-verification-identity --tenant <tenant id> [--scope <project scope id>]
 ```
 This step is not exercised by the Compose smoke test. Then create a connection with adapter `verification_check` (HTTPS base URL, optional `secretref:` bearer token) as a
-user with `connection.configure`. No check endpoint ships with this profile; the worker has been tested only against
-a local fixture endpoint.
+user with `connection.configure`, and allow its origin for the job worker with `AXIOM_VERIFICATION_DESTINATIONS`
+(and `AXIOM_VERIFICATION_NETWORKS` if it resolves to a private address); nothing is contacted otherwise. No check
+endpoint ships with this profile. The worker has been tested against a local fixture endpoint and against the local
+demonstration service in `scripts/demo` (docs/DEMO.md), which is not a supported component.
+
+The endpoint's answers are trusted, not proven. A dishonest or compromised endpoint can make Axiom record a false
+pass (or a false failure): it chooses the result, the examined digest and the observation time, and nothing signs
+them. Closing a case after a pass is always a person's decision; treat the endpoint and its host as part of your
+trusted computing base. Details: docs/DEMO.md, "Who controls the endpoint".
+
+## Suspending a tenant, and work left behind
+There is no API or CLI command for tenant suspension in this version. It is set by the provisioning identity
+(`axiom.provisioning.Provisioner.set_tenant_status`, or an `UPDATE axiom.tenants SET status = 'suspended'` made with
+the `axiom_admin_cli` login). Once it commits, the tenant's rows are invisible to the API and workers, every request is
+refused, and no worker serves the tenant.
+
+**Cancellation of waiting work is not implemented** (requirement TEN-16). Queued jobs stay queued. A job that was
+running when the suspension committed is left in state `running`: its worker's pass fails at the bookkeeping step
+with a row-level-security error (logged as "worker pass failed"), and the job keeps an expired lease until the tenant
+is reactivated. An external request it had already sent (for example to the check endpoint) is not taken back; nothing
+is recorded for it. Recovery, both paths tested in `tests/integration/test_principal_status.py`:
+
+1. **Let the work run.** Reactivate the tenant (`status = 'active'`). The next worker pass reclaims the expired lease
+   and runs the job from the start; the verification handler rechecks authority and the case first, contacts the
+   endpoint again and records once.
+2. **Discard the work.** Stop the job workers (`docker compose stop job-worker`), reactivate the tenant, request
+   cancellation as a user with `job.operate` at the tenant root (`POST /api/v1/jobs/{job_id}/cancel` with a reason;
+   find the job with `GET /api/v1/jobs?state=running`), then start the workers again. The reclaiming worker marks the
+   job cancelled instead of running it. Reactivating with workers still running can let them reclaim the job before the
+   cancellation is recorded.
+
+While the tenant stays suspended, neither path is available: the job cannot be seen or cancelled through the API.
 
 ## Verify an installation
 `BUILD=1 scripts/verify/compose-smoke.sh` creates a throwaway project with new secrets and volumes, runs the API
