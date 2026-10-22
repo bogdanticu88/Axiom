@@ -53,8 +53,10 @@ TOKEN=$(docker compose -f deployments/compose/compose.yaml --env-file deployment
         python -m axiom.devtools mint --dir /var/lib/axiom/dev-idp --sub alice)
 curl -H "Authorization: Bearer $TOKEN" -H "X-Axiom-Tenant: demo" http://127.0.0.1:8000/api/v1/cases
 ```
-Seeded synthetic users and roles are listed in `backend/axiom/devseed.py`. Automated check:
-`scripts/verify/compose-smoke.sh`.
+The analyst UI is at `http://127.0.0.1:8000/ui/`; sign in on the local Keycloak page as a seeded user (for example
+`alice`) with the password from `AXIOM_DEMO_PASSWORD`. Full procedure, configuration and what fails closed:
+docs/INSTALL-COMPOSE.md. Seeded synthetic users and roles are listed in `backend/axiom/devseed.py`. Automated
+check: `scripts/verify/compose-smoke.sh` (needs `uv sync` and Chromium for its browser step).
 
 ## Restoring from a preservation archive
 See `docs/HANDOFF.md`, section "Restore".

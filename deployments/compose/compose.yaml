@@ -2,10 +2,12 @@
 #
 #   cp deployments/compose/.env.example deployments/compose/.env   # then set real secrets
 #   docker compose -f deployments/compose/compose.yaml --env-file deployments/compose/.env up -d --build
+#   open http://127.0.0.1:${AXIOM_API_PORT}/ui/ and sign in as alice (password: AXIOM_DEMO_PASSWORD)
 #
-# Not a production profile: development identity (inline JWKS from a generated key),
-# a single PostgreSQL instance, single-node object storage, no TLS termination.
-# The API refuses inline JWKS and filesystem storage when AXIOM_ENV=production.
+# Not a production profile: a local Keycloak in development mode (H2 storage, HTTP, synthetic users), development
+# bearer tokens (inline JWKS from a generated key), a single PostgreSQL instance, single-node object storage, no TLS
+# termination. The API refuses inline JWKS, plain-HTTP identity URLs, insecure cookies, the environment secret
+# resolver and filesystem storage when AXIOM_ENV=production. See docs/INSTALL-COMPOSE.md.
 name: axiom
 
 x-backend: &backend
@@ -86,10 +88,53 @@ services:
     restart: "no"
     networks: [data]
 
+  # One-shot: the local identity provider's realm (synthetic users) and the mapping of its subjects to the seeded
+  # principals (by issuer and subject; never by email).
+  idp-init:
+    <<: *backend
+    depends_on:
+      app-init: {condition: service_completed_successfully}
+    environment:
+      <<: *backend-env
+      AXIOM_ADMIN_DSN: host=postgres dbname=axiom user=axiom_admin_cli password=${AXIOM_ADMIN_CLI_PASSWORD}
+      AXIOM_OIDC_ISSUER: http://127.0.0.1:${AXIOM_IDP_PORT:-8081}/realms/axiom
+      AXIOM_PUBLIC_ORIGIN: http://127.0.0.1:${AXIOM_API_PORT:-8000}
+      AXIOM_OIDC_CLIENT_SECRET: ${AXIOM_OIDC_CLIENT_SECRET:?set AXIOM_OIDC_CLIENT_SECRET}
+      AXIOM_DEMO_PASSWORD: ${AXIOM_DEMO_PASSWORD:?set AXIOM_DEMO_PASSWORD}
+    volumes:
+      - idpimport:/var/lib/axiom/idp-import
+    user: "0:0"   # only to set ownership of the import volume; drops to uid 10001 for all work
+    entrypoint: ["sh", "-c", "chown 10001 /var/lib/axiom/idp-import && exec setpriv --reuid=10001 --regid=10001 --clear-groups sh -eu -c 'python -m axiom.devidp realm --out /var/lib/axiom/idp-import && python -m axiom.devidp link --admin-dsn \"$$AXIOM_ADMIN_DSN\"'"]
+    restart: "no"
+    networks: [data]
+
+  # Local identity provider for the development profile (Keycloak 26.4.2 in dev mode, pinned by digest). The browser
+  # reaches it on 127.0.0.1:${AXIOM_IDP_PORT}; the API reaches it on the container network (backchannel).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.2@sha256:3617b09bb4b7510a8d8d9b9fc5707399e2d70688dbcc2f8fb013a144829be1b9
+    depends_on:
+      idp-init: {condition: service_completed_successfully}
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_HOSTNAME: http://127.0.0.1:${AXIOM_IDP_PORT:-8081}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    volumes:
+      - idpimport:/opt/keycloak/data/import:ro
+    ports: ["127.0.0.1:${AXIOM_IDP_PORT:-8081}:8080"]
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    networks: [edge]
+
   api:
     <<: *backend
     depends_on:
       app-init: {condition: service_completed_successfully}
+      keycloak: {condition: service_started}
     environment:
       <<: *backend-env
       AXIOM_DATABASE_DSN: host=postgres dbname=axiom user=axiom_app password=${AXIOM_APP_PASSWORD}
@@ -97,6 +142,16 @@ services:
       AXIOM_S3_ENDPOINT_URL: http://objects:8333
       AXIOM_S3_BUCKET: axiom-evidence
       AXIOM_TRUSTED_ISSUERS_FILE: /var/lib/axiom/dev-idp/issuers.json
+      # analyst UI and sign-in through the local Keycloak (ADR 0013)
+      AXIOM_UI_DIST_DIR: /app/ui
+      AXIOM_OIDC_ISSUER: http://127.0.0.1:${AXIOM_IDP_PORT:-8081}/realms/axiom
+      AXIOM_OIDC_METADATA_URL: http://keycloak:8080/realms/axiom/.well-known/openid-configuration
+      AXIOM_OIDC_CLIENT_ID: axiom-ui
+      AXIOM_OIDC_CLIENT_SECRET_REF: secretref:env/AXIOM_OIDC_CLIENT_SECRET
+      AXIOM_OIDC_CLIENT_SECRET: ${AXIOM_OIDC_CLIENT_SECRET}
+      AXIOM_OIDC_REDIRECT_URI: http://127.0.0.1:${AXIOM_API_PORT:-8000}/auth/callback
+      AXIOM_OIDC_POST_LOGOUT_REDIRECT_URI: http://127.0.0.1:${AXIOM_API_PORT:-8000}/ui/
+      AXIOM_UI_COOKIE_SECURE: "false"     # plain HTTP on loopback in this profile; production refuses this
     volumes:
       - devidp:/var/lib/axiom/dev-idp:ro
     entrypoint: ["sh", "-c", "export AXIOM_TRUSTED_ISSUERS_JSON=\"$$(cat $$AXIOM_TRUSTED_ISSUERS_FILE)\" && exec python -m axiom.server"]
@@ -138,6 +193,7 @@ volumes:
   objdata: {}
   objcfg: {}
   devidp: {}
+  idpimport: {}
   witness: {}
 
 networks:

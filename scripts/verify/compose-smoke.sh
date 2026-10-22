@@ -12,7 +12,9 @@ CDIR="$ROOT/deployments/compose"
 P="axiom-smoke-$(date -u +%H%M%S)"
 ENVF="$(mktemp)"; trap 'docker compose -p "$P" -f "$CDIR/compose.yaml" --env-file "$ENVF" down -v >/dev/null 2>&1; rm -f "$ENVF"' EXIT
 PORT=${PORT:-18010}
+IDP_PORT=${IDP_PORT:-18011}
 gen() { python3 -c 'import secrets;print(secrets.token_hex(16))'; }
+DEMO_PASSWORD=$(gen)
 cat > "$ENVF" <<E
 AXIOM_PG_SUPERUSER_PASSWORD=$(gen)
 AXIOM_MIGRATOR_PASSWORD=$(gen)
@@ -22,6 +24,9 @@ AXIOM_ADMIN_CLI_PASSWORD=$(gen)
 AXIOM_S3_ACCESS_KEY=$(gen)
 AXIOM_S3_SECRET_KEY=$(gen)
 AXIOM_API_PORT=$PORT
+AXIOM_IDP_PORT=$IDP_PORT
+AXIOM_OIDC_CLIENT_SECRET=$(gen)
+AXIOM_DEMO_PASSWORD=$DEMO_PASSWORD
 E
 if [ "${BUILD:-0}" = "1" ]; then
   args=(--network host -t axiom-backend:dev)
@@ -92,4 +97,24 @@ done
 dc logs app-init --no-color | grep "already seeded" >/dev/null || fail "re-init not idempotent"
 dc logs app-init --no-color | grep "applied: none" >/dev/null || fail "re-migration applied something"
 echo "ok   re-running init: migrations 'applied: none', seed 'already seeded'"
+# --- analyst UI through the local Keycloak (checkpoint 6)
+for i in $(seq 1 90); do
+  [ "$(dc ps keycloak --format '{{.Health}}')" = "healthy" ] && break; sleep 2
+done
+[ "$(dc ps keycloak --format '{{.Health}}')" = "healthy" ] || fail "keycloak not healthy"
+dc logs idp-init --no-color | grep '"alice"' >/dev/null || fail "idp-init did not link alice"
+UIOUT=$(AXIOM_DEMO_PASSWORD="$DEMO_PASSWORD" uv run --frozen python "$ROOT/scripts/verify/compose_ui_check.py" \
+  "http://127.0.0.1:$PORT" 2>&1) || { echo "$UIOUT" | tail -20; fail "UI check"; }
+echo "$UIOUT" | grep '^ok '
+UICASE=$(echo "$UIOUT" | sed -n 's/^CASE //p')
+WHO=$(dc exec -T postgres psql -U postgres -d axiom -tAc "SELECT p.display_name || ' ' || p.kind FROM axiom.decisions d JOIN axiom.principals p ON p.id = d.actor_principal_id WHERE d.case_id = '$UICASE' AND d.kind = 'investigation_start'")
+[ "$WHO" = "alice human" ] || fail "UI decision recorded for '$WHO'"
+echo "ok   the server recorded that decision as alice's (human principal, resolved from the Keycloak subject)"
+# --- production settings refuse the development configuration and fail closed
+OUT=$(dc run --rm --no-deps -T -e AXIOM_ENV=production api 2>&1) && fail "production start with development identity succeeded"
+echo "$OUT" | grep -q "inline JWKS is not permitted in production" || fail "production refusal reason: $(echo "$OUT" | tail -3)"
+echo "ok   AXIOM_ENV=production with the development identity refuses to start (inline JWKS not permitted)"
+OUT=$(dc run --rm --no-deps -T -e AXIOM_OIDC_CLIENT_SECRET= api 2>&1) && fail "start without the client secret succeeded"
+echo "$OUT" | grep -q "secret reference did not resolve" || fail "missing-secret refusal reason: $(echo "$OUT" | tail -3)"
+echo "ok   a missing OIDC client secret stops start-up (fails closed)"
 echo "SMOKE PASS ($P)"
