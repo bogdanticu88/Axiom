@@ -1,4 +1,4 @@
-"""Ingestion pipeline (Phase B): file imports and API syncs into observations, occurrences and cases.
+"""Ingestion pipeline: file imports and API syncs into observations, occurrences and cases.
 
 Run lifecycle: queued -> running (leased, fencing token) -> completed | failed | cancelled.
 

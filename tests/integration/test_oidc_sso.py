@@ -171,13 +171,13 @@ def test_production_sso_settings_are_checked():
         with pytest.raises(ConfigurationError):
             Settings(**{**base, **bad}).validate_for_runtime()
     Settings(**{**base, "oidc_issuer": "https://idp.example"}).validate_for_runtime()
-    # checkpoint 6: further fail-closed checks
+    # further fail-closed checks
     for bad in ({"oidc_issuer": "https://idp.example", "oidc_metadata_url": "http://idp.internal/.well-known/x"},
                 {"oidc_issuer": "https://idp.example", "oidc_post_logout_redirect_uri": "http://axiom.example/ui/"},
                 {"ui_dist_dir": "/app/ui"},                              # a UI without sign-in
                 {"trusted_issuers_json": "[]"},                          # no issuer at all
                 {"oidc_issuer": "https://idp.example", "oidc_client_secret_ref": None},
-                # checkpoint 7: environment secrets, inconsistent origins and a wrong callback path
+                # environment secrets, inconsistent origins and a wrong callback path
                 {"oidc_issuer": "https://idp.example", "oidc_client_secret_ref": "secretref:env/X"},
                 {"oidc_issuer": "https://idp.example", "oidc_post_logout_redirect_uri": "https://other.example/ui/"},
                 {"oidc_issuer": "https://idp.example", "oidc_redirect_uri": "https://axiom.example/elsewhere"}):
@@ -200,7 +200,7 @@ def test_unresolvable_client_secret_stops_start_up(db, issuer, monkeypatch):
     create_app(Settings(env="test", **kw), db=db)                       # resolves: starts (no IdP call at start)
 
 
-# ------------------------------------------------------------------- checkpoint 7: authentication review
+# ------------------------------------------------------------------- authentication review
 def test_signing_key_rotation_at_the_local_idp_is_followed(server, keycloak, dbinfo, world):
     """The platform caches the IdP's keys after the first login. Keycloak then signs with a new key whose ID the
     platform has not seen; the next login refreshes the key set once and succeeds."""

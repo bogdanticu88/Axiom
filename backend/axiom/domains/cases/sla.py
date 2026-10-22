@@ -2,22 +2,18 @@
 
 Two clocks per case cycle (a cycle starts at creation, and again at each reopening):
 
-* **Triage**: starts at the cycle start; ends when the case is first prioritised (policy applied or override) in that
-  cycle. It is a deadline to *decide priority*, not to remediate. Met if prioritised by the due time, otherwise missed.
-* **Remediation**: starts at the first prioritisation in the cycle; due = start + target for the current priority +
-  paused time. A priority change *revises* the timer: the old row ends as ``revised`` and a new row keeps the **same
-  start and accumulated pause** with the new target, so elapsed time is never reset. If the new due time has already
-  passed, the revised timer is breached at that due time.
-* **Pause**: the remediation clock stops from a ``case.deferred`` event until the next case event **only** when the
-  deferral states a ``pause_reason`` that the SLA policy authorises (``pause_reasons``). A deferral without an
-  authorised reason keeps the case open with a review date, but time keeps counting. Pause intervals are stored with
-  their reason and who recorded them, and gross, paused and adjusted time are reported separately (``sla_view``).
-  Pauses are derived from event timestamps, so the result does not depend on when the sweep runs.
-* **Breach** time is the due time itself (deterministic), recorded once with one outbox event.
-* **End**: on closure, ``verified_remediated`` ends the remediation timer as ``met`` (closed by the due time) or
-  ``missed``; ``accepted_risk`` ends it as ``risk_accepted`` (never ``met``: accepted risk is not remediation);
-  dismissed, duplicate and retired-asset closures end it as ``closed_without_fix``. An open triage timer at closure
-  ends the same way.
+* **Triage**: from the cycle start until the case is first prioritised in that cycle. It is a deadline to decide
+  priority, not to remediate.
+* **Remediation**: from the first prioritisation; due = start + target for the current priority + paused time. A
+  priority change revises the timer: the old row ends as ``revised`` and the new one keeps the same start and
+  accumulated pause, so elapsed time is never reset. A revised due time already in the past is breached at that time.
+* **Pause**: the remediation clock stops from a ``case.deferred`` event until the next case event, but only when the
+  deferral states a ``pause_reason`` the SLA policy authorises. Otherwise time keeps counting. Pauses are derived
+  from event timestamps, so the result does not depend on when the sweep runs.
+* **Breach** time is the due time itself, recorded once with one outbox event.
+* **End**: ``verified_remediated`` ends the remediation timer as ``met`` or ``missed``; ``accepted_risk`` as
+  ``risk_accepted`` (accepted risk is not remediation); other closures as ``closed_without_fix``. An open triage
+  timer at closure ends the same way.
 
 Targets come from the published ``sla`` policy or the built-in provisional default, recorded on every timer.
 """

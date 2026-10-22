@@ -48,8 +48,8 @@ def seed(admin_dsn: str, app_dsn: str) -> dict:
             p.bootstrap_role(demo.tenant_id, pid, role, scope, "development seed (synthetic)")
     p.add_membership(two.tenant_id, people["consult"])
     p.bootstrap_role(two.tenant_id, people["consult"], "analyst", payments_two, "development seed (synthetic)")
-    # Delegation limit for erin, set through the tenant admin path would require a token; the seed
-    # records it directly as a bootstrap step via the runtime role bound to the admin principal.
+    # Erin's delegation limit. The tenant admin API would need a token, so the seed writes it directly,
+    # through the runtime role bound to the admin principal.
     with psycopg.connect(app_dsn) as conn:
         with conn.transaction():
             conn.execute("SELECT axiom.bind_context(%s, %s)", (demo.tenant_id, people["admin"]))

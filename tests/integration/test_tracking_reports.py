@@ -91,7 +91,7 @@ def test_sync_errors_do_not_stop_other_references(env, admin_conn):
     assert result["checked"] == 1 and len(result["errors"]) == 1 and result["changed"] == 1
 
 
-# SLA timers are tested in test_sla_reporting_journey.py (v2 timers, migration 0012).
+# SLA timers are tested in test_sla_timers.py (v2 timers, migration 0012).
 
 
 # ------------------------------------------------------------------------------------------ reports

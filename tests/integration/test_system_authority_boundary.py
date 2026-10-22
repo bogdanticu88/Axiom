@@ -1,4 +1,4 @@
-"""Negative tests for the human/system authority boundary (checkpoint 6 review; migrations 0014 and 0016).
+"""Negative tests for the human/system authority boundary (migrations 0014 and 0016).
 
 Each refusal is checked for the *reason* it was refused (permission denied by the service, or the database guard's
 own message), so a test cannot pass because something unrelated failed first.

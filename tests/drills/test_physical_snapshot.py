@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skipif(os.environ.get("AXIOM_RUN_DRILLS") != "1", reaso
 
 def _free_port() -> int:
     import socket
-    with socket.socket() as s:      # a fixed port collided with a leftover cluster once; pick a free one
+    with socket.socket() as s:      # a free port avoids colliding with a leftover cluster
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
 

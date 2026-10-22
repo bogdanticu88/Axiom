@@ -9,7 +9,7 @@ omitted), 429 with a `retry-after` header in seconds. Without time filters an ex
 30 days, so an export is never treated as a complete inventory.
 
 Support level: fixture-tested against SYNTHETIC chunks and a local fake API. Not validated against a live
-Tenable instance (no licensed account available).
+Tenable instance.
 """
 from __future__ import annotations
 

@@ -11,8 +11,7 @@
   ``usage.output_tokens``, ``stop_reason``; errors ``{"type": "error", "error": {"type", "message"}}`` with 429
   rate_limit_error, 500 api_error, 504 timeout_error and 529 overloaded_error retryable). Shapes are taken from the
   public API documentation (Messages and Errors pages, read 2026-10-22). **Never run against
-  the live service in this project**: no credentials or external access were authorised. Tested only against a local
-  transport that returns the documented shapes.
+  the live service**; tested only against a local transport that returns the documented shapes.
 """
 from __future__ import annotations
 

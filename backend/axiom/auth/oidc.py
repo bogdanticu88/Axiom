@@ -3,8 +3,8 @@
 Libraries: Authlib's framework-independent OAuth 2 helpers (``authlib.oauth2.rfc7636.create_s256_code_challenge``,
 ``authlib.common.urls.add_params_to_uri``) build the authorization request; the code exchange is one form POST made
 here with httpx, authenticated with ``client_secret_basic`` (RFC 6749 section 2.3.1); joserfc 1.7 verifies the ID
-token signature and claims. Checkpoint 6 removed ``authlib.integrations.httpx_client.OAuth2Client``: since Authlib
-1.8.0 that integration is built on ``httpx2`` and its fallback to ``httpx`` is deprecated and due for removal.
+token signature and claims. ``authlib.integrations.httpx_client.OAuth2Client`` is deliberately not used: since
+Authlib 1.8.0 it is built on ``httpx2`` and its fallback to ``httpx`` is deprecated.
 
 Checks, in order, on the callback:
 

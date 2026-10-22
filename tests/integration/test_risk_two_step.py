@@ -38,7 +38,7 @@ def risk(run, ctx, fn):
 
 
 def set_priority(run, ctx_for, case_id, priority, version):
-    """Supported override command (replaces the earlier direct database injection)."""
+    """Override the case priority through the supported command."""
     from axiom.domains.cases import priority as prio
     return run(ctx_for("analyst"), lambda s: prio.override(s.cases, case_id, version, priority=priority,
                                                            rationale="business owner rated this low impact"))

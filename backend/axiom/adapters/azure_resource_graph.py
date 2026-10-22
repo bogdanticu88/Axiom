@@ -7,8 +7,8 @@ resultTruncated, $skipToken, data}; throttling headers x-ms-user-quota-remaining
 x-ms-user-quota-resets-after (hh:mm:ss); each page consumes quota.
 
 Tags are owner assertions, not independent observations: context from tags is recorded with basis
-'source_tag_assertion'. Support level: fixture-tested with SYNTHETIC pages and a local fake API; no live
-Azure subscription was available.
+'source_tag_assertion'. Support level: fixture-tested with SYNTHETIC pages and a local fake API; never run
+against a live Azure subscription.
 """
 from __future__ import annotations
 

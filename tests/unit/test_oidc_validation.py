@@ -77,7 +77,7 @@ def test_authorization_url_uses_pkce_s256_and_nonce():
     assert (q["state"], q["nonce"], q["response_type"], q["client_id"]) == ("st", "nn", "code", "ui")
 
 
-# ------------------------------------------------------------- code exchange (checkpoint 6: no deprecated client)
+# ------------------------------------------------------------- code exchange (no deprecated client)
 def test_authorization_url_challenge_is_s256_of_the_verifier_and_redirect_is_fixed():
     import base64
     import hashlib
@@ -155,7 +155,7 @@ def test_the_deprecated_authlib_http_client_is_not_used():
     assert "authlib.integrations.httpx_client" not in sys.modules
 
 
-# ------------------------------------------------------------- checkpoint 7: authentication review
+# ------------------------------------------------------------- authentication review
 def rotating_client(keysets, fetches):
     def handler(req):
         if req.url.path.endswith("/.well-known/openid-configuration"):

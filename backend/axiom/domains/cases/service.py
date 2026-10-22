@@ -284,10 +284,7 @@ class CaseService:
 
     def record_external_work(self, case_id: UUID, expected_version: int, *, external_reference: str,
                              rationale: str) -> dict:
-        """remediation_planned -> remediating on recorded externally initiated work.
-
-        The approved-action path (Phase D) will be a second route into 'remediating'.
-        """
+        """remediation_planned -> remediating on recorded externally initiated work."""
         case = self._load(case_id)
         model.check_expected_version(case["record_version"], expected_version)
         model.require_state(case["workflow"], Workflow.PLANNED)
@@ -342,7 +339,7 @@ class CaseService:
                              deployment_state: str | None = None, evidence: Sequence[EvidenceRef] = (),
                              target_asset_version_id: UUID | None = None,
                              change_reference: str | None = None) -> dict:
-        """R7 (approved 2026-10-22): leave remediation when a plan is abandoned.
+        """R7: leave remediation when a plan is abandoned.
 
         * from remediation_planned: back to review through an authorised, recorded decision;
         * from remediating with ``deployment_state='none'``: back to review only with verified evidence that no

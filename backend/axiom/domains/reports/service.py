@@ -1,24 +1,15 @@
-"""Report snapshots, exports and auditor evidence packages (Implementation Plan Phase D; RPT-01, 02, 05, 06; RISK-04).
+"""Report snapshots, exports and auditor evidence packages (RPT-01, 02, 05, 06; RISK-04).
 
-Snapshots (``exposure_summary@2``):
+Snapshots (``exposure_summary@2``) are reproducible as of a time: every figure comes from append-only history
+filtered by ``as_of``, never from mutable current-state columns, so regenerating a snapshot for the same ``as_of``
+yields the same content and digest. Cases, occurrences and assets have separate denominators. Coverage is reported
+per source, and a successful synchronisation is not treated as complete coverage. Unknowns (unprioritised or
+unassessed cases, unresolved owners, inconclusive results, partial or stale coverage) are counted explicitly, and
+accepted risk, dismissals, duplicates and retirements are counted apart from verified remediation.
 
-* **Reproducible as of a time.** Every figure is derived from append-only history filtered by ``as_of``: case events
-  (workflow and priority at that time), decisions, verification runs, closure records, links, run completion times,
-  audit events (asset retirement), timer and ticket-state timestamps. Mutable current-state columns are not used, so
-  regenerating a snapshot for the same ``as_of`` yields the same content and digest (tested).
-* **Separate denominators** for cases, occurrences and assets.
-* **Coverage by source** (source kind, adapter, connection): declared scope, last run, last *successful* run, the
-  coverage of that run, the last run with *complete* coverage, and freshness against a source-specific policy.
-  A successful synchronisation is not complete coverage; the two are reported in separate fields.
-* **Unknowns are explicit**: unprioritised and unassessed cases, open cases without a resolved owner, inconclusive
-  assessments and verifications, sources with partial or unknown coverage or stale data, assets never observed by a
-  complete scan.
-* Accepted risk, dismissals, duplicates and retirements are counted apart from verified remediation.
-
-Evidence packages are per case for auditors: decision history with policy versions, evidence references, approvals and
-executions, verification results, closure records, ownership and SLA history. Evidence **content** is included only for
-objects whose classification the requester may read; others are listed by reference and digest with the reason they are
-withheld. Every package and export read is audited and digest-checked.
+Evidence packages are per case. Evidence content is included only where the requester may read its classification;
+other objects are listed by reference and digest with the reason they are withheld. Every package and export read is
+audited and digest-checked.
 """
 from __future__ import annotations
 

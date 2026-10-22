@@ -1,10 +1,10 @@
-"""Checkpoint-7 adversarial review of the authority boundary (ADR 0012 amendment 3, migration 0017).
+"""Adversarial tests of the authority boundary (ADR 0012 amendment 3, migration 0017).
 
-Demonstrated defects (each reproduced on checkpoint-6 code before the fix; the reproducer is the test body):
-  D1 a transaction bound to one principal could record a decision as another principal;
-  D2 a bound transaction could re-bind to a different principal;
-  D3 a revocation could commit between a command's permission check and the command's commit.
-Hardening without an application-level exploit:
+Each test body attempts the attack directly:
+  D1 a transaction bound to one principal cannot record a decision as another principal;
+  D2 a bound transaction cannot re-bind to a different principal;
+  D3 a revocation cannot commit between a command's permission check and the command's commit.
+Hardening with no known application-level exploit:
   H1 bindings that predate migration 0016 are reviewed and incompatible ones revoked;
   H2 a principal's kind cannot change.
 """
@@ -30,7 +30,7 @@ BOUND = "must be recorded by the principal bound to the transaction"
 # ------------------------------------------------------------------------------------------------ D1, D2
 def test_d1_bound_transaction_cannot_record_a_decision_as_someone_else(db, run, ctx_for, world):
     """Preconditions: code running with the runtime role in a transaction bound to the system principal.
-    Before 0017 the row below committed: an assessment attributed to the analyst, written by the system context."""
+    The insert attempts an assessment attributed to the analyst but written by the system context."""
     case = run(ctx_for("analyst"), lambda s: s.cases.create(scope_id=world.a.project, title="t"))
     system = ctx_for("system")
     with pytest.raises(psycopg.errors.InsufficientPrivilege) as err:
@@ -82,8 +82,8 @@ def _binding(run, ctx_for, who, world):
 
 @pytest.mark.parametrize("revocation", ["role", "membership"])
 def test_d3_revocation_waits_for_a_command_that_already_checked_the_permission(db, run, ctx_for, world, revocation):
-    """Before the fix the revocation committed while the command's transaction was still open, and the command then
-    committed a decision whose authority had already been revoked. Now the revocation waits until the command ends."""
+    """A revocation issued while a command's transaction is open waits until the command ends, so the command never
+    commits a decision whose authority has already been revoked."""
     case = run(ctx_for("analyst"), lambda s: s.cases.create(scope_id=world.a.project, title="t"))
     binding = _binding(run, ctx_for, "analyst", world)
     analyst, finished = ctx_for("analyst"), {}

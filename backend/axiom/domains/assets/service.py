@@ -1,8 +1,7 @@
-"""Minimal asset records needed for deployment-bound verification (Phase A).
+"""Minimal asset records needed for deployment-bound verification.
 
-Phase B replaces direct occurrence recording with the ingestion pipeline and
-adds identity candidates, merges and splits. Nothing here merges assets or
-treats a CVE, IP, name or tag as identity.
+Identity candidates, merges and splits belong to the ingestion pipeline.
+Nothing here merges assets or treats a CVE, IP, name or tag as identity.
 """
 from __future__ import annotations
 

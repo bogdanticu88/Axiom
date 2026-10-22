@@ -1,8 +1,9 @@
-"""Checkpoint-7 browser tests (Chromium, local Keycloak, real API and database).
+"""Browser tests of the change-report form and focused accessibility checks (Chromium, local Keycloak, real API
+and database).
 
 * The change-report form: success operated by keyboard only, and the server's refusals (permission, stale page).
-* Focused accessibility checks on the screens changed in checkpoints 6 and 7 (verification and closure, risk
-  acceptance, action proposals and approvals): every form control has an accessible name, refusals are announced
+* Focused accessibility checks on the verification and closure, risk acceptance, and action proposal and approval
+  screens: every form control has an accessible name, refusals are announced
   (role=alert) and successes are polite status messages (role=status), keyboard focus is visible and moves in
   document order. This is **not** an accessibility audit: no screen reader, contrast, zoom or WCAG review was done.
 * Worker-recorded verification is labelled differently from a person's, with the check endpoint marked
