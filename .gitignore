@@ -31,3 +31,4 @@ evidence-store/
 # Preservation artifacts are produced outside the repository
 *.bundle
 *.tar.gz
+demo-out/
