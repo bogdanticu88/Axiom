@@ -8,9 +8,11 @@ Two clocks per case cycle (a cycle starts at creation, and again at each reopeni
   paused time. A priority change *revises* the timer: the old row ends as ``revised`` and a new row keeps the **same
   start and accumulated pause** with the new target, so elapsed time is never reset. If the new due time has already
   passed, the revised timer is breached at that due time.
-* **Pause**: when the SLA policy says ``pause_on_deferral``, the clock stops from a ``case.deferred`` event until the
-  next case event (the deferral is replaced by any further decision). Pauses are derived from event timestamps, so the
-  result does not depend on when the sweep runs.
+* **Pause**: the remediation clock stops from a ``case.deferred`` event until the next case event **only** when the
+  deferral states a ``pause_reason`` that the SLA policy authorises (``pause_reasons``). A deferral without an
+  authorised reason keeps the case open with a review date, but time keeps counting. Pause intervals are stored with
+  their reason and who recorded them, and gross, paused and adjusted time are reported separately (``sla_view``).
+  Pauses are derived from event timestamps, so the result does not depend on when the sweep runs.
 * **Breach** time is the due time itself (deterministic), recorded once with one outbox event.
 * **End**: on closure, ``verified_remediated`` ends the remediation timer as ``met`` (closed by the due time) or
   ``missed``; ``accepted_risk`` ends it as ``risk_accepted`` (never ``met``: accepted risk is not remediation);
@@ -41,22 +43,25 @@ def _cycle(events: list[dict]) -> tuple[int, list[dict]]:
     return len(reopen) + 1, events[start:]
 
 
-def _paused(events: list[dict], since, until, enabled: bool) -> tuple[float, object]:
-    """Seconds paused between ``since`` and ``until`` and the start of a pause still open at ``until``."""
-    if not enabled:
-        return 0.0, None
-    total, open_since = 0.0, None
+def _paused(events: list[dict], since, until, authorised) -> tuple[float, object, list[dict]]:
+    """Paused seconds between ``since`` and ``until``, the start of a pause still open at ``until``, and the pause
+    intervals. Only ``case.deferred`` events whose payload states an authorised ``pause_reason`` pause the clock; a
+    pause ends at the next case event."""
+    total, open_since, intervals = 0.0, None, []
     for i, e in enumerate(events):
-        if e["event_type"] != "case.deferred":
+        reason = (e.get("payload") or {}).get("pause_reason")
+        if e["event_type"] != "case.deferred" or reason not in authorised:
             continue
         start = max(e["created_at"], since)
         nxt = events[i + 1]["created_at"] if i + 1 < len(events) else None
         end = min(nxt, until) if nxt else until
         if end > start:
             total += (end - start).total_seconds()
+            intervals.append({"from": start.isoformat(), "to": (nxt.isoformat() if nxt and nxt <= until else None),
+                              "reason": reason, "recorded_by": str(e.get("actor_principal_id"))})
         if nxt is None or nxt > until:
             open_since = start if start <= until else None
-    return total, open_since
+    return total, open_since, intervals
 
 
 def _end_status(reason: str | None, due, closed_at, breached: bool) -> str:
@@ -77,7 +82,8 @@ def sla_sweep(conn: psycopg.Connection, ctx: TenantContext, *, now=None) -> dict
     cases = conn.execute("SELECT * FROM axiom.finding_cases FOR UPDATE SKIP LOCKED").fetchall()
     for case in cases:
         events = list(conn.execute(
-            "SELECT event_type, created_at, payload FROM axiom.case_events WHERE case_id = %s ORDER BY sequence",
+            """SELECT event_type, created_at, payload, actor_principal_id FROM axiom.case_events WHERE case_id = %s
+                ORDER BY sequence""",
             (case["id"],)))
         if not events:
             continue
@@ -121,7 +127,10 @@ def sla_sweep(conn: psycopg.Connection, ctx: TenantContext, *, now=None) -> dict
         target = definition["remediation_days"][case["priority"]] if case["priority"] in \
             definition["remediation_days"] else None
         horizon = closed_at or now
-        paused, open_pause = _paused(evs, start, horizon, definition.get("pause_on_deferral", False))
+        r0 = timers.get("remediation")
+        terms = r0["policy_snapshot"] if r0 is not None else snapshot
+        authorised = set(terms.get("pause_reasons", [])) if terms.get("pause_on_deferral", False) else set()
+        paused, open_pause, pauses = _paused(evs, start, horizon, authorised)
         if target is None:
             continue
         due = start + timedelta(days=target, seconds=paused)
@@ -145,7 +154,7 @@ def sla_sweep(conn: psycopg.Connection, ctx: TenantContext, *, now=None) -> dict
             breached = r["breached_at"] is not None or closed_at > due
             _end(conn, r, _end_status(closure_reason, due, closed_at, breached), closed_at, f"closed: {closure_reason}",
                  breach_at=due if breached and r["breached_at"] is None and closure_reason == "verified_remediated"
-                 else None, paused=paused, due=due)
+                 else None, paused=paused, due=due, pauses=pauses)
             out["ended"] += 1
             continue
         status = r["status"]
@@ -156,8 +165,8 @@ def sla_sweep(conn: psycopg.Connection, ctx: TenantContext, *, now=None) -> dict
             status = "running"
             out["resumed"] += 1
         conn.execute("""UPDATE axiom.sla_timers SET paused_seconds = GREATEST(paused_seconds, %s), due_at = %s, status = %s,
-                               paused_since = %s, record_version = record_version + 1 WHERE id = %s""",
-                     (int(paused), due, status, open_pause if status == "paused" else None, r["id"]))
+                               paused_since = %s, pauses = %s, record_version = record_version + 1 WHERE id = %s""",
+                     (int(paused), due, status, open_pause if status == "paused" else None, Jsonb(pauses), r["id"]))
         if open_pause is None and r["breached_at"] is None and due <= now:
             r = conn.execute("SELECT * FROM axiom.sla_timers WHERE id = %s", (r["id"],)).fetchone()
             _breach(conn, ctx, r, out)
@@ -171,12 +180,14 @@ def _insert(conn, ctx, case_id, kind, cycle, priority, policy_id, snapshot, star
         (ctx.tenant_id, uuid.uuid4(), case_id, kind, cycle, priority, policy_id, Jsonb(snapshot), start, due)).fetchone()
 
 
-def _end(conn, timer, status, ended_at, reason, *, breach_at=None, paused=None, due=None) -> None:
+def _end(conn, timer, status, ended_at, reason, *, breach_at=None, paused=None, due=None, pauses=None) -> None:
     conn.execute(
         """UPDATE axiom.sla_timers SET status = %s, ended_at = %s, end_reason = %s, paused_since = NULL,
                   breached_at = COALESCE(breached_at, %s), paused_seconds = GREATEST(paused_seconds, %s),
-                  due_at = COALESCE(%s, due_at), record_version = record_version + 1 WHERE id = %s""",
-        (status, ended_at, reason, breach_at, int(paused or 0), due, timer["id"]))
+                  due_at = COALESCE(%s, due_at), pauses = COALESCE(%s, pauses), record_version = record_version + 1
+            WHERE id = %s""",
+        (status, ended_at, reason, breach_at, int(paused or 0), due, Jsonb(pauses) if pauses is not None else None,
+         timer["id"]))
 
 
 def _breach(conn, ctx, timer, out) -> None:
@@ -199,3 +210,17 @@ class SlaSweepHandler:
         with jc.db.tenant_tx(jc.ctx) as conn:
             jc.fenced(conn)
             return Done(sla_sweep(conn, jc.ctx))
+
+
+def sla_view(timer: dict, now) -> dict:
+    """Gross elapsed, paused and adjusted time for one timer, plus whether the target is exceeded on either basis."""
+    end = timer["ended_at"] or now
+    gross = max(0.0, (end - timer["started_at"]).total_seconds())
+    paused = float(timer["paused_seconds"])
+    if timer["paused_since"] is not None and timer["ended_at"] is None:
+        paused += max(0.0, (now - timer["paused_since"]).total_seconds())
+    target = (timer["due_at"] - timer["started_at"]).total_seconds() - float(timer["paused_seconds"])
+    adjusted = max(0.0, gross - paused)
+    return {**timer, "gross_elapsed_seconds": int(gross), "paused_seconds_total": int(paused),
+            "adjusted_elapsed_seconds": int(adjusted), "target_seconds": int(target),
+            "exceeds_target_on_gross_time": gross > target, "exceeds_target_on_adjusted_time": adjusted > target}

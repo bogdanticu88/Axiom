@@ -7,7 +7,8 @@
 # tied to one commit. It then records:
 #   * the commit and its git tree hash (covers every tracked file);
 #   * an "executable inputs" digest over the tracked blobs that decide behaviour: application code, migrations,
-#     provisioning SQL, scripts, workflow files, dependency locks, Dockerfile, Compose configuration and tests;
+#     provisioning SQL, scripts, workflow files, dependency locks, Dockerfile, Compose configuration, tests and
+#     evaluation cases;
 #   * ignored files present under those paths (anything other than caches fails the check, because an ignored file
 #     there could change behaviour without changing the digest);
 #   * external inputs that are pinned (lock file, image digests, action commits) and those that are NOT pinned by the
@@ -17,7 +18,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 OUT_FILE="${1:-/dev/stdout}"
-INPUTS=(backend db scripts .github deployments tests pyproject.toml uv.lock Dockerfile .dockerignore)
+INPUTS=(backend db scripts .github deployments tests evaluation pyproject.toml uv.lock Dockerfile .dockerignore)
 
 dirty=$(git status --porcelain --untracked-files=normal)
 if [ -n "$dirty" ]; then

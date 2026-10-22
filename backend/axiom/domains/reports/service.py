@@ -40,11 +40,13 @@ from ...db import TenantContext
 from ...errors import Conflict, NotFound, ValidationFailed
 from ..evidence.objectstore import TenantObjectStore
 
-QUERY_VERSION = "exposure_summary@3"
+QUERY_VERSION = "exposure_summary@4"
 MAX_EXPORT_BYTES = 50 * 1024 * 1024
 MAX_INLINE_EVIDENCE = 1024 * 1024
 READ_PERMISSION = {"public": None, "internal": "evidence.read:internal", "confidential": "evidence.read:confidential",
                    "restricted": "evidence.read:restricted"}
+META_PERMISSION = {"public": None, "internal": "evidence.metadata:internal",
+                   "confidential": "evidence.metadata:confidential", "restricted": "evidence.metadata:restricted"}
 STATEMENTS = [
     "A successful synchronisation does not prove complete coverage: completeness is reported per source separately.",
     "Accepted risk, dismissal, duplicate and retired-asset closures are not verified remediation.",
@@ -86,7 +88,11 @@ owner_now AS (SELECT DISTINCT ON (o.case_id) o.case_id, o.basis FROM axiom.case_
                WHERE o.created_at <= %(t)s ORDER BY o.case_id, o.created_at DESC, o.id DESC),
 timers AS (SELECT s.kind, CASE WHEN s.ended_at IS NOT NULL AND s.ended_at <= %(t)s THEN s.status
                                WHEN s.breached_at IS NOT NULL AND s.breached_at <= %(t)s THEN 'breached'
-                               ELSE 'running' END AS status
+                               ELSE 'running' END AS status,
+                  -- target is fixed per timer (due moves with pauses), so this is reproducible as of t
+                  extract(epoch FROM (CASE WHEN s.ended_at IS NOT NULL AND s.ended_at <= %(t)s THEN s.ended_at
+                                           ELSE %(t)s::timestamptz END) - s.started_at)
+                    > extract(epoch FROM (s.due_at - s.started_at)) - s.paused_seconds AS over_target_gross
              FROM axiom.sla_timers s JOIN cases c ON c.id = s.case_id
             WHERE s.created_at <= %(t)s AND s.started_at <= %(t)s
               AND NOT (s.status = 'revised' AND s.ended_at <= %(t)s)),
@@ -128,7 +134,9 @@ SELECT jsonb_build_object(
      'triage', COALESCE((SELECT jsonb_object_agg(status, n) FROM (SELECT status, count(*) n FROM timers
                           WHERE kind = 'triage' GROUP BY status) x), '{}'),
      'remediation', COALESCE((SELECT jsonb_object_agg(status, n) FROM (SELECT status, count(*) n FROM timers
-                               WHERE kind = 'remediation' GROUP BY status) x), '{}')),
+                               WHERE kind = 'remediation' GROUP BY status) x), '{}'),
+     'remediation_over_target_on_gross_time', (SELECT count(*) FROM timers WHERE kind = 'remediation'
+                                                 AND over_target_gross)),
   'external_tickets', COALESCE((SELECT jsonb_object_agg(COALESCE(cat, 'not_synchronised'), n)
                                   FROM (SELECT cat, count(*) n FROM tickets GROUP BY cat) x), '{}')
 ) AS content,
@@ -292,17 +300,26 @@ class ReportService:
                                   audit_event_id, created_at, payload FROM axiom.case_events WHERE case_id = %s
                             ORDER BY sequence""", (case_id,)))
         ev_rows = list(q("""SELECT DISTINCT eo.id, eo.classification, eo.status, eo.observed_digest, eo.observed_size,
-                                   eo.media_type, eo.object_key, de.relation, de.decision_id
+                                   eo.media_type, eo.object_key, eo.original_filename, de.relation, de.decision_id
                               FROM axiom.decision_evidence de JOIN axiom.evidence_objects eo ON eo.id = de.evidence_object_id
                               JOIN axiom.decisions d ON d.id = de.decision_id WHERE d.case_id = %s
                              ORDER BY eo.id""", (case_id,)))
         evidence = []
         for e in ev_rows:
+            # Content needs evidence.read:<classification>. Metadata (digest, size, media type, filename) needs
+            # evidence.read:<classification> or the explicit evidence.metadata:<classification>; without either,
+            # only the reference and its classification are disclosed.
             item = {"evidence_id": str(e["id"]), "decision_id": str(e["decision_id"]), "relation": e["relation"],
-                    "classification": e["classification"], "status": e["status"], "sha256": e["observed_digest"],
-                    "size": e["observed_size"], "media_type": e["media_type"]}
+                    "classification": e["classification"], "status": e["status"]}
             perm = READ_PERMISSION.get(e["classification"])
+            meta_perm = META_PERMISSION.get(e["classification"])
             readable = perm is None or self.authz.has(perm, case["scope_id"])
+            meta_ok = readable or self.authz.has(meta_perm, case["scope_id"])
+            if meta_ok:
+                item.update(sha256=e["observed_digest"], size=e["observed_size"], media_type=e["media_type"],
+                            filename=e["original_filename"])
+            else:
+                item["metadata_withheld"] = f"requester lacks {perm} and {meta_perm}"
             if not readable:
                 item["content"] = None
                 item["withheld"] = f"requester lacks {perm}"
@@ -350,6 +367,7 @@ class ReportService:
             "sla_timers": list(q("SELECT * FROM axiom.sla_timers WHERE case_id = %s ORDER BY created_at", (case_id,))),
             "generated_for": str(self.ctx.principal_id),
             "withheld_evidence": sum(1 for e in evidence if e.get("content") is None and "withheld" in e),
+            "withheld_metadata": sum(1 for e in evidence if "metadata_withheld" in e),
         }
         package = json.loads(canonical(package))
         row = self.conn.execute(

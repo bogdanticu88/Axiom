@@ -1,0 +1,16 @@
+# Mutation checks, 2026-10-22, working tree before the Phase C commit, development test cluster.
+# Each mutation applied, the named test run with -x, file restored. Output verbatim:
+KILLED claims.py | if False:         return Result( ['1 failed in 2.24s']
+KILLED claims.py | if False: ['1 failed in 1.89s']
+KILLED claims.py | if False: ['1 failed in 3.03s']
+KILLED claims.py | if False: ['1 failed in 2.36s']
+KILLED snapshots.py | pm["content_withheld"] ['1 failed in 2.34s']
+KILLED runner.py | if False: ['1 failed in 2.19s']
+KILLED runner.py | if False: ['1 failed in 2.12s']
+KILLED service.py | if False: ['1 failed in 2.04s']
+KILLED 0013_investigation.sql | IF false THEN ['1 failed in 2.17s']
+KILLED tools.py | if False: ['1 failed in 2.02s']
+KILLED gateway.py | system_r, n1 = system, 0         user_r, n2 = user, 0 ['1 failed in 2.16s']
+KILLED sla.py | if e["event_type"] != "case.deferred": ['1 failed in 2.51s']
+KILLED service.py | meta_ok = True ['1 failed in 1.47s']
+KILLED runner.py | if malformed <= 5: ['1 failed in 2.28s']

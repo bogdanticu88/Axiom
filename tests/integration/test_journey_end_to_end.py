@@ -7,10 +7,10 @@ Labels used in STEPS (also written to $AXIOM_JOURNEY_LOG as JSON when set):
   manual    - a value a person supplies through a supported command (business context, a redeploy, rescan evidence)
   test-read - a read-only database query the test uses to pick an object; not part of the product flow
 
-Known limits shown by this journey (see REQUIREMENTS and HANDOFF): there is no investigation workspace (Phase C) or UI,
-the case is moved to "remediating" by recording the ticket key (an approved ticket does not advance the case), the
-redeploy and the rescan are supplied manually because no deployment or rescanning integration exists, and the tracker
-is a fake.
+Known limits shown by this journey (see REQUIREMENTS and HANDOFF): the investigation uses the deterministic fake model
+(no language model was called); there is no UI; the case is moved to "remediating" by recording the ticket key (an
+approved ticket does not advance the case); the redeploy and the rescan are supplied manually because no deployment or
+rescanning integration exists; and the tracker is a fake.
 """
 from __future__ import annotations
 
@@ -119,14 +119,45 @@ def test_import_to_verified_closure_and_report(client, as_, world, db, dbinfo, o
     step("real", "versioned ownership policy drafted, published by a second person, case routed by rule",
          policy=pol_own["id"], rule=routed["rule_id"])
 
-    # 3. investigate and record uncertainty -----------------------------------------------------------------
-    ok(client.post(f"/api/v1/cases/{cid}/commands/start-investigation", headers=analyst,
-                   json={"expected_version": 0, "rationale": "imported high-severity package vulnerability"}))
+    # 3. investigate (snapshot, AI-assisted run, human review) and record uncertainty ------------------------
+    route = ok(client.post("/api/v1/model-routes", headers=admin, json={
+        "name": "ci-fake", "provider": "deterministic_fake", "model": "fake-rules-v1", "endpoint": "fake://ci-fake",
+        "region": "local", "max_classification": "internal", "rationale": "CI route (deterministic fake)"}), 201)
+    ok(client.post(f"/api/v1/model-routes/{route['id']}/approve", headers=auditor, json={"rationale": "reviewed"}))
+    started_run = ok(client.post(f"/api/v1/cases/{cid}/investigations", headers={**analyst, "Idempotency-Key": "jr-inv-1"},
+                                 json={"questions": ["Is the reported vulnerability present in the deployed image?"],
+                                       "route": "ci-fake"}), 202)
+    drain()
+    inv_run = ok(client.get(f"/api/v1/investigations/{started_run['id']}", headers=analyst))
+    assert inv_run["status"] == "completed", inv_run["outcome_reason"]
+    snapshot = ok(client.get(f"/api/v1/evidence-snapshots/{inv_run['snapshot_id']}", headers=analyst))
+    assert snapshot["digest_verified"] and snapshot["member_count"] == len(snapshot["members"])
+    step("real", "evidence snapshot frozen (observations, run coverage and freshness, asset version, gaps)",
+         snapshot=snapshot["id"], members=snapshot["member_count"], gaps=[g["kind"] for g in snapshot["gaps"]])
+    step("fake", "investigation run through the model gateway with the deterministic fake model (not a language "
+         "model); claims validated against the snapshot", run=inv_run["id"], claims=len(inv_run["claims"]),
+         model_calls=inv_run["model_calls"], tool_calls=inv_run["tool_calls"])
+    early = client.post(f"/api/v1/cases/{cid}/commands/start-investigation", headers=analyst,
+                        json={"expected_version": 0, "rationale": "imported high-severity package vulnerability"})
+    ok(early)
+    blocked = client.post(f"/api/v1/cases/{cid}/commands/record-assessment", headers=analyst, json={
+        "expected_version": 1, "assessment": "supported", "rationale": "x", "limitations": "x",
+        "evidence": [{"evidence_id": ev_scan}], "investigation_run_id": inv_run["id"]})
+    assert blocked.status_code == 409 and blocked.json()["error"]["code"] == "claims_not_reviewed"
+    for cl in inv_run["claims"]:
+        if cl["validation"] != "rejected":
+            ok(client.post(f"/api/v1/investigation-claims/{cl['id']}/reviews", headers=analyst2, json={
+                "verdict": "confirmed", "note": "checked the cited observation and run coverage"}), 201)
+    step("manual", "a second analyst reviews each claim (confirmed after checking the cited members)")
     assessed = ok(client.post(f"/api/v1/cases/{cid}/commands/record-assessment", headers=analyst, json={
-        "expected_version": 1, "assessment": "supported", "rationale": "vulnerable package version present in image",
+        "expected_version": 1, "assessment": "supported", "rationale": "investigation and scan agree; reviewed",
         "limitations": "reachability not analysed; no runtime evidence; scanner data only",
-        "evidence": [{"evidence_id": ev_scan}]}))
-    step("manual", "analyst records assessment with explicit limitations (no investigation workspace exists yet)")
+        "evidence": [{"evidence_id": ev_scan}], "investigation_run_id": inv_run["id"]}))
+    history = ok(client.get(f"/api/v1/cases/{cid}/history", headers=analyst))
+    adec = [d for d in history["decisions"] if d["kind"] == "assessment"][0]
+    assert adec["investigation_run_id"] == inv_run["id"] and adec["evidence_snapshot_id"] == snapshot["id"]
+    step("real", "human assessment cites the reviewed run and its snapshot; limitations include the run's and "
+         "the snapshot's gaps")
 
     # 4. versioned priority policy --------------------------------------------------------------------------
     pol_prio = ok(client.post("/api/v1/policies", headers=admin, json={
@@ -239,7 +270,7 @@ def test_import_to_verified_closure_and_report(client, as_, world, db, dbinfo, o
     pkg = ok(client.post(f"/api/v1/cases/{cid}/evidence-package", headers=auditor), 201)
     body = pkg["snapshot"]["content"]
     assert {p["kind"] for p in body["policy_versions"]} == {"priority"}
-    assert body["withheld_evidence"] == 2                    # auditor has no evidence.read:* grant
+    assert body["withheld_evidence"] == 2 and body["withheld_metadata"] == 2   # no evidence.read/metadata grants
     step("real", "ownership sweep job (enqueued by the test instead of waiting 15 minutes) re-routed the other "
          "unresolved cases after the policy and context appeared")
     step("real", "snapshot shows verified closure, per-source coverage and the open unprioritised remainder",
@@ -250,6 +281,7 @@ def test_import_to_verified_closure_and_report(client, as_, world, db, dbinfo, o
          withheld=body["withheld_evidence"])
     labels = {s["label"] for s in STEPS}
     assert labels == {"real", "fixture", "fake", "manual", "test-read"}
+    assert not any("assessment with explicit limitations (no investigation" in x["step"] for x in STEPS)
     if os.environ.get("AXIOM_JOURNEY_LOG"):
         with open(os.environ["AXIOM_JOURNEY_LOG"], "w") as fh:
             json.dump(STEPS, fh, indent=2, default=str)

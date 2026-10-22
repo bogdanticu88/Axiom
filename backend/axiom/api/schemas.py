@@ -37,6 +37,8 @@ class RecordAssessment(Versioned):
     assessment: Literal["supported", "not_supported", "inconclusive"]
     limitations: str = Field(min_length=1, max_length=10000)
     evidence: list[EvidenceRefIn] = Field(default_factory=list, max_length=200)
+    evidence_snapshot_id: UUID | None = None
+    investigation_run_id: UUID | None = None
 
 
 class PlanRemediation(Versioned):
@@ -45,6 +47,7 @@ class PlanRemediation(Versioned):
 
 class Defer(Versioned):
     review_at: datetime
+    pause_reason: str | None = Field(default=None, max_length=50)
 
 
 class ExternalWork(Versioned):
@@ -280,3 +283,42 @@ class OwnerOverride(Body):
 
 class ExportReport(Body):
     format: Literal["json", "csv"]
+
+
+class CreateSnapshot(Body):
+    purpose: Literal["investigation", "assessment"] = "assessment"
+
+
+class ProposeRoute(Body):
+    name: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{1,62}$")
+    provider: Literal["deterministic_fake", "anthropic_messages"]
+    model: str = Field(min_length=1, max_length=200)
+    endpoint: str = Field(min_length=1, max_length=300)
+    region: str = Field(min_length=1, max_length=100)
+    max_classification: Literal["internal", "confidential", "restricted"]
+    rationale: str = Field(min_length=1, max_length=5000)
+    credential_ref: str | None = Field(default=None, max_length=300)
+    input_price_micros_per_mtok: int = Field(default=0, ge=0)
+    output_price_micros_per_mtok: int = Field(default=0, ge=0)
+    timeout_seconds: int = Field(default=60, ge=1, le=600)
+    max_retries: int = Field(default=1, ge=0, le=3)
+    max_output_tokens: int = Field(default=4096, ge=1, le=64000)
+
+
+class StartInvestigation(Body):
+    questions: list[str] = Field(min_length=1, max_length=10)
+    route: str = Field(min_length=1, max_length=100)
+    tools: list[str] | None = Field(default=None, max_length=10)
+    budget: dict[str, int] | None = None
+    deadline_seconds: int = Field(default=900, ge=30, le=3600)
+    snapshot_id: UUID | None = None
+
+
+class CancelInvestigation(Body):
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class ReviewClaim(Body):
+    verdict: Literal["confirmed", "rejected", "corrected"]
+    note: str = Field(min_length=1, max_length=5000)
+    corrected_conclusion: Literal["supported", "contradicted", "unknown"] | None = None

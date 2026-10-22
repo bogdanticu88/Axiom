@@ -76,7 +76,8 @@ def test_deferral_pauses_and_a_priority_change_revises_without_resetting(db, run
     run(analyst, lambda s: prio.override(s.cases, review_case, 2, priority="medium", rationale="initial"))
     sweep(db, system)
     first = by(timers(run, analyst, review_case), "remediation")[0]
-    run(analyst, lambda s: s.cases.defer(review_case, 3, review_at=now(days=14), rationale="vendor patch due"))
+    run(analyst, lambda s: s.cases.defer(review_case, 3, review_at=now(days=14), rationale="vendor patch due",
+                                         pause_reason="vendor_fix_pending"))
     time.sleep(1.2)
     sweep(db, system)
     paused = by(timers(run, analyst, review_case), "remediation")[0]
@@ -133,3 +134,42 @@ def test_published_sla_policy_is_recorded_on_the_timer(db, run, ctx_for, world, 
     [t] = timers(run, ctx_for("analyst"), review_case)
     assert t["policy_version_id"] == v["id"] and t["due_at"] - t["started_at"] == timedelta(days=2)
     assert t["policy_snapshot"]["provisional"] is True
+
+
+def test_deferral_without_an_authorised_reason_keeps_the_clock_running(db, run, ctx_for, review_case):
+    from axiom.domains.cases.sla import sla_view
+    from axiom.errors import ValidationFailed
+    system, analyst = ctx_for("system"), ctx_for("analyst")
+    run(analyst, lambda s: prio.override(s.cases, review_case, 2, priority="high", rationale="initial"))
+    sweep(db, system)
+    with pytest.raises(ValidationFailed) as err:
+        run(analyst, lambda s: s.cases.defer(review_case, 3, review_at=now(days=7), rationale="busy",
+                                             pause_reason="team_busy"))
+    assert err.value.code == "pause_reason_not_authorised"
+    run(analyst, lambda s: s.cases.defer(review_case, 3, review_at=now(days=7), rationale="busy this sprint"))
+    time.sleep(1.1)
+    sweep(db, system)
+    rem = by(timers(run, analyst, review_case), "remediation")[0]
+    assert rem["status"] == "running" and rem["paused_seconds"] == 0 and rem["pauses"] == []
+    v = sla_view(rem, rem["started_at"] + timedelta(days=31))
+    assert v["gross_elapsed_seconds"] == v["adjusted_elapsed_seconds"] and v["exceeds_target_on_gross_time"]
+
+
+def test_gross_paused_and_adjusted_time_are_reported_separately(db, run, ctx_for, review_case):
+    from axiom.domains.cases.sla import sla_view
+    system, analyst = ctx_for("system"), ctx_for("analyst")
+    run(analyst, lambda s: prio.override(s.cases, review_case, 2, priority="urgent", rationale="initial"))
+    sweep(db, system)
+    run(analyst, lambda s: s.cases.defer(review_case, 3, review_at=now(days=7), rationale="change freeze",
+                                         pause_reason="change_freeze"))
+    time.sleep(1.2)
+    run(analyst, lambda s: prio.override(s.cases, review_case, 4, priority="urgent", rationale="freeze lifted"))
+    sweep(db, system)
+    rem = [t for t in by(timers(run, analyst, review_case), "remediation") if t["status"] != "revised"][-1]
+    [p] = rem["pauses"]
+    assert p["reason"] == "change_freeze" and p["to"] is not None and p["recorded_by"] == str(analyst.principal_id)
+    later = rem["started_at"] + timedelta(days=7, seconds=0.5)       # just past the gross target, inside adjusted
+    v = sla_view(rem, later)
+    assert v["paused_seconds_total"] >= 1
+    assert abs(v["gross_elapsed_seconds"] - v["adjusted_elapsed_seconds"] - v["paused_seconds_total"]) <= 1
+    assert v["exceeds_target_on_gross_time"] and not v["exceeds_target_on_adjusted_time"]

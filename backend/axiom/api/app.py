@@ -202,7 +202,8 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
             lambda c, i, b: c.link_occurrence(i, b.expected_version, b.occurrence_id, b.rationale))
     command("record-assessment", s.RecordAssessment, lambda c, i, b: c.record_assessment(
         i, b.expected_version, assessment=b.assessment, rationale=b.rationale, limitations=b.limitations,
-        evidence=[EvidenceRef(e.evidence_id, e.relation) for e in b.evidence]))
+        evidence=[EvidenceRef(e.evidence_id, e.relation) for e in b.evidence],
+        evidence_snapshot_id=b.evidence_snapshot_id, investigation_run_id=b.investigation_run_id))
     command("withdraw-remediation", s.WithdrawRemediation, lambda c, i, b: c.withdraw_remediation(
         i, b.expected_version, rationale=b.rationale, deployment_state=b.deployment_state,
         evidence=[EvidenceRef(e.evidence_id, e.relation) for e in b.evidence],
@@ -213,7 +214,8 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
     command("plan-remediation", s.PlanRemediation, lambda c, i, b: c.plan_remediation(
         i, b.expected_version, owner_principal_id=b.owner_principal_id, rationale=b.rationale))
     command("defer", s.Defer,
-            lambda c, i, b: c.defer(i, b.expected_version, review_at=b.review_at, rationale=b.rationale))
+            lambda c, i, b: c.defer(i, b.expected_version, review_at=b.review_at, rationale=b.rationale,
+                                    pause_reason=b.pause_reason))
     command("record-external-work", s.ExternalWork, lambda c, i, b: c.record_external_work(
         i, b.expected_version, external_reference=b.external_reference, rationale=b.rationale))
     command("report-change", s.ReportChange, lambda c, i, b: c.report_change(
@@ -375,7 +377,7 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
         return in_tx(ctx, read)
 
     from .operations import register as register_operations
-    register_operations(api, database, Ctx, object_store)
+    register_operations(api, database, Ctx, object_store, settings)
     app.include_router(api)
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

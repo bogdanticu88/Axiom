@@ -40,13 +40,21 @@ if [ -n "$hits" ]; then echo "$hits"; record secret-scan 1; else record secret-s
 tracked_env=$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$' || true)
 if [ -n "$tracked_env" ]; then echo "$tracked_env"; record no-env-files 1; else record no-env-files 0; fi
 
+stage "requirements register (every row has a recognised status)"
+python3 scripts/dev/register-counts.py | tail -4; record register "${PIPESTATUS[0]}"
+
 stage "GitHub Actions pins (full commit hashes, verified against the official repositories)"
 scripts/ci/check-action-pins.sh; record action-pins $?
 
-stage "foundation verification (fresh cluster + SeaweedFS + full suite)"
-OUT="$OUT/foundation" scripts/verify/foundation.sh > "$OUT/foundation.stdout" 2>&1
+stage "foundation verification (fresh cluster + SeaweedFS + full suite, incl. evaluation harness)"
+rm -rf "$OUT/eval"
+AXIOM_EVAL_OUT="$OUT/eval" OUT="$OUT/foundation" scripts/verify/foundation.sh > "$OUT/foundation.stdout" 2>&1
 grep -E "^[0-9]+ passed|passed,|failed|error" "$OUT/foundation/verify.log" | tail -3
 grep -q "pytest exit=0" "$OUT/foundation/verify.log"; record foundation $?
+
+stage "evaluation report (from this run's harness results)"
+python3 evaluation/report.py "$OUT/eval/results.jsonl" "$OUT/eval/report.md" > /dev/null; rc=$?
+grep -E "^\| (Presence|Unsupported|Missed)" "$OUT/eval/report.md" | head -6; record evaluation-report $rc
 
 stage "restore drill: physical snapshot rollback"
 AXIOM_RUN_DRILLS=1 uv run --frozen pytest -q tests/drills -p no:cacheprovider 2>&1 | grep -v UV_NATIVE \

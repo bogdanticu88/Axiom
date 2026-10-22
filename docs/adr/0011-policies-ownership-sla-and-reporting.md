@@ -115,3 +115,30 @@ and coverage, reproducible snapshots and classification-aware auditor packages.
 * Ownership from external CMDB data, which has no connector.
 * Report performance at scale.
 * Freshness or ownership policies for multiple tenants with different source mixes, which is configurable but untested.
+
+## Amendment (2026-10-22, review requested by the project owner)
+**Deferral no longer pauses by default.** The remediation clock pauses only when a deferral states a `pause_reason`
+listed in the SLA policy's `pause_reasons`. The default list is `vendor_fix_pending`, `change_freeze` and
+`awaiting_risk_decision`; any other reason is refused with `pause_reason_not_authorised`. A deferral without a reason
+keeps the case open with a review date, and time keeps counting.
+
+Each pause interval is stored on the timer (`pauses`) with its reason and who recorded the deferral.
+`GET /cases/{id}/sla` reports, for every timer:
+* gross elapsed time;
+* paused time;
+* adjusted elapsed time;
+* the target;
+* whether the target is exceeded on gross time and on adjusted time.
+
+Report snapshots (`exposure_summary@4`) add `remediation_over_target_on_gross_time`, which is reproducible as of
+a time because the target is fixed per timer. Tests:
+* `sla::test_deferral_without_an_authorised_reason_keeps_the_clock_running`;
+* `sla::test_gross_paused_and_adjusted_time_are_reported_separately`.
+
+**Evidence metadata needs explicit permission.** Hiding file content alone was not enough. In evidence packages and
+snapshot reads, metadata (digest, size, media type, filename) is disclosed only with `evidence.read:<classification>`
+or the new `evidence.metadata:<classification>` (role `evidence_metadata_reader` for internal and confidential;
+restricted metadata is a privileged permission). Without either, only the reference and its classification appear,
+with `metadata_withheld`. The auditor role has no metadata permission by default. Tests:
+* `rpt::test_evidence_package_withholds_content_the_requester_cannot_read`;
+* `inv::test_snapshot_reads_disclose_content_and_metadata_only_with_permission`.

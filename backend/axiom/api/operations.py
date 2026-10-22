@@ -24,7 +24,7 @@ from ..jobs import JobOperations
 from . import schemas as s
 
 
-def register(api: APIRouter, database: Database, Ctx, store=None) -> None:
+def register(api: APIRouter, database: Database, Ctx, store=None, settings=None) -> None:
     def tx(ctx: TenantContext, fn: Callable[[Any, Authorizer], Any]) -> Any:
         with database.tenant_tx(ctx) as conn:
             return jsonable_encoder(fn(conn, Authorizer(conn, ctx)))
@@ -197,8 +197,10 @@ def register(api: APIRouter, database: Database, Ctx, store=None) -> None:
             case = conn.execute("SELECT scope_id FROM axiom.finding_cases WHERE id = %s", (case_id,)).fetchone()
             if case is None or not authz.has("case.read", case["scope_id"]):
                 raise NotFound("case not found", code="case_not_found")
-            return {"items": list(conn.execute("SELECT * FROM axiom.sla_timers WHERE case_id = %s ORDER BY created_at, kind",
-                                               (case_id,)))}
+            from ..domains.cases.sla import sla_view
+            now = conn.execute("SELECT clock_timestamp() AS t").fetchone()["t"]
+            return {"items": [sla_view(t, now) for t in conn.execute(
+                "SELECT * FROM axiom.sla_timers WHERE case_id = %s ORDER BY created_at, kind", (case_id,))]}
         return tx(ctx, read)
 
     @api.get("/external-references/{reference_id}/states")
@@ -271,3 +273,66 @@ def register(api: APIRouter, database: Database, Ctx, store=None) -> None:
     @api.post("/cases/{case_id}/evidence-package", status_code=201)
     def evidence_package(ctx: Ctx, case_id: UUID):
         return tx(ctx, lambda c, a: reports(c, a, ctx).evidence_package(case_id))
+
+    # -------------------------------------------------------------------------------- investigation (ADR 0012)
+    from ..investigation import snapshots as snaps
+    from ..investigation.service import InvestigationService
+
+    def inv(c, a, ctx):
+        return InvestigationService(
+            c, ctx, a, env=settings.env if settings else "development",
+            model_destinations=settings.model_destination_set if settings else frozenset(),
+            tool_destinations=settings.tool_destination_set if settings else frozenset())
+
+    @api.post("/cases/{case_id}/evidence-snapshots", status_code=201)
+    def create_snapshot(ctx: Ctx, case_id: UUID, body: s.CreateSnapshot):
+        def go(c, a):
+            row = snaps.build_snapshot(c, ctx, a, case_id, purpose=body.purpose)
+            return snaps.get_snapshot(c, a, row["id"])
+        return tx(ctx, go)
+
+    @api.get("/evidence-snapshots/{snapshot_id}")
+    def read_snapshot(ctx: Ctx, snapshot_id: UUID):
+        return tx(ctx, lambda c, a: {**snaps.get_snapshot(c, a, snapshot_id),
+                                     "digest_verified": snaps.verify_snapshot(c, snapshot_id)})
+
+    @api.post("/model-routes", status_code=201)
+    def propose_route(ctx: Ctx, body: s.ProposeRoute):
+        return tx(ctx, lambda c, a: inv(c, a, ctx).propose_route(**body.model_dump()))
+
+    @api.post("/model-routes/{route_id}/approve")
+    def approve_route(ctx: Ctx, route_id: UUID, body: s.Rationale):
+        return tx(ctx, lambda c, a: inv(c, a, ctx).approve_route(route_id, rationale=body.rationale))
+
+    @api.post("/model-routes/{route_id}/disable")
+    def disable_route(ctx: Ctx, route_id: UUID, body: s.Rationale):
+        return tx(ctx, lambda c, a: inv(c, a, ctx).disable_route(route_id, rationale=body.rationale))
+
+    @api.get("/model-routes")
+    def list_routes(ctx: Ctx):
+        return {"items": tx(ctx, lambda c, a: inv(c, a, ctx).list_routes())}
+
+    @api.post("/cases/{case_id}/investigations", status_code=202)
+    def start_investigation(ctx: Ctx, case_id: UUID, body: s.StartInvestigation, key: Key = None):
+        return command(ctx, "POST /cases/{case_id}/investigations", key, {"case_id": case_id}, body,
+                       lambda c, a: inv(c, a, ctx).start(case_id, questions=body.questions, route=body.route,
+                                                         tools=body.tools, budget=body.budget,
+                                                         deadline_seconds=body.deadline_seconds,
+                                                         snapshot_id=body.snapshot_id), status=202)
+
+    @api.get("/cases/{case_id}/investigations")
+    def list_investigations(ctx: Ctx, case_id: UUID):
+        return {"items": tx(ctx, lambda c, a: inv(c, a, ctx).list_for_case(case_id))}
+
+    @api.get("/investigations/{run_id}")
+    def get_investigation(ctx: Ctx, run_id: UUID):
+        return tx(ctx, lambda c, a: inv(c, a, ctx).get(run_id))
+
+    @api.post("/investigations/{run_id}/cancel")
+    def cancel_investigation(ctx: Ctx, run_id: UUID, body: s.CancelInvestigation):
+        return tx(ctx, lambda c, a: inv(c, a, ctx).cancel(run_id, reason=body.reason))
+
+    @api.post("/investigation-claims/{claim_id}/reviews", status_code=201)
+    def review_claim(ctx: Ctx, claim_id: UUID, body: s.ReviewClaim):
+        return tx(ctx, lambda c, a: inv(c, a, ctx).review_claim(claim_id, verdict=body.verdict, note=body.note,
+                                                                corrected_conclusion=body.corrected_conclusion))

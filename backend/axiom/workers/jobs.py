@@ -25,6 +25,7 @@ from ..domains.cases.sla import KIND as SLA_SWEEP, SlaSweepHandler
 from ..errors import ConfigurationError
 from ..domains.evidence.service import EvidenceService
 from ..ingestion.jobs import IngestionRunHandler
+from ..investigation.runner import InvestigationHandler
 from ..ingestion.pipeline import IngestionService
 from ..ingestion.sync import SyncService
 from ..jobs import Schedule, Worker, WorkerConfig
@@ -39,9 +40,11 @@ TICKET_SYNC_INTERVAL_SECONDS = 900
 def build_worker(db: Database, ingestion: IngestionService, sync: SyncService, *, worker_id: str | None = None,
                  config: WorkerConfig | None = None, risk_sweep_interval: int = RISK_SWEEP_INTERVAL_SECONDS,
                  action_handler: ActionExecuteHandler | None = None, witness=None,
-                 ticket_sync: TicketSyncHandler | None = None) -> Worker:
+                 ticket_sync: TicketSyncHandler | None = None,
+                 investigation: InvestigationHandler | None = None) -> Worker:
     return Worker(db, [IngestionRunHandler(ingestion, sync), RiskExpirySweepHandler(),
-                       action_handler or ActionExecuteHandler(), ticket_sync or TicketSyncHandler(), SlaSweepHandler(), OwnershipSweepHandler()],
+                       action_handler or ActionExecuteHandler(), ticket_sync or TicketSyncHandler(), SlaSweepHandler(),
+                       OwnershipSweepHandler(), investigation or InvestigationHandler(store=ingestion.store)],
                   worker_id=worker_id, config=config,
                   schedules=[Schedule(RISK_SWEEP, 1, risk_sweep_interval),
                              Schedule(SLA_SWEEP, 1, SLA_SWEEP_INTERVAL_SECONDS),
@@ -92,7 +95,11 @@ def main() -> None:
     ingestion = IngestionService(db, store)
     sync = SyncService(db, ingestion, EvidenceService(db, store, max_bytes=settings.evidence_max_bytes))
     worker_id = f"{socket.gethostname()}:{os.getpid()}"
-    worker = build_worker(db, ingestion, sync, worker_id=worker_id, witness=build_witness(settings, worker_id))
+    investigation = InvestigationHandler(store=ingestion.store, env=settings.env,
+                                         model_destinations=settings.model_destination_set,
+                                         tool_destinations=settings.tool_destination_set)
+    worker = build_worker(db, ingestion, sync, worker_id=worker_id, witness=build_witness(settings, worker_id),
+                          investigation=investigation)
     worker.preflight()      # fail fast at start-up, not only on the first pass
     if settings.worker_metrics_port:
         from ..jobs.metrics import serve

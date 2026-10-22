@@ -126,14 +126,25 @@ def test_evidence_package_withholds_content_the_requester_cannot_read(db, run, c
     for ev, cls in ((public, "internal"), (secret, "confidential")):     # the auditor role reads no evidence content
         hidden = items[str(ev["id"])]
         assert hidden["content"] is None and hidden["withheld"] == f"requester lacks evidence.read:{cls}"
-        assert hidden["sha256"] == ev["observed_digest"] and "content_base64" not in hidden   # referenced by digest
-    assert body["withheld_evidence"] == 2
+        assert "content_base64" not in hidden
+        # metadata (digest, size, filename) also needs an explicit permission, so only the reference remains
+        assert "sha256" not in hidden and "filename" not in hidden and "size" not in hidden
+        assert hidden["metadata_withheld"] == f"requester lacks evidence.read:{cls} and evidence.metadata:{cls}"
+    assert body["withheld_evidence"] == 2 and body["withheld_metadata"] == 2
+    raw0 = reports(db, auditor, lambda r: r.read_export(pkg["export"]["id"]), object_store)[1]
+    assert secret["observed_digest"].encode() not in raw0
+    from axiom.provisioning import Provisioner
+    Provisioner(dbinfo.admin_cli_dsn).bootstrap_role(world.a.id, world["auditor"], "evidence_metadata_reader",
+                                                     world.a.project, "auditor may see evidence metadata")
+    meta = reports(db, auditor, lambda r: r.evidence_package(case_id), object_store)["snapshot"]["content"]
+    m = {e["evidence_id"]: e for e in meta["evidence"]}[str(secret["id"])]
+    assert m["sha256"] == secret["observed_digest"] and m["filename"] == "evidence.txt" and m["content"] is None
+    assert meta["withheld_metadata"] == 0 and meta["withheld_evidence"] == 2
     assert [d["kind"] for d in body["decisions"]] == ["investigation_start", "assessment", "prioritisation"]
     assert any("built-in provisional default" in (d["limitations"] or "") for d in body["decisions"])
     raw = reports(db, auditor, lambda r: r.read_export(pkg["export"]["id"]), object_store)[1]
     assert base64.b64encode(b"confidential scan with hostnames") not in raw and b"scan with hostnames" not in raw
     # with classification access, the same request includes the content and audits the read
-    from axiom.provisioning import Provisioner
     Provisioner(dbinfo.admin_cli_dsn).bootstrap_role(world.a.id, world["auditor"], "evidence_reader", world.a.project,
                                                      "auditor needs confidential evidence for the audit")
     pkg2 = reports(db, auditor, lambda r: r.evidence_package(case_id), object_store)

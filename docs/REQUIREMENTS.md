@@ -22,8 +22,10 @@ Test references are abbreviated: `cases::name` = tests/integration/test_cases.py
 `ingjob::` = tests/integration/test_ingestion_jobs.py. `ppo::` = tests/integration/test_policy_priority_ownership.py.
 `sla::` = tests/integration/test_sla_timers.py. `rpt::` = tests/integration/test_report_depth.py.
 `jrn::` = tests/integration/test_journey_end_to_end.py. `prune::` = tests/unit/test_witness_pruning.py.
+`inv::` = tests/integration/test_investigation.py. `adv::` = tests/integration/test_investigation_adversarial.py.
+`invu::` = tests/unit/test_investigation_units.py. `eval::` = tests/integration/test_evaluation_harness.py.
 
-Last updated: 2026-10-22 (checkpoint 3: policies, ownership, SLA v2, reporting depth, journey). Status counts are in docs/IMPLEMENTATION_STATUS.md.
+Last updated: 2026-10-22 (checkpoint 4: Phase C investigation). Counts are generated from this file by `scripts/dev/register-counts.py` (also a CI stage, which fails on any row without a recognised status).
 
 
 ## Known gaps at this checkpoint (explicit)
@@ -34,7 +36,8 @@ Last updated: 2026-10-22 (checkpoint 3: policies, ownership, SLA v2, reporting d
 | Job runner: no operations UI, no multi-step workflows; CI pipeline executed locally only (hosted workflow never run) | ARC-02, DEP-08, ADR 0006 | implementing |
 | Action protocol is fixture-tested only: Jira-style, ServiceNow and GitHub Issues integrations have only met local fakes | INT-15..17, ADR 0010 | fixture-tested |
 | Restore detection cannot see a rollback of the database **and** the witness together; the S3 witness is tested against SeaweedFS only, and its guarantees depend on production storage properties not yet validated | ADR 0010 | documented limitation |
-| **Core product functionality not built.** The investigation workspace and AI-assisted investigation (Phase C: evidence snapshots, tool gateway, model gateway, claims) do not exist; analysts record assessments by hand. There is **no user interface**. Enterprise SSO is not integrated | INVS-01..12, ARC-05, AUTHZ-14, J01-J10 | planned |
+| **No user interface** and **no enterprise SSO**. Phase C investigation exists as API and worker only, and **no language model has been called**: CI uses a deterministic fake; the Anthropic adapter is unverified (no credentials or external access authorised) | ARC-05, AUTHZ-14, INVS-07, J01-J10 | planned / unverified |
+| Evaluation references are author-drafted, not human-reviewed; no model quality has been measured | EVAL-01..05 | implementing |
 | Other items not built: webhooks, merge/split execution, Defender/AWS context (Phase B remainder), priority impact preview and override expiry, reassessment triggers, pull-request actions, framework mappings and GRC attestations (D), Helm/AKS, traces, backup/restore procedure, retention and deletion (F), evaluation dataset | sections 8 to 17 | planned |
 | SLA targets, priority matrix and freshness limits are **provisional defaults** pending business confirmation; no business-hours calendar | D-SLA-2, D-PRIO-1, ADR 0011 | provisional |
 | **No connector is sandbox-validated or production-supported.** Seven are fixture-tested (Trivy and SARIF with real tool output; Tenable and Azure Resource Graph with synthetic data and local fakes; Jira-style, ServiceNow and GitHub Issues against local fakes); the other 13 are planned; commercial ones need licensed accounts | INT-01..INT-20 | fixture-tested / planned / blocked for sandbox validation |
@@ -46,16 +49,16 @@ Last updated: 2026-10-22 (checkpoint 3: policies, ownership, SLA v2, reporting d
 | ID | Requirement | Implementation | Verification | Status | Notes / blockers |
 |---|---|---|---|---|---|
 | B01 | Original observations remain distinguishable from conclusions and human decisions | `evidence_objects`, `decisions`, `verification_runs` are separate append-only records | iso::test_append_only_tables_reject_mutation_even_for_owner | implementing | `observations` table and model-analysis records arrive in Phases B/C |
-| B02 | Consequential decisions reference evidence snapshot, policy version and actor authority | `decisions.authority` JSON; `decision_evidence`; `decisions.policy_version_id` FK (0012) | api::test_analyst_journey_to_verified_closure (evidence link), cases::test_decisions_record_authority, ppo::test_published_policy_and_context_drive_priority... | implementing | Authority, evidence and policy version (prioritisation) verified; evidence *snapshots* need Phase C |
+| B02 | Consequential decisions reference evidence snapshot, policy version and actor authority | `decisions.authority`; `decision_evidence`; `policy_version_id` (0012); `evidence_snapshot_id` and `investigation_run_id` FKs (0013) | cases::test_decisions_record_authority, ppo::test_published_policy..., inv::test_assessment_cites_the_run_only_after_human_review, ::test_reassessment_on_new_evidence_keeps_the_original, jrn:: | implementing | Snapshot citation is optional on assessments (not yet required by policy); other decision kinds do not cite snapshots |
 | B03 | Missing, stale or contradictory evidence cannot justify dismissal, priority reduction or verified closure | `record_assessment`, `dismiss`, `verification_outcome`, `validate_closure` trigger | cases::test_definite_assessment_requires_verified_evidence, ::test_inconclusive_assessment_cannot_be_dismissed, ::test_wrong_deployment_digest_is_inconclusive, ::test_partial_coverage_... | implementing | Verified for dismissal and verified closure; priority-reduction path is Phase C; staleness needs observation freshness (Phase B) |
 | B04 | Failed or partial synchronisation never implies remediation | coverage rules; absence and source fixes never touch cases | ing::test_partial_scan..., ::test_tenable_identity..., sync::test_interrupted_sync_keeps_committed_pages_as_partial | verified | |
-| B05 | Untrusted content cannot grant authority, change policy or choose tool destinations | Authority only from tokens and bindings | none | planned | Investigation tools and gateway (Phase C) |
+| B05 | Untrusted content cannot grant authority, change policy or choose tool destinations | Frozen tool grants; typed member-key arguments; fixed destination templates; no action fields in model output; human-only decision trigger | adv::test_prompt_injection_in_scanner_text_changes_nothing, ::test_tool_argument_abuse_and_cross_tenant_arguments_are_refused, ::test_external_tool_needs_registered_destination_and_never_follows_urls, inv::test_workload_principals_cannot_record_consequential_decisions_or_reviews | verified (against the deterministic fake) | No real model has been tested |
 | B06 | Records, jobs, objects, credentials, caches and model requests enforce tenant boundaries | RLS, composite FKs, `TenantObjectStore`, tx-bound context | iso::*, evo::test_cross_tenant_evidence_is_not_found, api::test_cross_tenant_access_through_api_is_denied, job::test_jobs_are_tenant_isolated | implementing | Verified for database, API, object storage and jobs; credentials (secret refs only so far), caches and model requests do not exist yet |
 | B07 | Approvals bind to exact action, arguments, resources, tenant, validity and use count | `approvals` FK on (version, digest); DB-computed digest; expiry, max_uses, counters guarded | act::test_approval_cannot_point_at_a_different_digest, ::test_revision_after_approval_requires_new_approval, ::test_concurrent_reservations_never_exceed_max_uses, ::test_approval_limits | verified | Tenant binding via RLS and composite FKs |
 | B08 | Unknown external outcomes reconcile before retry; no exactly-once claim | EffectGate capability rules (ADR 0010), `axiom.effect_intents`, `action_executions` | act::test_lost_ack_with_lagging_search_parks..., ::test_lost_ack_adopted..., ::test_lost_ack_with_provider_idempotency..., ::test_stale_worker_already_past_the_boundary[*], job::test_sigkill_after_effect... | verified | Against local fakes only; real providers must be shown to have the declared capabilities |
 | B09 | Previous decisions remain retrievable after reassessment | Append-only decisions, events, closure records | cases::test_full_lifecycle_to_verified_closure_and_reopen_preserves_history | verified | |
 | B10 | Report figures derive from reproducible queries over an identified snapshot | `ReportService.compute` (one as-of SQL over append-only history; `query_version` recorded) | rpt::test_snapshot_as_of_is_reproducible_after_later_changes (same digest after later priority, timer, workflow and import changes) | verified | A revised-timer reproducibility bug was found by this test and fixed |
-| B11 | Model output is analysis, supported by independent observations | none | none | planned | Phase C |
+| B11 | Model output is analysis, supported by independent observations | Claims cite snapshot members; validator; human review before an assessment may cite a run | inv::, adv::, invu:: | verified (fake) | `entailment = not_verified` on every claim: references are checked, reasoning is not |
 | B12 | Audit and event delivery are transactional; failed audit prevents the change | Audit, case update, event and outbox in one transaction; `case_events.audit_event_id` NOT NULL FK; deferred commit guard | cases::test_audit_failure_prevents_transition, ::test_audit_failure_in_application_prevents_transition, iso::test_direct_sql_cannot_bypass_case_commands | verified | |
 
 ## 2. Acceptance scenarios (S 15) and additional scenarios
@@ -66,8 +69,8 @@ Last updated: 2026-10-22 (checkpoint 3: policies, ownership, SLA v2, reporting d
 | A02 | Lost acknowledgement after ticket creation reconciles or pauses | act::test_lost_ack_with_lagging_search_parks_instead_of_creating_again, ::test_lost_ack_adopted_when_the_index_has_caught_up, ::test_lost_ack_with_provider_idempotency_retries_safely | verified | Jira-style fake (fixture-tested); no live tracker |
 | A03 | Half a scan: keep cases, show partial coverage, close none | ing::test_partial_scan_closes_nothing_and_complete_rescan_records_absence | verified | |
 | A04 | Conflicting asset identifiers require review; no cross-tenant/deployment merge | ing::test_tenable_identity..., sync::test_tenable_host_and_azure_vm..., iso::test_cross_tenant_foreign_key_rejected | implementing | Weak overlaps and strong conflicts verified; merge execution not built |
-| A05 | Malicious instructions in scanner text change nothing | none | planned | Phase C adversarial suite |
-| A06 | Model conclusion citing nonexistent observation is rejected | none | planned | Phase C |
+| A05 | Malicious instructions in scanner text change nothing | adv::test_prompt_injection_in_scanner_text_changes_nothing; eval:: adversarial arm (obey_injection) | verified (fake) | Case state, grants and priority unchanged; an obeying output is downgraded or malformed. A real model was not tested |
+| A06 | Model conclusion citing nonexistent observation is rejected | adv::test_fabricated_citations_are_rejected, ::test_valid_but_irrelevant_citations_are_rejected, invu::test_rejections | verified | Also rejects valid-but-irrelevant and status-contradicting references |
 | A07 | Revoked evidence access or approval before execution denies and records why | cases::test_permission_scope_and_revocation, act::test_revocation_before_execution_denies_and_returns_the_unused_use, ::test_approver_losing_membership_before_execution_denies | verified | Denial reason recorded on the execution and in job events |
 | A08 | Changed arguments after approval require new approval | act::test_revision_after_approval_requires_new_approval, act_api::test_action_journey_with_idempotent_execution | verified | |
 | A09 | External ticket closure without deployment proof keeps the case open | cases::test_no_closure_path_from_remediating, track::test_external_ticket_closure_is_recorded_but_never_closes_the_case, wf::test_externally_closed_ticket_never_moves_the_case[3 adapters] | verified | Polling only; webhooks (ING-08) not built; adapters fixture-tested |
@@ -86,7 +89,7 @@ Last updated: 2026-10-22 (checkpoint 3: policies, ownership, SLA v2, reporting d
 | X02 | Multi-membership user cannot reuse one tenant's identifiers in another (D 13) | cases::test_cross_tenant_resource_references_are_invisible, api::test_cross_tenant_access_through_api_is_denied | verified | |
 | X03 | Stale or session-level tenant context does not leak (D 13) | iso::test_session_level_context_does_not_leak_into_next_transaction | verified | |
 | X04 | Background job payload tenant tampering is denied (P 14, D 13) | none | planned | Outbox carries persisted tenant; worker framework pending |
-| X05 | Export paths enforce tenant and classification (P 14) | evidence packages include content only for readable classifications; export reads re-check case scope | rpt::test_evidence_package_withholds_content_the_requester_cannot_read, track::test_exports... (tenant) | implementing | Exposure snapshots hold aggregates only; export expiry not built |
+| X05 | Export paths enforce tenant and classification (P 14) | rpt::test_evidence_package_withholds_content_the_requester_cannot_read, inv::test_snapshot_reads_disclose_content_and_metadata_only_with_permission, track::test_exports... (tenant) | implementing | Content needs evidence.read:<cls>; digests, sizes and filenames need evidence.read or evidence.metadata:<cls>; export expiry not built |
 | X06 | Shared caches cannot leak across tenants (P 14) | none | planned | No cache exists |
 | X07 | Object access is tenant-scoped (P 14) | evo::test_tenant_object_store_refuses_foreign_keys, evo::test_cross_tenant_evidence_is_not_found | verified | |
 | X08 | Installation and tenant administration gain no routine evidence access (D 13) | iso::test_tenant_selection_and_security_events, evo::test_classification_permissions_and_denial_audit, cases::test_tenant_admin_delegation_rules | verified | |
@@ -113,7 +116,7 @@ Last updated: 2026-10-22 (checkpoint 3: policies, ownership, SLA v2, reporting d
 | CASE-02 | Optimistic concurrency with expected versions | `_apply` versioned UPDATE; DB increments-by-one guard | cases::test_stale_version_..., ::test_concurrent_... | verified | |
 | CASE-03 | Unsupported transitions return a structured conflict and commit nothing | `Conflict` errors, transaction rollback | cases::test_stale_version_rejected_without_partial_state, api::test_conflicts_and_structured_errors, r7::* | verified | |
 | CASE-04 | received -> investigating needs valid scope and scheduled investigation | `start_investigation` (decision + permission) | cases lifecycle tests | implementing | Investigation runs are scheduled in Phase C |
-| CASE-05 | investigating -> review needs assessment with limitations and policy decision, or explicit escalation | `record_assessment`, `escalate` | cases::test_definite_assessment_requires_verified_evidence | implementing | Policy decision is Phase C |
+| CASE-05 | investigating -> review needs assessment with limitations and policy decision, or explicit escalation | `record_assessment` (optionally citing a reviewed investigation and snapshot), `escalate` | cases::test_definite_assessment_requires_verified_evidence, inv::test_assessment_cites_the_run_only_after_human_review | implementing | Prioritisation is a separate command, not a precondition of the transition |
 | CASE-06 | review -> remediation_planned needs authorised decision and eligible assigned owner | `plan_remediation` | cases::test_plan_requires_eligible_owner | verified | |
 | CASE-07 | remediation_planned -> remediating needs approved action or recorded external work | `record_external_work` | lifecycle tests | implementing | Moving the case on an executed approved action is not automatic (ACT-09 keeps tickets from moving cases); record_external_work remains the route |
 | CASE-08 | remediating -> awaiting_verification needs a reported change with identified deployment of an affected asset | `report_change`, `remediation_report_target` trigger | lifecycle tests; cases::test_remediation_target_must_be_affected_asset | verified | Negative path currently enforced by the DB trigger (service returns a 409 guard_violation via the API mapping) |
@@ -140,7 +143,7 @@ Last updated: 2026-10-22 (checkpoint 3: policies, ownership, SLA v2, reporting d
 | EVD-06 | Retention policies for originals, derivatives and backups | `retention_policy` column only | none | planned | |
 | EVD-07 | Legal holds with explicit lifecycle | none | none | planned | |
 | EVD-08 | Immutable retention or independently stored signed checkpoints where stronger integrity is needed | none | none | planned | |
-| EVD-09 | Observations, observation relations, evidence snapshots and members | none | none | planned | Phases B/C |
+| EVD-09 | Observations, observation relations, evidence snapshots and members | `evidence_snapshots`, `evidence_snapshot_members` (0013); observations (0003) | inv::test_snapshot_freezes..., ::test_contradictions_are_recorded_and_later_evidence_makes_a_new_snapshot | implementing | Observation-to-observation relations are not modelled |
 | EVD-10 | Evidence delivery by authenticated streaming; any pre-signed URL is short-lived with documented limits | API streaming download; no pre-signed URLs issued | api::test_analyst_journey... | verified | |
 | EVD-11 | Corrections append superseding records, never silent overwrite | Append-only triggers on decisions/events/verification | iso::test_append_only_... | implementing | Observation supersession is Phase B |
 
@@ -159,7 +162,7 @@ Last updated: 2026-10-22 (checkpoint 3: policies, ownership, SLA v2, reporting d
 | AUTHZ-09 | Administration grants no evidence, risk or approval authority; operators get no tenant access | role catalogue; installation roles outside tenants | X08 tests | verified | |
 | AUTHZ-10 | Delegation limits bound risk acceptance and action approval | `delegation_limits`, `_delegation_limit` | cases::test_risk_acceptance_limits... | implementing | Action approval limits are Phase D |
 | AUTHZ-11 | High-impact decisions prohibit self-approval by default | CASE-15 guards; proposer cannot approve (service + trigger); risk independence (service + CHECK); policy author cannot publish (service + CHECK) | act::test_proposer_cannot_approve_in_service_or_database, risk2::test_high_impact_needs_someone_other_than_the_requester, ::test_database_backstop_for_independence, ppo::test_publishing_needs_a_second_person_and_supersedes | verified | Actions, risk acceptance and policy publishing |
-| AUTHZ-12 | Workload principals with job-scoped service grants (tools, subjects, expiry, budget) | none | none | planned | Phase C |
+| AUTHZ-12 | Workload principals with job-scoped service grants (tools, subjects, expiry, budget) | Investigation runs carry frozen tool grants, snapshot-bounded subjects, deadline and budget; reads are checked against the requester's current permissions; workload principals cannot record consequential decisions (trigger) | inv::test_cancellation_and_revocation_end_the_run, adv::*, inv::test_workload_principals... | implementing | Grants are per run, not separate workload principals per job |
 | AUTHZ-13 | No authority caching across requests; revocation effective on next request | per-transaction loading | cases::test_permission_scope_and_revocation | verified | |
 | AUTHZ-14 | Production OIDC SSO integration (e.g. Entra ID, Keycloak) | JWKS URI support | none | planned | Development issuer only so far |
 | AUTHZ-15 | Decisions record the authority relied on | `Authority.as_json` stored in decisions/audit | cases::test_decisions_record_authority | verified | |
@@ -180,7 +183,7 @@ Last updated: 2026-10-22 (checkpoint 3: policies, ownership, SLA v2, reporting d
 | TEN-09 | Export isolation | none | none | planned | |
 | TEN-10 | Per-tenant quotas and concurrency limits | none | none | planned | |
 | TEN-11 | Integration credentials tenant-scoped, server-side, short-lived | none | none | planned | |
-| TEN-12 | Model requests follow tenant provider and residency policy | none | none | planned | |
+| TEN-12 | Model requests follow tenant provider and residency policy | Per-tenant approved routes with region and classification limit; registered destinations; no fallback | inv::test_disabled_route_fails_without_fallback, ::test_route_approval_needs_a_second_person..., adv::test_content_above_the_route_classification_never_reaches_the_model | implementing | Region is a recorded label; no residency enforcement beyond route approval |
 | TEN-13 | Audit access is tenant-scoped and permissioned | `/audit-events` requires audit.read | api::test_audit_read_requires_explicit_permission | verified | |
 | TEN-14 | Shared and dedicated installation modes on one codebase | `installations.deployment_profile`, dedicated single-tenant trigger | none | implemented_unverified | |
 | TEN-15 | Cross-client portfolio via separate authorised aggregation path | none | none | planned | |
@@ -241,22 +244,25 @@ Last updated: 2026-10-22 (checkpoint 3: policies, ownership, SLA v2, reporting d
 | CORR-01 | Correlate occurrences into cases per asset and vulnerability without discarding scanner identities | `_correlate` | ing::test_trivy_import_preserves_original_and_correlates | verified | Cross-scanner correlation not attempted |
 | CORR-02 | Recurrence reopens cases (new occurrence after closure; old deployment seen after verified closure) | `_correlate` | ing::test_recurrence_after_verified_closure_reopens | verified | |
 
-## 9. Investigation and AI (S 6, P 6) - Phase C
+## 9. Investigation and AI (S 6, P 6) - Phase C (ADR 0012)
 
-| ID | Requirement | Status |
-|---|---|---|
-| INVS-01 | Freeze evidence and policy snapshot before investigation | planned |
-| INVS-02 | Typed, allowlisted tools with registered destinations, scoped credentials, bounded calls/bytes/time/spend/recursion | planned |
-| INVS-03 | Record unsuccessful checks and tool records (principal, subject, destination, time, result digest) | planned |
-| INVS-04 | Claims with supporting and contradicting observations, limitations | planned |
-| INVS-05 | Schema-validated model output; references must exist in tenant and scope (A06) | planned |
-| INVS-06 | Timeout, invalid output or budget exhaustion yields explicit incomplete result | planned |
-| INVS-07 | Provider routing and fallback only as tenant data policy permits; redaction before submission | planned |
-| INVS-08 | Imported content treated as untrusted; cannot expand tools or authority (A05) | planned |
-| INVS-09 | Confidence expressed as evidence completeness categories, no invented probabilities | planned |
-| INVS-10 | New evidence supersedes runs without rewriting them | planned |
-| INVS-11 | Model gateway: approved providers, schemas, budgets, usage and cost observability | planned |
-| INVS-12 | No retention of private chain-of-thought; concise rationale and decision inputs kept | planned |
+Every "verified" here means verified against the **deterministic fake** model and local transports. No language model
+has been called (INVS-07 real path unverified).
+
+| ID | Requirement | Status | Verification / notes |
+|---|---|---|---|
+| INVS-01 | Freeze evidence and policy snapshot before investigation | implementing | Evidence snapshots verified (inv::test_snapshot_freezes..., ::test_contradictions_are_recorded...); the freshness policy version is recorded; priority/ownership/SLA policy versions are not frozen into the snapshot |
+| INVS-02 | Typed, allowlisted tools with registered destinations, scoped credentials, bounded calls/bytes/time/spend/recursion | verified (fake) | adv::test_tool_argument_abuse..., ::test_external_tool_needs_registered_destination..., budgets (adv::test_exhausted_budgets_end_incomplete, ::test_deadline_ends_the_run). No credentials exist for tools yet (OSV is public); scoped tool credentials untested |
+| INVS-03 | Record unsuccessful checks and tool records (principal, subject, destination, time, result digest) | verified | `investigation_steps` for every model and tool call including refused and lost ones (inv::test_run_completes..., ::test_lost_model_step...) |
+| INVS-04 | Claims with supporting and contradicting observations, limitations | verified | `investigation_claims`, `claim_references` (FK into the claim's own snapshot) |
+| INVS-05 | Schema-validated model output; references must exist in tenant and scope (A06) | verified | invu::test_schema..., adv::test_fabricated..., ::test_malformed_output... |
+| INVS-06 | Timeout, invalid output or budget exhaustion yields explicit incomplete result | verified (fake) | adv::test_provider_timeouts..., ::test_malformed..., ::test_exhausted_budgets..., ::test_deadline...; cancellation and revocation give `cancelled` |
+| INVS-07 | Provider routing and fallback only as tenant data policy permits; redaction before submission | implementing | Routes, approval, no fallback, classification withholding (content and metadata) and redaction verified with the fake; the Anthropic adapter is tested against documented shapes only; **real provider never called** |
+| INVS-08 | Imported content treated as untrusted; cannot expand tools or authority (A05) | verified (fake) | adv::test_prompt_injection... |
+| INVS-09 | Confidence expressed as evidence completeness categories, no invented probabilities | verified | Numeric confidence is malformed (invu::test_schema...); the stored label is uncalibrated and unused; conclusions are supported/contradicted/unknown with validation status |
+| INVS-10 | New evidence supersedes runs without rewriting them | verified | inv::test_reassessment_on_new_evidence_keeps_the_original; snapshots, claims and steps append-only |
+| INVS-11 | Model gateway: approved providers, schemas, budgets, usage and cost observability | implementing | Per-call usage, cost and latency recorded; no metrics endpoint or dashboard for model usage (OPS-04) |
+| INVS-12 | No retention of private chain-of-thought; concise rationale and decision inputs kept | implementing | Only structured output (redacted excerpt), digests and usage are stored; retention periods for step records not defined |
 
 ## 10. Prioritisation (S 7) - Phase C
 
@@ -265,7 +271,7 @@ Implemented in migration 0012 and ADR 0011 (`domains/policies`, `domains/cases/p
 | ID | Requirement | Status | Verification / notes |
 |---|---|---|---|
 | PRI-01 | Versioned, testable deterministic policies set authoritative priority | verified | Draft, independent publish, supersede, immutable definitions; `apply-priority-policy` (ppo::*, jrn::). Direct database priority injections removed from tests (act::, risk2:: use the override command) |
-| PRI-02 | AI cannot set authoritative priority | implementing | Only `apply-priority-policy` and a recorded human override set priority; no AI component exists, so this cannot yet be tested against one |
+| PRI-02 | AI cannot set authoritative priority | verified (fake) | No priority field in model output (invu::test_schema...); investigation leaves priority unchanged (inv::test_run_completes..., adv::test_prompt_injection...); workload principals cannot record overrides (trigger) |
 | PRI-03 | Unknown context triggers conservative rules; unsupported reachability is not unreachability | implementing | Missing severity or criticality substituted with the policy's conservative bucket and listed as limitations (ppo::test_priority_from_default_policy_records_its_limitations). Reachability is not an input yet |
 | PRI-04 | Record inputs, freshness and rule outcomes | implementing | Inputs (severities, criticalities, assets) and outcome in the `case.prioritised` event; policy version on the decision. Input freshness is not recorded |
 | PRI-05 | Overrides with scope, reason, actor, expiry/review; second approver by policy | implementing | Override is a decision with rationale, actor and `override.propose` (ppo::test_override_is_a_recorded_decision_and_needs_permission). Expiry, review and second approver not built |
@@ -297,7 +303,7 @@ Implemented in migration 0012 and ADR 0011 (`domains/policies`, `domains/cases/p
 | ACT-09 | External ticket closure does not close the case | verified | Inbound polling records state changes append-only and never moves the case (track::*, wf::test_externally_closed_ticket_never_moves_the_case for Jira-style, ServiceNow and GitHub fakes) |
 | ACT-11 | SLA timers per priority start, supersede on priority change, breach once, end on closure | verified | Replaced by SLA v2 (see SLA-01..06); thresholds are provisional defaults D-SLA-2 |
 | SLA-01 | Triage deadline (pending assessment/priority) distinct from remediation deadline | verified | sla::test_triage_is_a_deadline_to_prioritise_not_to_remediate, ::test_triage_missed_when_priority_comes_late... |
-| SLA-02 | Clock start, pause and resumption documented and derived from events | verified (deferral pause only) | ADR 0011; sla::test_deferral_pauses_and_a_priority_change_revises_without_resetting. Other pause reasons not modelled |
+| SLA-02 | Clock start, pause and resumption documented and derived from events; pauses only for authorised reasons; gross, paused and adjusted time reported separately | verified | ADR 0011 amendment; sla::test_deferral_pauses..., ::test_deferral_without_an_authorised_reason_keeps_the_clock_running, ::test_gross_paused_and_adjusted_time_are_reported_separately |
 | SLA-03 | Priority change never silently resets elapsed time | verified | Revised timer keeps start and pause (same test); mutation that restarts from now is caught |
 | SLA-04 | Accepted risk is not verified remediation | verified | sla::test_accepted_risk_is_never_counted_as_met... (`risk_accepted`, never `met`; mutation caught) |
 | SLA-05 | Targets configurable through versioned policy and labelled provisional | verified | sla::test_published_sla_policy_is_recorded_on_the_timer; every timer stores policy version and snapshot |
@@ -398,7 +404,7 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | ID | Journey | Status |
 |---|---|---|
 | J01 | Operator installs, configures SSO and integrations, checks ingestion health | implementing (Compose install verified; SSO and ingestion pending) |
-| J02 | Analyst reviews a correlated case and follows every material conclusion to evidence | implementing (API path verified in api::test_analyst_journey...; UI pending) |
+| J02 | Analyst reviews a correlated case and follows every material conclusion to evidence | implementing (API: snapshot members, claims with member references, reviews; jrn::, inv::; UI pending) |
 | J03 | Asset owner corrects ownership/importance with effective date | implementing (API: business-context assertion and ownership override verified; UI pending) |
 | J04 | Approver reviews exact remediation scope and authorises or rejects | implementing (API verified in act_api:: and jrn::; UI pending) |
 | J05 | Risk owner accepts scoped exposure with reason and expiry | implementing (service and API verified; UI pending) |
@@ -406,16 +412,16 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | J07 | Verifier confirms or rejects resolution against the correct deployment | implementing (API verified; UI pending) |
 | J08 | Auditor reconstructs a decision and exports an evidence package | implementing (API verified: rpt::, jrn::; UI pending) |
 | J09 | Manager inspects verified risk reduction, accepted exposure, missing coverage | implementing (snapshot API verified; UI pending) |
-| J11 | End-to-end: import -> context and ownership -> investigation with uncertainty -> versioned priority -> approved ticket -> external status -> verified deployment -> closure -> report with coverage limits | implementing | jrn::test_import_to_verified_closure_and_report over HTTP with each step labelled real / fixture / fake / manual / test-read. Manual: business context, assessment (no investigation workspace), linking the ticket as external work, redeploy record, rescan evidence. Fake: tracker |
+| J11 | End-to-end: import -> context and ownership -> investigation with uncertainty -> versioned priority -> approved ticket -> external status -> verified deployment -> closure -> report with coverage limits | implementing | jrn:: over HTTP, steps labelled real / fixture / fake / manual / test-read. The manual assessment is replaced by snapshot -> investigation run (fake model) -> human claim review -> assessment citing the run. Manual: business context, claim review, linking the ticket, redeploy record, rescan evidence. Fake: model and tracker |
 | J10 | Operator restores backup and reconciles uncertain external actions first | planned |
 
 ## 17. Evaluation (S 16, P 10, B)
 
 | ID | Requirement | Status | Notes |
 |---|---|---|---|
-| EVAL-01 | Labelled cases: true, unsupported, ambiguous, stale, contradictory, malicious | planned | |
-| EVAL-02 | Held-out evaluation data separate from development fixtures, blinded reference review | planned | |
-| EVAL-03 | Baselines: scanner severity alone, deterministic policy alone, human reference | planned | |
-| EVAL-04 | Metrics: missed urgent exposures, unsupported dismissals, claim/evidence correctness, priority agreement, correction rate, verified-fix accuracy, analyst time, cost | planned | |
-| EVAL-05 | Publish sample sizes, limitations and failure cases; no state-of-the-art claim without comparison | planned | |
+| EVAL-01 | Labelled cases: true, unsupported, ambiguous, stale, contradictory, malicious | implementing | 16 scenarios in evaluation/cases.json (present, absent, stale, partial, reappeared, injected text, credential text, context); labels **author-drafted, not human-reviewed**; one image, one scanner |
+| EVAL-02 | Held-out evaluation data separate from development fixtures, blinded reference review | implementing | 6 dev / 10 held-out split; no blinded human review yet |
+| EVAL-03 | Baselines: scanner severity alone, deterministic policy alone, human reference | implementing | Deterministic policy and AI-assisted (fake) arms against the provisional reference (eval::, evaluation/report.py); scanner-severity-only baseline not reported separately; no human reference |
+| EVAL-04 | Metrics: missed urgent exposures, unsupported dismissals, claim/evidence correctness, priority agreement, correction rate, verified-fix accuracy, analyst time, cost | implementing | Reported: presence agreement, evidence correctness, unsupported conclusions, missed urgent, simulated reviewer corrections, latency, calls, estimated tokens, cost. Not measured: analyst time, verified-fix accuracy |
+| EVAL-05 | Publish sample sizes, limitations and failure cases; no state-of-the-art claim without comparison | implementing | Report leads with limitations; no model quality claim is made (no model was evaluated) |
 | EVAL-06 | Release thresholds set from the dataset and risk tolerance before use | blocked | Needs business decision on thresholds |

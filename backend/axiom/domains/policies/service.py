@@ -10,6 +10,7 @@ every decision or timer that uses it. Thresholds are provisional until the busin
 """
 from __future__ import annotations
 
+import re
 import uuid
 from uuid import UUID
 
@@ -41,7 +42,9 @@ DEFAULTS = {
     },
     "ownership": {"rules": []},
     "sla": {"triage_days": 7, "remediation_days": {"urgent": 7, "high": 30, "medium": 90, "low": 180},
-            "pause_on_deferral": True},
+            "pause_on_deferral": True,
+            # Only deferrals that state one of these reasons pause the remediation clock (ADR 0011 amendment).
+            "pause_reasons": ["vendor_fix_pending", "change_freeze", "awaiting_risk_decision"]},
     "freshness": {"max_age_hours": {"default": 168, "tenable_vm": 48, "azure_resource_graph": 48,
                                     "trivy_json": 336, "sarif_2_1_0": 336}},
 }
@@ -82,7 +85,11 @@ def validate(kind: str, d: dict) -> dict:
         if not isinstance(d.get("triage_days"), int) or d["triage_days"] < 1 or not isinstance(rd, dict) \
                 or set(rd) != set(PRIORITIES) or not all(isinstance(v, int) and v >= 1 for v in rd.values()):
             raise ValidationFailed("sla needs triage_days and remediation_days for every priority (positive days)")
-        extra = set(d) - {"triage_days", "remediation_days", "pause_on_deferral"}
+        reasons = d.get("pause_reasons", [])
+        if not isinstance(reasons, list) or not all(isinstance(r, str) and re.fullmatch(r"[a-z][a-z0-9_]{2,49}", r)
+                                                    for r in reasons):
+            raise ValidationFailed("pause_reasons must be a list of identifiers")
+        extra = set(d) - {"triage_days", "remediation_days", "pause_on_deferral", "pause_reasons"}
     elif kind == "freshness":
         ages = d.get("max_age_hours")
         if not isinstance(ages, dict) or "default" not in ages or not all(isinstance(v, int) and v >= 1

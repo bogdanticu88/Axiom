@@ -61,6 +61,8 @@ class _Plan:
     dependents: Callable[[UUID | None, int], dict[str, Any]] | None = None
     topic: str = "case.transitioned"
     policy_version_id: UUID | None = None
+    evidence_snapshot_id: UUID | None = None
+    investigation_run_id: UUID | None = None
 
 
 class CaseService:
@@ -155,7 +157,11 @@ class CaseService:
             authority=authority))
 
     def record_assessment(self, case_id: UUID, expected_version: int, *, assessment: str, rationale: str,
-                          limitations: str, evidence: Sequence[EvidenceRef]) -> dict:
+                          limitations: str, evidence: Sequence[EvidenceRef],
+                          evidence_snapshot_id: UUID | None = None, investigation_run_id: UUID | None = None) -> dict:
+        """A human assessment. It may cite a frozen evidence snapshot and an investigation run (ADR 0012); the run's
+        findings are analysis only: every claim the run did not reject must have been reviewed by a person first, and
+        the run's limitations, contradictions and gaps are appended to the decision's limitations."""
         case = self._load(case_id)
         model.check_expected_version(case["record_version"], expected_version)
         model.require_state(case["workflow"], Workflow.INVESTIGATING)
@@ -168,10 +174,43 @@ class CaseService:
         if model.assessment_needs_evidence(value) and not any(e.relation == "supports" for e in evidence):
             raise Conflict("a definite assessment requires verified supporting evidence; "
                            "record 'inconclusive' when evidence is missing", code="evidence_required")
+        notes = []
+        if investigation_run_id is not None:
+            run = self.conn.execute("SELECT * FROM axiom.investigation_runs WHERE id = %s AND case_id = %s",
+                                    (investigation_run_id, case_id)).fetchone()
+            if run is None:
+                raise NotFound("investigation not found for this case", code="investigation_not_found")
+            if run["status"] not in ("completed", "incomplete"):
+                raise Conflict(f"investigation is {run['status']}", code="investigation_not_usable")
+            if evidence_snapshot_id is not None and evidence_snapshot_id != run["snapshot_id"]:
+                raise Conflict("the snapshot must be the investigation's snapshot", code="snapshot_mismatch")
+            evidence_snapshot_id = run["snapshot_id"]
+            unreviewed = self.conn.execute(
+                """SELECT count(*) AS n FROM axiom.investigation_claims c WHERE c.run_id = %s AND c.validation <> 'rejected'
+                     AND NOT EXISTS (SELECT 1 FROM axiom.claim_reviews r WHERE r.claim_id = c.id)""",
+                (investigation_run_id,)).fetchone()["n"]
+            if unreviewed:
+                raise Conflict(f"{unreviewed} investigation claim(s) have not been reviewed by a person",
+                               code="claims_not_reviewed")
+            notes.append(f"investigation {investigation_run_id} {run['status']}"
+                         + (f" ({run['outcome_reason']})" if run["outcome_reason"] else "")
+                         + "; AI analysis reviewed by a person, not authoritative")
+            notes += [lim["message"] for lim in run["limitations"]]
+        if evidence_snapshot_id is not None:
+            snap = self.conn.execute("SELECT * FROM axiom.evidence_snapshots WHERE id = %s AND case_id = %s",
+                                     (evidence_snapshot_id, case_id)).fetchone()
+            if snap is None:
+                raise NotFound("snapshot not found for this case", code="snapshot_not_found")
+            notes.append(f"evidence snapshot {snap['id']} ({snap['digest'][:12]}): "
+                         f"{len(snap['contradictions'])} recorded contradiction(s), {len(snap['gaps'])} gap(s)")
+        full_limitations = limitations if not notes else limitations.rstrip() + " | " + "; ".join(notes)
         return self._apply(case, expected_version, _Plan(
             to_workflow=Workflow.REVIEW, event_type="case.assessed", decision_kind="assessment",
-            decision_outcome=value.value, rationale=rationale, limitations=limitations,
-            authority=authority, evidence=evidence, changes={"assessment": value.value}))
+            decision_outcome=value.value, rationale=rationale, limitations=full_limitations[:10000],
+            authority=authority, evidence=evidence, changes={"assessment": value.value},
+            payload={"evidence_snapshot_id": str(evidence_snapshot_id) if evidence_snapshot_id else None,
+                     "investigation_run_id": str(investigation_run_id) if investigation_run_id else None},
+            evidence_snapshot_id=evidence_snapshot_id, investigation_run_id=investigation_run_id))
 
     def escalate(self, case_id: UUID, expected_version: int, rationale: str) -> dict:
         case = self._load(case_id)
@@ -209,7 +248,11 @@ class CaseService:
                                           "review_at": None},
             payload={"owner_principal_id": str(owner_principal_id)}))
 
-    def defer(self, case_id: UUID, expected_version: int, *, review_at: datetime, rationale: str) -> dict:
+    def defer(self, case_id: UUID, expected_version: int, *, review_at: datetime, rationale: str,
+              pause_reason: str | None = None) -> dict:
+        """Defer with a review date. The remediation SLA clock pauses only when ``pause_reason`` is one of the
+        reasons the published SLA policy authorises; otherwise time keeps counting (deferral does not erase
+        accountability). Gross, paused and adjusted time are reported separately."""
         case = self._load(case_id)
         model.check_expected_version(case["record_version"], expected_version)
         model.require_state(case["workflow"], Workflow.REVIEW)
@@ -217,11 +260,18 @@ class CaseService:
         now = self.authz.now()
         if review_at.tzinfo is None or not (now < review_at <= now + MAX_DEFERRAL):
             raise ValidationFailed("review date must be in the future and within 365 days")
+        payload = {"review_at": review_at.isoformat()}
+        if pause_reason is not None:
+            from ..policies.service import current
+            sla, sla_id, _ = current(self.conn, "sla")
+            if pause_reason not in sla.get("pause_reasons", []):
+                raise ValidationFailed(f"pause reason must be one of {sla.get('pause_reasons', [])}",
+                                       code="pause_reason_not_authorised")
+            payload.update(pause_reason=pause_reason, sla_policy_version_id=str(sla_id) if sla_id else None)
         return self._apply(case, expected_version, _Plan(
             to_workflow=Workflow.REVIEW, event_type="case.deferred", decision_kind="deferral",
             decision_outcome="defer", rationale=rationale, authority=authority,
-            changes={"disposition": "defer", "review_at": review_at},
-            payload={"review_at": review_at.isoformat()}))
+            changes={"disposition": "defer", "review_at": review_at}, payload=payload))
 
     def record_external_work(self, case_id: UUID, expected_version: int, *, external_reference: str,
                              rationale: str) -> dict:
@@ -571,11 +621,11 @@ class CaseService:
                 "system": True, "principal_kind": self.ctx.principal_kind}
             self.conn.execute(
                 """INSERT INTO axiom.decisions(tenant_id, id, case_id, kind, outcome, rationale, limitations,
-                       actor_principal_id, authority, policy_version_id)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                       actor_principal_id, authority, policy_version_id, evidence_snapshot_id, investigation_run_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (self.ctx.tenant_id, decision_id, case["id"], plan.decision_kind, plan.decision_outcome,
                  plan.rationale, plan.limitations, self.ctx.principal_id, Jsonb(authority_json),
-                 plan.policy_version_id))
+                 plan.policy_version_id, plan.evidence_snapshot_id, plan.investigation_run_id))
             for ref in plan.evidence:
                 self.conn.execute(
                     """INSERT INTO axiom.decision_evidence(tenant_id, decision_id, evidence_object_id, relation)

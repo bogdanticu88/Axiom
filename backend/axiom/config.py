@@ -49,6 +49,19 @@ class Settings(BaseSettings):
     restore_witness: str | None = None
     worker_metrics_port: int | None = None
 
+    # Phase C (ADR 0012). Registered destinations: comma-separated https origins. A model route or tool may only use
+    # an origin listed here; nothing is enabled by default. The deterministic fake model is refused in production.
+    model_destinations: str = ""
+    tool_destinations: str = ""
+
+    @property
+    def model_destination_set(self) -> frozenset[str]:
+        return frozenset(o.strip().rstrip("/") for o in self.model_destinations.split(",") if o.strip())
+
+    @property
+    def tool_destination_set(self) -> frozenset[str]:
+        return frozenset(o.strip().rstrip("/") for o in self.tool_destinations.split(",") if o.strip())
+
     @cached_property
     def trusted_issuers(self) -> list[TrustedIssuer]:
         raw = json.loads(self.trusted_issuers_json)

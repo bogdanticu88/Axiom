@@ -63,22 +63,51 @@ The foundation-era gap list has been superseded.
   and an executable-input digest, plus the pinned and unpinned inputs.
 * All thresholds are provisional defaults (D-SLA-2, D-PRIO-1, D-FRESH-1, D-RISK-1, D-ACT-1).
 
+## State after checkpoint 4 (Phase C: evidence-backed investigation)
+* Register reconciled. The checkpoint-3 chat summary said 259 because it left out 2 implemented_unverified and 1
+  blocked. `scripts/dev/register-counts.py` now generates the counts and is a CI stage; it also found and fixed one
+  row with a misplaced status column.
+* Migration 0013 and ADR 0012 add:
+  * frozen evidence snapshots (observation versions, runs with coverage and freshness, asset versions, context,
+    evidence; contradictions and gaps kept);
+  * per-tenant model routes (two-person approval, registered destinations, classification limit, no fallback);
+  * a gateway with redaction and usage accounting;
+  * durable investigation runs (budgets, deadline, cancellation, revocation, crash recovery);
+  * read-only typed tools with an OSV lookup behind a registered destination;
+  * claim validation (rejected, downgraded or references_checked; entailment never claimed);
+  * mandatory human claim review before an assessment may cite a run;
+  * a database trigger that stops workload principals recording consequential decisions, approvals or reviews.
+* **No language model has been called.** CI uses `DeterministicFakeProvider`. The Anthropic adapter follows the
+  documented API shape and is tested against a local transport; the opt-in test
+  (`tests/integration/test_real_provider_optin.py`) has never run because there are no credentials and external access
+  is not authorised.
+* Evaluation: `evaluation/cases.json` (16 scenarios, 6 dev and 10 held-out) and `tests/integration/test_evaluation_harness.py`
+  with policy, AI-assisted (fake) and adversarial arms; `evaluation/report.py`. Reference labels are
+  author-drafted, **not human-reviewed** (D-EVAL-1). The harness found a validator gap (a conclusion against the
+  latest observation was accepted when both sides were cited), which is now fixed.
+* Reviews done:
+  * deferral pauses the SLA only for policy-authorised reasons, with gross, paused and adjusted time reported;
+  * evidence metadata (digest, size, filename) needs explicit permission in packages, snapshot reads and model
+    prompts. A test also found that metadata of above-classification evidence was reaching the prompt; fixed.
+* The API journey replaces the manual assessment with snapshot, investigation, human claim review and an assessment
+  that cites the run.
+
 ## Core gaps (do not let runner work hide these)
-* **Investigation (Phase C) is not built**: no evidence snapshots, tool or model gateway, claims or AI analysis.
-* **No user interface** exists; all journeys are API-only.
-* **No enterprise SSO**; development token authentication only.
-* No connector is sandbox-validated; trackers are fakes; no deployment or rescan integration (the journey supplies
-  the redeploy and the rescan manually).
+* **No user interface**; all journeys are API-only.
+* **No enterprise SSO**; development token authentication only. Required before any external pilot.
+* **No language model verified**; the real-provider path needs credentials and explicit authorisation.
+* Evaluation references need a human reviewer; no model quality claim can be made.
+* No connector is sandbox-validated; trackers are fakes; no deployment or rescan integration.
 
 ## Next tasks (in order)
-1. Phase C foundations: evidence snapshots and policy snapshot frozen per investigation (INVS-01), investigation runs
-   with explicit incomplete results (INVS-06), claims with supporting/contradicting observations (INVS-04), schema-
-   checked model output with reference validation (A06) behind a provider-neutral gateway, adversarial suite (A05).
-2. UI for the verified API journeys (ARC-05; J02, J03, J04, J07, J08, J09 first).
-3. Enterprise OIDC SSO (AUTHZ-14) with an IdP integration test (Keycloak in Compose).
-4. Priority impact preview and override expiry (PRI-05, PRI-06); reassessment on policy change (A14).
-5. Sandbox validation of a tracker and of the witness store, once access to them.
-6. Hosted CI once a remote is authorised.
+1. Analyst UI against the real APIs (ARC-05): case list and detail, snapshot members, investigation runs with claims
+   and validation reasons, claim review, assessment, priority and ownership, SLA (gross, paused, adjusted), reports.
+2. Enterprise OIDC/SSO (AUTHZ-14) with an IdP integration test, before any external pilot.
+3. Priority impact preview and override expiry (PRI-05, PRI-06).
+4. With authorisation and credentials: run the real-provider test and the evaluation's real-model arm; have a human
+   review the 16 reference labels and extend the dataset beyond one image and one scanner.
+5. Per-tenant investigation quotas (X09) and model usage metrics (OPS-04).
+6. Hosted CI and sandbox validation once a remote and accounts are authorised.
 
 ## Commands
 ```
