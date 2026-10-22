@@ -1,0 +1,43 @@
+I1 weakened: authority bindings no longer share-locked
+   property: a revocation waits for a command that already checked
+   verdict: CAUGHT (3 failed in 1.91s)
+   failed: test_a_command_that_fails_after_its_check_releases_the_lock_and_commits_nothing[exception]
+      first assertion: AssertionError: assert 'at' not in {'at': 44420.163307914}
+   failed: test_a_command_that_fails_after_its_check_releases_the_lock_and_commits_nothing[failed_statement]
+      first assertion: AssertionError: assert 'at' not in {'at': 44420.536349434}
+   failed: test_shortening_a_membership_waits_like_a_suspension
+      first assertion: AssertionError: assert 'at' not in {'at': 44420.902772129}
+I4 weakened: decisions no longer append-only
+   property: the runtime credential cannot rewrite history
+   verdict: SURVIVED (3 passed in 2.20s)
+W2 weakened: resolved addresses not checked
+   property: loopback, metadata and out-of-network addresses are not contacted
+   verdict: CAUGHT (4 failed in 11.03s)
+   failed: test_an_address_change_between_attempts_is_checked_again
+      first assertion: AssertionError: assert ('queued' == 'needs_operator'
+W3 weakened: connection not pinned to the checked address
+   property: the request goes to the address that was checked
+   verdict: CAUGHT (1 failed in 2.13s)
+   failed: test_the_connection_is_pinned_to_the_checked_address_and_verified_for_the_name
+      first assertion: ValueError: not enough values to unpack (expected 1, got 0)
+W5 weakened: nonce not checked
+   property: a response must be bound to this attempt
+   verdict: CAUGHT (3 failed, 31 passed in 5.42s)
+   failed: test_oversized_generic_or_unbound_responses_do_not_verify[<lambda>-unbound_response1]
+      first assertion: AssertionError: assert ('passed', 'condition_absent') == ('inconclusiv...und_response')
+W7 weakened: redirects followed
+   property: a redirect target receives nothing
+   verdict: CAUGHT (1 failed in 1.99s)
+   failed: test_a_redirect_is_not_followed_and_its_target_receives_nothing
+      first assertion: AssertionError: assert ['/v1/checks', '/redirected'] == ['/v1/checks']
+W9 weakened: one observation per job not enforced
+   property: the database refuses a second observation for a job
+   verdict: CAUGHT (1 failed in 2.14s)
+   failed: test_the_database_refuses_a_second_observation_for_a_job
+      first assertion: Failed: DID NOT RAISE UniqueViolation
+T5 weakened: secret error quotes the file
+   property: secret-file failures do not reveal contents
+   verdict: CAUGHT (1 failed, 4 passed in 24.63s)
+   failed: test_secret_file_failures_stop_start_up_without_revealing_contents[too_large]
+      first assertion: AssertionError: assert ('TOP-SECRET-...819cb5d151de' not in 'secret file...d151deTOP-SE'
+sanity: all targeted tests on the restored tree: rc=0 (52 passed in 40.72s)

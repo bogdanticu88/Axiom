@@ -1,0 +1,6 @@
+I4 weakened: decisions no longer append-only
+   property: the runtime credential cannot rewrite history
+   verdict: CAUGHT (1 failed, 3 passed in 2.62s)
+   failed: test_append_only_tables_reject_mutation_even_for_owner
+      first assertion: Failed: DID NOT RAISE InsufficientPrivilege
+sanity: all targeted tests on the restored tree: rc=0 (4 passed in 2.38s)

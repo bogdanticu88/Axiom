@@ -1,0 +1,105 @@
+
+##### input manifest (exact committed tree) (19:18:17Z)
+commit:            7efc15c4788df960c477c04a8a4ddd89b4ad9723
+tree:              0614230738b40247b24b14e79552925c6cef5ba4
+executable inputs: sha256:215dc3638dca1372cfaa39a91faeb9f164866c45c505f2f8ed41db5a98fadc56 over 'git ls-tree -r HEAD -- backend db scripts .github deployments tests evaluation frontend pyproject.toml uv.lock Dockerfile .dockerignore'
+tracked files:     376 total, 219 in executable-input paths
+migrations:        19 files
+pinned by the tree:
+  uv.lock sha256:  96d737f48613384f7f70a0931ca6eebc7b0ebeb8b0c9c95370b1ef09899275ed
+  image:          mirror.gcr.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+  image:          mirror.gcr.io/library/node:22.20.0-slim@sha256:b21fe589dfbe5cc39365d0544b9be3f1f33f55f3c86c87a76ff65a02f8f5848e
+  image:          public.ecr.aws/docker/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+  image:          public.ecr.aws/docker/library/python:3.13-slim@sha256:cf50a4f6ac4f026458b08d5222023d700ac806410dff5e9ca8728fa44f2b850f
+  image:          quay.io/keycloak/keycloak:26.4.2@sha256:3617b09bb4b7510a8d8d9b9fc5707399e2d70688dbcc2f8fb013a144829be1b9
+  action:         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+  action:         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+  action:         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+NOT pinned by the tree (runner environment, recorded here for this run):
+  python:          Python 3.13.16
+  uv:              uv 0.11.32 (x86_64-unknown-linux-gnu)
+  postgres:        postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+  docker:          Docker version 29.9.1, build dfc520d
+  pip-installed uv inside the image build: uv==0.11.32 (version pinned, hash not pinned)
+excluded from reproducibility claims: .var/ (logs, clusters), uploaded evidence, object-store contents, .env files
+PASS input-manifest
+
+##### dependencies (locked) (19:18:17Z)
+ + typing-inspection==0.4.4
+ + urllib3==2.8.0
+ + uvicorn==0.54.0
+PASS dependencies
+
+##### byte-compile (19:18:17Z)
+PASS compile
+
+##### secret scan (tracked files) (19:18:18Z)
+PASS secret-scan
+PASS no-env-files
+
+##### requirements register (every row has a recognised status) (19:18:18Z)
+17. Evaluation (S 16, P 10, B)                             verified=0 implementing=5 implemented_unverified=0 planned=0 blocked=1 rows=6
+
+Requirements: verified 149 (of which 19 only against fakes or fixtures) + implementing 68 + implemented_unverified 2 + planned 42 + blocked 1 = 262 rows
+Integration catalogue: fixture-tested 8, planned 13 = 21 rows
+PASS register
+
+##### GitHub Actions pins (full commit hashes, verified against the official repositories) (19:18:18Z)
+ok   actions/checkout v7.0.1 3d3c42e5aac5ba805825da76410c181273ba90b1
+ok   actions/setup-python v7.0.0 5fda3b95a4ea91299a34e894583c3862153e4b97
+ok   actions/upload-artifact v7.0.2 cf430e030ddbb5b0abf93d22962f4752f3646cd9
+PASS action-pins
+
+##### analyst UI (locked npm install, typecheck, production build) (19:18:20Z)
+dist/index.html                   0.39 kB │ gzip:  0.26 kB
+dist/assets/index-D1i01POv.css    5.45 kB │ gzip:  1.78 kB
+dist/assets/index-nyGxw2xk.js   235.66 kB │ gzip: 70.71 kB
+✓ built in 1.03s
+PASS ui-build
+
+##### foundation verification (fresh cluster + SeaweedFS + full suite, incl. evaluation harness) (19:18:24Z)
+PASSED tests/unit/test_secretrefs.py::test_errors_never_contain_the_value
+PASSED tests/unit/test_verification_checks.py::test_rules[error]
+============ 655 passed, 2 skipped, 1 warning in 507.41s (0:08:27) =============
+PASS foundation
+
+##### evaluation report (from this run's harness results) (19:27:01Z)
+| Presence conclusion matches reference | not assessed | 6/6 (100%) |
+| Unsupported definite conclusions accepted | n/a | 0 |
+| Missed urgent cases (reference urgent, priority not urgent) | 0 of 1 | 0 of 1 (cannot change priority) |
+| Presence conclusion matches reference | not assessed | 10/10 (100%) |
+| Unsupported definite conclusions accepted | n/a | 0 |
+| Missed urgent cases (reference urgent, priority not urgent) | 1 of 2 | 1 of 2 (cannot change priority) |
+PASS evaluation-report
+wrote 56 files to /var/tmp/axiom-ci-cp8-out/eval-review-package; scenarios without evidence: none
+PASS evaluation-review-package
+
+##### restore drill: physical snapshot rollback (19:27:01Z)
+.                                                                        [100%]
+1 passed in 3.56s
+PASS restore-drill
+
+##### compose fresh-install smoke (image rebuilt) (19:27:05Z)
+ok   fresh install: migrations applied, api healthy
+ok   no token -> 401
+ok   evidence upload -> verified -> download via S3 (SeaweedFS)
+ok   digest mismatch -> rejected
+ok   case create, start-investigation, stale version -> 409
+ok   consultant in other tenant -> 404; non-member tenant selection -> 403
+ok   case events linked to audit rows: 2
+ok   Trivy import via API + job-worker: completed complete 30; cases visible: 30
+ok   re-running init: migrations 'applied: none', seed 'already seeded'
+ok   UI served by the API at /ui with a restrictive Content-Security-Policy
+ok   alice signed in through the local Keycloak login page
+ok   case queue lists imported cases (29 received)
+ok   alice moved a case to investigating through the UI; the page shows the new workflow
+ok   audrey (auditor) was refused by the server: permission_denied; the case did not change
+ok   sign-out revoked the platform session server-side (old cookie replayed: 401)
+ok   the server recorded that decision as alice's (human principal, resolved from the Keycloak subject)
+ok   AXIOM_ENV=production with the development identity refuses to start (inline JWKS not permitted)
+ok   a missing OIDC client secret stops start-up (fails closed)
+SMOKE PASS (axiom-smoke-192705)
+PASS compose-smoke
+
+CI PASS (/var/tmp/axiom-ci-cp8-out)
+exit 0

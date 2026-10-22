@@ -669,3 +669,36 @@ endpoint added), 13 planned.
   * other browsers, screen readers and a WCAG review;
   * hosted CI.
 * A passing test shows the behaviour it exercises on these inputs. It is not a general security guarantee.
+
+### Run 20: checkpoint 8, trust boundaries (2026-10-22 ~18:50Z to 19:40Z)
+
+**1. Baseline** (`docs/verification/2026-10-22-checkpoint8/baseline.md`): checkpoint-7 tag, manifest, checksums and
+artifact contents verified in the private history and in the published Axiom history; the commits after each CI
+commit change records only (plus a comment-only commit whose Python syntax trees are unchanged, and README text).
+
+**2. Tested object.** CI PASS on a fresh clone of `7efc15c4788df960c477c04a8a4ddd89b4ad9723` (tree `06142307…`,
+executable inputs `sha256:215dc363…`, `ci-7efc15c.log`): every stage passed; migrations `0001 … 0019`, re-run
+`applied: none`; RLS audit 69 forced, 0 not owned by the owner role; **655 passed, 2 skipped** (the physical drill,
+run as its own stage: 1 passed; the opt-in real-provider test, never run). New in this run and all executed: local
+TLS deployment 9, database identity boundary 12, revocation boundary 5, worker destinations 14, worker lifecycle 9.
+Compose smoke with a rebuilt image: `SMOKE PASS`. After this commit only this record, the CI log and the mutation
+logs were added.
+
+**3. Mutation checks** (`mutation-checks-round1..3.log`, `mutation-harness.py`; caches purged, restored files
+compared byte for byte, targeted tests rerun after restore). 18 mutations. Round 1 exposed three tests that did not
+isolate their property and one invalid mutation; each was fixed and rerun:
+* W9 (one observation per job) **survived**: the duplicate row also violated the run-ID uniqueness. The test now
+  changes the run ID; caught ("DID NOT RAISE UniqueViolation").
+* W7 (redirects followed) was caught for the wrong reason (TLS failure at an untrusted redirect target). The redirect
+  now points at a reachable, trusted URL; caught by the path assertion (`['/v1/checks', '/redirected']`).
+* I4 (decisions append-only trigger) was first an invalid mutation (migration error). Corrected, it **survived**
+  against the runtime-credential test because the runtime role has no UPDATE or DELETE privilege on decisions: the
+  grant masks the trigger. The owner test did not cover decisions; it now does (UPDATE and DELETE) and catches it.
+* W3 (connection not pinned) is caught because the unpinned client cannot resolve the test name at all; the test
+  cannot show a different reachable address without controlling system DNS. Recorded as caught, with that limit.
+Final: 18 of 18 caught, each by the test written for that control. Sanity after restore: all targeted tests pass.
+
+**4. Register:** unchanged counts (262 rows; 149 verified, 19 of them fixture or fake only). No fixture-only result
+was promoted.
+
+**5. Evaluation:** unchanged; no model called; review pending.

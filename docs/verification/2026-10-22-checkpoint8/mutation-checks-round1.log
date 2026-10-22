@@ -1,0 +1,97 @@
+I1 weakened: authority bindings no longer share-locked
+   property: a revocation waits for a command that already checked
+   verdict: CAUGHT (3 failed in 2.01s)
+   failed: test_shortening_a_membership_waits_like_a_suspension
+      first assertion: AssertionError: assert 'at' not in {'at': 44137.286315329}
+I2 weakened: bind_context accepts a second principal
+   property: one principal per transaction through bind_context
+   verdict: CAUGHT (2 failed in 1.79s)
+   failed: test_context_ends_with_the_transaction_after_commit_rollback_and_failure
+      first assertion: Failed: DID NOT RAISE InsufficientPrivilege
+   failed: test_the_no_switch_rule_is_enforced_by_bind_context_only
+      first assertion: Failed: DID NOT RAISE InsufficientPrivilege
+I3 weakened: context no longer tied to its transaction
+   property: context ends with the transaction (pool safety)
+   verdict: CAUGHT (1 failed, 1 passed in 1.77s)
+   failed: test_session_level_context_does_not_leak_into_next_transaction
+      first assertion: assert 3 == 0
+I4 weakened: decisions no longer append-only
+   property: the runtime credential cannot rewrite history
+   verdict: CAUGHT (3 errors in 0.40s)
+W1 weakened: destination allowlist ignored
+   property: only operator-allowed origins are contacted
+   verdict: CAUGHT (5 failed, 2 passed in 2.33s)
+   failed: test_an_unapproved_destination_is_never_contacted
+      first assertion: AssertionError: assert ('succeeded' == 'needs_operator'
+   failed: test_refused_origins[https://checks.example]
+      first assertion: Failed: DID NOT RAISE DestinationRefused
+   failed: test_refused_origins[https://checks.example:9443]
+      first assertion: Failed: DID NOT RAISE DestinationRefused
+   failed: test_refused_origins[https://evil.example]
+      first assertion: Failed: DID NOT RAISE DestinationRefused
+   failed: test_refused_origins[https://scan.example.evil.test]
+      first assertion: Failed: DID NOT RAISE DestinationRefused
+W2 weakened: resolved addresses not checked
+   property: loopback, metadata and out-of-network addresses are not contacted
+   verdict: CAUGHT (4 failed in 11.16s)
+   failed: test_an_address_change_between_attempts_is_checked_again
+      first assertion: AssertionError: assert ('queued' == 'needs_operator'
+W3 weakened: connection not pinned to the checked address
+   property: the request goes to the address that was checked
+   verdict: CAUGHT (1 failed in 2.01s)
+W4 weakened: TLS failures treated as transient
+   property: an untrusted certificate parks the job instead of retrying
+   verdict: CAUGHT (2 failed in 3.26s)
+   failed: test_tls_failures_park_the_job_without_sending_the_request[wrong_name]
+      first assertion: AssertionError: assert ('queued' == 'needs_operator'
+   failed: test_tls_failures_park_the_job_without_sending_the_request[untrusted_ca]
+      first assertion: AssertionError: assert ('queued' == 'needs_operator'
+W5 weakened: nonce not checked
+   property: a response must be bound to this attempt
+   verdict: CAUGHT (3 failed, 31 passed in 5.21s)
+W6 weakened: echoed credential stored
+   property: the credential never reaches stored evidence
+   verdict: CAUGHT (1 failed in 2.15s)
+   failed: test_an_echoed_credential_is_redacted_and_never_stored_or_logged
+      first assertion: assert False is True
+W7 weakened: redirects followed
+   property: a redirect target receives nothing
+   verdict: CAUGHT (1 failed in 2.54s)
+   failed: test_a_redirect_is_not_followed_and_its_target_receives_nothing
+      first assertion: ValueError: not enough values to unpack (expected 1, got 0)
+W8 weakened: report-level duplicate check removed
+   property: a second job for a verified report does not call or record
+   verdict: CAUGHT (1 failed in 2.30s)
+   failed: test_a_second_job_for_an_already_verified_report_is_skipped
+      first assertion: AssertionError: assert (None == {'status': 'skipped', 'reason': 'already_verified'})
+W9 weakened: one observation per job not enforced
+   property: the database refuses a second observation for a job
+   verdict: SURVIVED (1 passed in 1.86s)
+T1 weakened: session cookie not Secure
+   property: session cookies only travel over TLS
+   verdict: CAUGHT (2 failed in 29.03s)
+   failed: test_browser_sign_in_over_tls_with_secure_cookies_csrf_logout_and_replay
+      first assertion: assert (False)
+   failed: test_callback_and_logout_redirects_use_the_configured_origin
+      first assertion: AssertionError: assert ('Secure' in 'axiom_session=jOprXsaJB4e2pY2d5Gfx8kiTk2yAjARufHk4VybipdA; HttpOnly; Max-Age=28800; Path=/; SameSite=lax')
+T2 weakened: sign-in redirect built from request headers
+   property: redirects use the configured external origin
+   verdict: CAUGHT (2 failed in 26.29s)
+   failed: test_spoofed_forwarding_and_host_headers_do_not_change_redirects[proxy]
+      first assertion: AssertionError: assert ['https://evi...uth/callback'] == ['https://loc...uth/callback']
+   failed: test_spoofed_forwarding_and_host_headers_do_not_change_redirects[direct]
+      first assertion: AssertionError: assert ['https://evi...uth/callback'] == ['https://loc...uth/callback']
+T3 weakened: CSRF check skipped
+   property: unsafe session requests need the CSRF token
+   verdict: CAUGHT (1 failed in 26.64s)
+   failed: test_browser_sign_in_over_tls_with_secure_cookies_csrf_logout_and_replay
+      first assertion: AssertionError: assert (201 == 403)
+T4 weakened: logout does not revoke the session
+   property: a logged-out session cookie is refused
+   verdict: CAUGHT (1 failed, 1 passed in 28.60s)
+   failed: test_browser_sign_in_over_tls_with_secure_cookies_csrf_logout_and_replay
+      first assertion: assert 200 == 401
+T5 weakened: secret error quotes the file
+   property: secret-file failures do not reveal contents
+   verdict: CAUGHT (1 failed, 4 passed in 24.45s)
+sanity: all targeted tests on the restored tree: rc=0 (70 passed in 52.98s)
