@@ -164,7 +164,7 @@ def test_production_sso_settings_are_checked():
     base = dict(env="production", database_dsn="postgresql://x", object_store="s3", s3_bucket="b",
                 trusted_issuers_json=json.dumps([{"issuer": "https://idp.example", "audience": "a",
                                                   "jwks_uri": "https://idp.example/jwks"}]),
-                oidc_client_id="c", oidc_client_secret_ref="secretref:env/X",
+                oidc_client_id="c", oidc_client_secret_ref="secretref:file/run/secrets/oidc",
                 oidc_redirect_uri="https://axiom.example/auth/callback")
     for bad in ({"oidc_issuer": "http://idp.example"}, {"oidc_issuer": "https://idp.example", "ui_cookie_secure": False},
                 {"oidc_issuer": "https://idp.example", "oidc_client_secret_ref": "plain-secret-value"}):
@@ -176,7 +176,11 @@ def test_production_sso_settings_are_checked():
                 {"oidc_issuer": "https://idp.example", "oidc_post_logout_redirect_uri": "http://axiom.example/ui/"},
                 {"ui_dist_dir": "/app/ui"},                              # a UI without sign-in
                 {"trusted_issuers_json": "[]"},                          # no issuer at all
-                {"oidc_issuer": "https://idp.example", "oidc_client_secret_ref": None}):
+                {"oidc_issuer": "https://idp.example", "oidc_client_secret_ref": None},
+                # checkpoint 7: environment secrets, inconsistent origins and a wrong callback path
+                {"oidc_issuer": "https://idp.example", "oidc_client_secret_ref": "secretref:env/X"},
+                {"oidc_issuer": "https://idp.example", "oidc_post_logout_redirect_uri": "https://other.example/ui/"},
+                {"oidc_issuer": "https://idp.example", "oidc_redirect_uri": "https://axiom.example/elsewhere"}):
         with pytest.raises(ConfigurationError):
             Settings(**{**base, **bad}).validate_for_runtime()
     _ = os
@@ -187,9 +191,72 @@ def test_unresolvable_client_secret_stops_start_up(db, issuer, monkeypatch):
     kw = dict(database_dsn="postgresql://unused", trusted_issuers_json=json.dumps(
         [{"issuer": issuer.issuer, "audience": issuer.audience, "jwks": issuer.jwks()}]),
         oidc_issuer="http://127.0.0.1:1/realms/x", oidc_client_id="ui",
-        oidc_client_secret_ref="secretref:env/AXIOM_TEST_SECRET_THAT_IS_NOT_SET", oidc_redirect_uri="http://127.0.0.1/cb")
+        oidc_client_secret_ref="secretref:env/AXIOM_TEST_SECRET_THAT_IS_NOT_SET",
+        oidc_redirect_uri="http://127.0.0.1/auth/callback")
     monkeypatch.delenv("AXIOM_TEST_SECRET_THAT_IS_NOT_SET", raising=False)
     with pytest.raises(ConfigurationError, match="did not resolve"):
         create_app(Settings(env="test", **kw), db=db)
     monkeypatch.setenv("AXIOM_TEST_SECRET_THAT_IS_NOT_SET", "value")
     create_app(Settings(env="test", **kw), db=db)                       # resolves: starts (no IdP call at start)
+
+
+# ------------------------------------------------------------------- checkpoint 7: authentication review
+def test_signing_key_rotation_at_the_local_idp_is_followed(server, keycloak, dbinfo, world):
+    """The platform caches the IdP's keys after the first login. Keycloak then signs with a new key whose ID the
+    platform has not seen; the next login refreshes the key set once and succeeds."""
+    provision(dbinfo, world, keycloak, who={"alice": ("a", [("analyst", "project")])})
+    c, r = browserless_login(server.base, keycloak, "alice")
+    assert r.status_code == 303
+    keycloak.rotate_signing_key()
+    c2, r2 = browserless_login(server.base, keycloak, "alice")
+    assert r2.status_code == 303 and c2.get(f"{server.base}/auth/session").status_code == 200
+
+
+def test_login_rotates_the_session_and_keeps_codes_out_of_the_url_trail(server, keycloak, dbinfo, world):
+    provision(dbinfo, world, keycloak, who={"alice": ("a", [("analyst", "project")])})
+    c, r = browserless_login(server.base, keycloak, "alice")
+    first = c.cookies.get("axiom_session")
+    # signing in again in the same browser replaces the session: the previous token stops working
+    c, callback = browserless_login(server.base, keycloak, "alice", client=c, stop_before_callback=True)
+    r = c.get(callback)
+    assert r.status_code == 303 and r.headers["location"].startswith("/ui")
+    assert r.headers["referrer-policy"] == "no-referrer"          # the code in the callback URL is not forwarded
+    assert "code=" not in r.headers["location"] and "state=" not in r.headers["location"]
+    second = c.cookies.get("axiom_session")
+    assert second and second != first
+    old = httpx.get(f"{server.base}/auth/session", headers={"Cookie": f"axiom_session={first}"})
+    assert old.status_code == 401
+    assert httpx.get(f"{server.base}/auth/session", headers={"Cookie": f"axiom_session={second}"}).status_code == 200
+
+
+def test_failed_logins_do_not_echo_codes_or_secrets(server, keycloak, dbinfo, world, caplog):
+    provision(dbinfo, world, keycloak, who={"alice": ("a", [("analyst", "project")])})
+    c, callback = browserless_login(server.base, keycloak, "alice", stop_before_callback=True)
+    q = parse_qs(urlparse(callback).query)
+    code = q["code"][0]
+    assert c.get(callback).status_code == 303                     # consumes state and code
+    replay = httpx.get(keycloak.redirect_uri, params={"code": code, "state": q["state"][0]},
+                       headers={"Cookie": "axiom_login=" + "y" * 43}, follow_redirects=False)
+    body = replay.text
+    secret = os.environ[keycloak.client_secret_env]
+    assert replay.status_code == 401 and code not in body and secret not in body
+    assert all(code not in m and secret not in m for m in caplog.messages)
+
+
+def test_production_start_up_with_a_mounted_secret_file(db, object_store, tmp_path):
+    """Production sign-in configuration is accepted with a mounted secret file and refused without one. This checks
+    configuration and start-up only: no production identity provider, TLS or reverse proxy is involved."""
+    from axiom.api.app import create_app
+    d = tmp_path / "secrets"
+    d.mkdir()
+    (d / "oidc-client").write_text("local-test-only-secret\n")
+    base = dict(env="production", database_dsn="postgresql://unused", object_store="s3", s3_bucket="b",
+                trusted_issuers_json=json.dumps([{"issuer": "https://idp.example", "audience": "a",
+                                                  "jwks_uri": "https://idp.example/jwks"}]),
+                oidc_issuer="https://idp.example/realms/r", oidc_client_id="axiom-ui",
+                oidc_redirect_uri="https://axiom.example/auth/callback",
+                oidc_post_logout_redirect_uri="https://axiom.example/ui/", secret_file_dirs=str(d))
+    create_app(Settings(**base, oidc_client_secret_ref=f"secretref:file{d}/oidc-client"), db=db, store=object_store)
+    for bad in (f"secretref:file{d}/missing", f"secretref:file{tmp_path}/outside", "secretref:env/HOME"):
+        with pytest.raises(ConfigurationError):
+            create_app(Settings(**base, oidc_client_secret_ref=bad), db=db, store=object_store)

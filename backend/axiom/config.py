@@ -59,7 +59,9 @@ class Settings(BaseSettings):
     # backend (confidential client). Sessions are server-side; the browser holds an HttpOnly cookie.
     oidc_issuer: str | None = None
     oidc_client_id: str | None = None
-    oidc_client_secret_ref: str | None = None      # secretref:env/NAME (never the secret itself)
+    oidc_client_secret_ref: str | None = None      # secretref:file/<path> or (not production) secretref:env/NAME
+    # Directories a secretref:file/ reference may point into (comma-separated); see axiom.secretrefs.
+    secret_file_dirs: str = "/run/secrets"
     oidc_redirect_uri: str | None = None
     # Optional internal address of the discovery document (e.g. http://keycloak:8080/... inside Compose) when the
     # public issuer URL is not reachable from the API container. The document's issuer must still equal oidc_issuer.
@@ -70,6 +72,10 @@ class Settings(BaseSettings):
     ui_session_idle_seconds: int = 1800
     ui_cookie_secure: bool = True
     ui_dist_dir: str | None = None                 # built analyst UI to serve at /ui
+
+    @property
+    def secret_file_dir_list(self) -> tuple[str, ...]:
+        return tuple(d.strip() for d in self.secret_file_dirs.split(",") if d.strip())
 
     @property
     def model_destination_set(self) -> frozenset[str]:
@@ -111,9 +117,23 @@ class Settings(BaseSettings):
                         raise ConfigurationError(f"{name} must use HTTPS in production")
                 if not self.ui_cookie_secure:
                     raise ConfigurationError("UI session cookies must be Secure in production")
+                if not (self.oidc_client_secret_ref or "").startswith("secretref:file/"):
+                    raise ConfigurationError("in production the OIDC client secret must be a mounted file "
+                                             "(secretref:file/<path>)")
+                origins = {_origin(u) for u in (self.oidc_redirect_uri, self.oidc_post_logout_redirect_uri) if u}
+                if len(origins) != 1:
+                    raise ConfigurationError("the sign-in redirect and post-logout URIs must share one origin")
             if self.ui_dist_dir and not self.oidc_issuer:
                 raise ConfigurationError("serving the analyst UI in production requires OIDC sign-in")
         if self.oidc_issuer and not (self.oidc_client_id and self.oidc_client_secret_ref and self.oidc_redirect_uri):
             raise ConfigurationError("OIDC sign-in needs client id, client secret reference and redirect URI")
+        if self.oidc_redirect_uri and not self.oidc_redirect_uri.split("?")[0].endswith("/auth/callback"):
+            raise ConfigurationError("the OIDC redirect URI must point at this API's /auth/callback")
         if self.oidc_client_secret_ref and not self.oidc_client_secret_ref.startswith("secretref:"):
             raise ConfigurationError("the OIDC client secret must be given as a secret reference, not a value")
+
+
+def _origin(url: str) -> str:
+    from urllib.parse import urlsplit
+    p = urlsplit(url)
+    return f"{p.scheme}://{p.netloc}".lower()

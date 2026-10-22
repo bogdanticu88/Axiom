@@ -44,21 +44,15 @@ class SecretResolver(Protocol):
 
 
 class EnvSecretResolver:
-    """Development resolver: ``secretref:env/NAME`` reads environment variable NAME.
+    """Resolver built from the process environment (``AXIOM_ENV``, ``AXIOM_SECRET_FILE_DIRS``).
 
-    Production should resolve references from a secret manager with workload identity (planned: Azure Key
-    Vault); this resolver refuses to run when AXIOM_ENV=production.
+    Delegates to ``axiom.secretrefs.SecretRefResolver``: ``secretref:file/<path>`` works everywhere,
+    ``secretref:env/<NAME>`` only outside production. (The name is kept for existing call sites.)
     """
 
     def resolve(self, ref: str) -> str:
-        if os.environ.get("AXIOM_ENV") == "production":
-            raise ConfigurationError("environment secret resolver is not permitted in production")
-        if not ref.startswith("secretref:env/"):
-            raise ConfigurationError("unsupported secret reference")
-        value = os.environ.get(ref.removeprefix("secretref:env/"))
-        if not value:
-            raise ConfigurationError("secret reference did not resolve")
-        return value
+        from ..secretrefs import SecretRefResolver
+        return SecretRefResolver.from_environment().resolve(ref)
 
 
 ClientFactory = Callable[[dict, SecretResolver], Any]

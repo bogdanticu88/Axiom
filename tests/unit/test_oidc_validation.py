@@ -152,3 +152,81 @@ def test_the_deprecated_authlib_http_client_is_not_used():
     import axiom.auth.oidc  # noqa: F401
     import axiom.auth.sessions  # noqa: F401
     assert "authlib.integrations.httpx_client" not in sys.modules
+
+
+# ------------------------------------------------------------- checkpoint 7: authentication review
+def rotating_client(keysets, fetches):
+    def handler(req):
+        if req.url.path.endswith("/.well-known/openid-configuration"):
+            return httpx.Response(200, json={"issuer": ISS, "authorization_endpoint": f"{ISS}/auth",
+                                             "token_endpoint": f"{ISS}/token", "jwks_uri": f"{ISS}/certs"})
+        fetches.append(1)
+        return httpx.Response(200, json=KeySet(keysets[min(len(fetches), len(keysets)) - 1]).as_dict(private=False))
+    return OidcClient(issuer=ISS, client_id="ui", client_secret=lambda: "s", redirect_uri="https://axiom/cb",
+                      transport=httpx.MockTransport(handler))
+
+
+def test_unknown_key_id_refreshes_the_key_set_once():
+    new = RSAKey.generate_key(2048, parameters={"kid": "k2", "alg": "RS256", "use": "sig"})
+    fetches = []
+    c = rotating_client([[KEY], [KEY, new]], fetches)
+    assert c.validate_id_token(token(), nonce="n1").subject == "user-1"            # caches [KEY]
+    rotated = jwt.encode({"alg": "RS256", "kid": "k2"}, {**jwt.decode(token(), KeySet([KEY])).claims}, new,
+                         algorithms=["RS256"])
+    assert c.validate_id_token(rotated, nonce="n1").subject == "user-1"            # refreshed once, then accepted
+    assert len(fetches) == 2
+
+
+def test_a_key_the_idp_never_publishes_is_refused_after_one_refresh():
+    rogue = RSAKey.generate_key(2048, parameters={"kid": "rogue", "alg": "RS256", "use": "sig"})
+    fetches = []
+    c = rotating_client([[KEY]], fetches)
+    forged = jwt.encode({"alg": "RS256", "kid": "rogue"}, {**jwt.decode(token(), KeySet([KEY])).claims}, rogue,
+                        algorithms=["RS256"])
+    with pytest.raises(Unauthenticated):
+        c.validate_id_token(forged, nonce="n1")
+    assert len(fetches) == 2                                   # initial load plus exactly one refresh
+
+
+@pytest.mark.parametrize("bad", ["not-a-jwt", "a.b.c", "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ4In0."])
+def test_malformed_id_tokens_are_refused_not_errors(bad):
+    with pytest.raises(Unauthenticated):
+        client().validate_id_token(bad, nonce="n1")
+
+
+def test_timeouts_and_redirects_on_discovery_keys_and_token_endpoint_refuse():
+    def timeout(req):
+        raise httpx.ReadTimeout("slow", request=req)
+    with pytest.raises(Unauthenticated):
+        exchange_client(timeout, []).exchange("code", "verifier")
+    redirecting = OidcClient(issuer=ISS, client_id="ui", client_secret=lambda: "s", redirect_uri="https://axiom/cb",
+                             transport=httpx.MockTransport(lambda req: httpx.Response(302, headers={
+                                 "location": "https://evil.example/.well-known/openid-configuration"})))
+    with pytest.raises(ConfigurationError):
+        redirecting.metadata()                                 # discovery is never followed to another host
+
+
+def test_exchange_errors_do_not_contain_the_secret_or_code():
+    def handler(req):
+        if req.url.path.endswith("/.well-known/openid-configuration"):
+            return httpx.Response(200, json={"issuer": ISS, "authorization_endpoint": f"{ISS}/auth",
+                                             "token_endpoint": f"{ISS}/token", "jwks_uri": f"{ISS}/certs"})
+        return httpx.Response(400, json={"error": "invalid_grant", "error_description": "code CODE-123 for s3cr3t"})
+    c = OidcClient(issuer=ISS, client_id="ui", client_secret=lambda: "s3cr3t-value", redirect_uri="https://axiom/cb",
+                   transport=httpx.MockTransport(handler))
+    with pytest.raises(Unauthenticated) as err:
+        c.exchange("CODE-123", "verifier")
+    assert "s3cr3t" not in str(err.value) and "CODE-123" not in str(err.value)
+
+
+def test_access_log_redacts_the_sign_in_query_string():
+    import logging
+    from axiom.server import RedactSignInQuery
+    rec = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+                            ("1.2.3.4:5", "GET", "/auth/callback?code=SECRETCODE&state=S", "1.1", 303), None)
+    RedactSignInQuery().filter(rec)
+    assert "SECRETCODE" not in rec.getMessage() and "/auth/callback?[redacted]" in rec.getMessage()
+    other = logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d',
+                              ("1.2.3.4:5", "GET", "/api/v1/cases?limit=5", "1.1", 200), None)
+    RedactSignInQuery().filter(other)
+    assert "/api/v1/cases?limit=5" in other.getMessage()

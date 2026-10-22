@@ -51,6 +51,28 @@ class IdP:
     client_secret_env: str
     api_port: int
     users: dict[str, User] = field(default_factory=dict)
+    admin_password: str = ""          # bootstrap admin of this throwaway container (key rotation tests)
+
+    def admin_token(self) -> str:
+        base = self.issuer.split("/realms/")[0]
+        r = httpx.post(f"{base}/realms/master/protocol/openid-connect/token", timeout=15, data={
+            "grant_type": "password", "client_id": "admin-cli", "username": "bootstrap",
+            "password": self.admin_password})
+        r.raise_for_status()
+        return r.json()["access_token"]
+
+    def rotate_signing_key(self, priority: int = 500) -> None:
+        """Add a new generated RSA signing key with a higher priority than the existing one, so Keycloak signs new
+        tokens with a key ID the platform has not cached."""
+        base = self.issuer.split("/realms/")[0]
+        h = {"Authorization": f"Bearer {self.admin_token()}"}
+        realm = httpx.get(f"{base}/admin/realms/{REALM}", headers=h, timeout=15).json()
+        r = httpx.post(f"{base}/admin/realms/{REALM}/components", headers=h, timeout=15, json={
+            "name": f"rotated-{priority}", "providerId": "rsa-generated",
+            "providerType": "org.keycloak.keys.KeyProvider", "parentId": realm["id"],
+            "config": {"priority": [str(priority)], "keySize": ["2048"], "active": ["true"], "enabled": ["true"],
+                       "algorithm": ["RS256"]}})
+        r.raise_for_status()
 
     @property
     def redirect_uri(self) -> str:
@@ -93,9 +115,10 @@ def keycloak():
     name = f"axiom-kc-{uuid.uuid4().hex[:8]}"
     env_name = f"AXIOM_TEST_OIDC_SECRET_{uuid.uuid4().hex[:6].upper()}"
     os.environ[env_name] = client_secret
+    admin_password = secrets.token_urlsafe(18)
     subprocess.run(["docker", "run", "-d", "--name", name, "-p", f"127.0.0.1:{kc_port}:8080",
                     "-e", "KC_BOOTSTRAP_ADMIN_USERNAME=bootstrap", "-e",
-                    f"KC_BOOTSTRAP_ADMIN_PASSWORD={secrets.token_urlsafe(18)}",
+                    f"KC_BOOTSTRAP_ADMIN_PASSWORD={admin_password}",
                     "-v", f"{tmp}:/opt/keycloak/data/import:ro", KEYCLOAK_IMAGE, "start-dev", "--import-realm",
                     f"--hostname=http://127.0.0.1:{kc_port}"], check=True, capture_output=True)
     issuer = f"http://127.0.0.1:{kc_port}/realms/{REALM}"
@@ -115,7 +138,7 @@ def keycloak():
         else:
             logs = subprocess.run(["docker", "logs", "--tail", "40", name], capture_output=True, text=True).stdout
             raise RuntimeError("Keycloak did not start:\n" + re.sub(r"(?i)password\S*", "[redacted]", logs))
-        yield IdP(issuer, env_name, api_port, users)
+        yield IdP(issuer, env_name, api_port, users, admin_password)
     finally:
         subprocess.run(["docker", "rm", "-f", name], capture_output=True)
         shutil.rmtree(tmp, ignore_errors=True)

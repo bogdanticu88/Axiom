@@ -3,18 +3,35 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 
 import uvicorn
 
 from .api.app import create_app
 from .config import Settings
 
+# The sign-in callback carries a single-use authorization code and the state in its query string. The access log
+# records request lines, so their query strings are removed before they reach any handler.
+_SENSITIVE_PATHS = re.compile(r"^(/auth/callback|/auth/login)(\?.*)?$")
+
+
+class RedactSignInQuery(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            m = _SENSITIVE_PATHS.match(args[2])
+            if m and m.group(2):
+                record.args = (*args[:2], m.group(1) + "?[redacted]", *args[3:])
+        return True
+
 
 def main() -> None:
     logging.basicConfig(level=os.environ.get("AXIOM_LOG_LEVEL", "INFO"))
     app = create_app(Settings())
-    uvicorn.run(app, host=os.environ.get("AXIOM_BIND_HOST", "0.0.0.0"), port=int(os.environ.get("AXIOM_PORT", "8000")),
-                proxy_headers=False, server_header=False)
+    config = uvicorn.Config(app, host=os.environ.get("AXIOM_BIND_HOST", "0.0.0.0"),
+                            port=int(os.environ.get("AXIOM_PORT", "8000")), proxy_headers=False, server_header=False)
+    logging.getLogger("uvicorn.access").addFilter(RedactSignInQuery())   # after uvicorn configured its loggers
+    uvicorn.Server(config).run()
 
 
 if __name__ == "__main__":

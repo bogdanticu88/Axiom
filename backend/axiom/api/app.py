@@ -84,11 +84,12 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
     if settings.oidc_issuer:
         from ..auth.oidc import OidcClient
         from ..auth.sessions import SessionService
-        from ..ingestion.sync import EnvSecretResolver
+        from ..secretrefs import SecretRefResolver
         secret_ref = settings.oidc_client_secret_ref
-        EnvSecretResolver().resolve(secret_ref)      # fail at start-up, not at the first login, if it cannot resolve
+        resolver = SecretRefResolver(env=settings.env, file_dirs=settings.secret_file_dir_list)
+        resolver.resolve(secret_ref)      # fail at start-up, not at the first login, if it cannot resolve
         oidc = OidcClient(issuer=settings.oidc_issuer, client_id=settings.oidc_client_id,
-                          client_secret=lambda: EnvSecretResolver().resolve(secret_ref),
+                          client_secret=lambda: resolver.resolve(secret_ref),
                           redirect_uri=settings.oidc_redirect_uri, scopes=settings.oidc_scopes,
                           metadata_url=settings.oidc_metadata_url)
         sessions = SessionService(database, oidc, ttl_seconds=settings.ui_session_ttl_seconds,
@@ -431,6 +432,9 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
             raise NotFound("sign-in is not configured", code="sso_not_configured")
         token, csrf, return_to = sessions.finish_login(code=code, state=state, iss=iss, error=error,
                                                        binding=request.cookies.get(BINDING_COOKIE))
+        previous = request.cookies.get(SESSION_COOKIE)
+        if previous:                    # session rotation: a session from before this login stops working
+            sessions.revoke(previous, reason="replaced_by_login")
         resp = RedirectResponse(return_to, status_code=303)
         cookie(resp, SESSION_COOKIE, token, max_age=settings.ui_session_ttl_seconds)
         cookie(resp, CSRF_COOKIE, csrf, http_only=False, max_age=settings.ui_session_ttl_seconds)

@@ -97,6 +97,10 @@ class SessionService:
         return SessionActor(row["session_id"], row["principal_id"], row["principal_kind"], row["issuer"],
                             row["subject"], row["csrf_hash"])
 
+    def revoke(self, token: str, *, reason: str) -> None:
+        with self.db.unbound_tx() as conn:
+            conn.execute("SELECT axiom_auth.session_revoke(%s, %s)", (h(token), reason))
+
     def logout(self, token: str | None, post_logout_redirect_uri: str | None) -> str | None:
         if token:
             with self.db.unbound_tx() as conn:
