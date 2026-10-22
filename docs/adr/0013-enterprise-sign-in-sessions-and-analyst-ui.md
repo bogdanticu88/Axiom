@@ -86,3 +86,37 @@ browser must not hold bearer tokens that scripts on the page can read.
 * Accessibility audit, browsers other than Chromium, analyst usability testing.
 * Debt: Authlib 1.8.0 emits a deprecation warning for its `httpx` integration in favour of `httpx2`; the client must
   move before Authlib removes it.
+
+## Amendment (2026-10-22, checkpoint 6)
+**Deprecated client removed.** `auth/oidc.py` used `authlib.integrations.httpx_client.OAuth2Client`
+(`create_authorization_url`, `fetch_token`). Since Authlib 1.8.0 that integration is built on `httpx2`, and without
+`httpx2` it falls back to `httpx` with an `AuthlibDeprecationWarning`; the fallback is due for removal. The client now
+uses Authlib's framework-independent helpers (`authlib.oauth2.rfc7636.create_s256_code_challenge`,
+`authlib.common.urls.add_params_to_uri`) for the authorization request and makes the token request itself: one form
+POST with `client_secret_basic` (form-urlencoded id and secret, RFC 6749 section 2.3.1), the PKCE verifier and the
+registered redirect URI; redirects are not followed; any status other than 200, a non-JSON body, a missing ID token or
+a token type other than Bearer refuses the login. ID-token validation (joserfc) is unchanged. The module no longer
+imports `authlib.integrations` at all (a unit test checks).
+
+**Internal discovery address.** `AXIOM_OIDC_METADATA_URL` lets the API fetch discovery from a container-network address
+while the issuer stays the public URL the browser uses; the document's `issuer` must still equal the configured issuer.
+
+**Fail closed at start-up.** The client secret reference is resolved when the API starts, not at the first login. In
+production, the API refuses: plain-HTTP issuer, redirect, discovery or post-logout URLs; non-Secure cookies; serving the
+UI without sign-in; a secret given as a value; and the environment secret resolver (so production sign-in is not
+configurable until a secret-manager resolver exists).
+
+**Compose.** The image builds the UI (pinned Node image, `npm ci` from the lockfile) and serves it at /ui. The
+Compose profile runs a local Keycloak 26.4.2 (development mode, synthetic users) and maps each Keycloak subject to the
+seeded principal by issuer and subject (docs/INSTALL-COMPOSE.md).
+
+**What local Keycloak testing establishes, precisely.** Against this one IdP, configured as in the tests: the
+authorization code flow with PKCE S256 completes; the state is single use and bound to the browser that started the
+login (replays with the copied binding cookie, missing or forged bindings, tampered state, a mismatched `iss`
+parameter, IdP errors and missing codes are refused); the code exchange authenticates the client and sends the
+verifier; ID tokens are checked for signature, issuer, audience, expiry, issue time and nonce; identity is by issuer
+and subject (a second user with the same email is refused, not merged); sessions are server-side with CSRF on unsafe
+methods; logout revokes the session server-side; role and membership revocation apply to the next request.
+**Not established:** behaviour with Microsoft Entra ID (multi-tenant issuers, `tid`, v1 and v2 endpoints, conditional
+access, token formats), Okta or any other provider; key rotation at a live JWKS endpoint; back-channel or front-channel
+logout; IdP-initiated logout; clock skew beyond the configured leeway; anything over TLS.

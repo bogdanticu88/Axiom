@@ -203,3 +203,65 @@ decisions") was replaced. The rule is now:
 
 Requirements changed by the earlier human-only trigger: it would have blocked a verification worker (VER-04) and
 override-expiry reassessment (PRI-05). Both are now possible within explicit authority; VER-04 remains unbuilt.
+
+## Amendment 2 (2026-10-22, checkpoint 6): review of the human and system authority boundary
+
+### How the server decides who is acting
+* **Principal type** comes only from `axiom.principals.kind`, the identity record created at provisioning. Requests,
+  tokens and sessions cannot set it: API bodies reject unknown fields; token claims are not read for kind or roles;
+  the session stores only the principal ID. The API resolves the principal from (issuer, audience or client ID,
+  subject) and takes `kind` from that record. Database guards read it through `axiom_auth.principal_kind` (security
+  definer, owned by `axiom_authn`). Since checkpoint 6 the audit trail also records the kind from the identity record,
+  not from the in-process context.
+* **Permission**: every command calls `Authorizer.require(permission, scope)`, which loads the actor's active role
+  bindings (not revoked, inside their validity window, in an active and unexpired membership) at the target scope or
+  an ancestor, on every request. Nothing is cached across requests.
+* **Policy authorisation** for system results: the database decision guard (migration 0016) derives the permission a
+  system result needs from the decision kind and checks it against the actor's real bindings with
+  `axiom.holds_permission`, which mirrors `Authorizer`. The authority JSON on the row is no longer trusted (the 0014
+  guard trusted it; see below).
+
+### Every action a system principal can perform
+The tenant system principal holds one role, `ingestion_worker` (case.read, case.create, case.reopen, asset.read,
+asset.manage, ingestion.read, evidence.upload, job.read, priority.apply, ownership.route), bound at the tenant root.
+Migration 0016 makes that role the only kind of role a workload principal can hold.
+
+| Job | What it writes | Permission checked (service) | Decision recorded | Conditions |
+|---|---|---|---|---|
+| Ingestion run (`ingestion.run`) | assets, versions, occurrences, observations, cases, links | ingestion.read on the run scope; asset.manage, case.create | `reopen` with reason `recurrence` | Run requested by a person with ingestion.import; reopening needs case.reopen (service and database) |
+| Risk expiry sweep | lapses undecided requests; marks acceptances expired | none (time-bound records reaching their recorded end) | `reopen` with reason `acceptance_expiry` | Only when the closure points at the expired acceptance chain; reopen needs case.reopen |
+| Override expiry | ends expired overrides | priority.apply | `prioritisation` (current policy, provenance recorded) | Only overrides past `expires_at`; never restores the earlier priority |
+| Ownership sweep | ownership records from published rules | ownership.route | none | Rule-based; ownership confers no authority |
+| SLA sweep | timer state (breach, end) | none | none | Deterministic from recorded events and policy |
+| Ticket sync | external ticket states (append-only) | none | none | Never changes the case |
+| Action execution | the approved external effect; execution state | re-checks the **approver's** approve permission and the **requester's** execute permission at execution time | none | Needs an active, unexpired human approval of the exact payload digest; production change is not enabled |
+| Investigation run | steps, claims (append-only) | reads use the **requester's** current permissions | none | Cannot record reviews or decisions |
+
+A system principal cannot: assess, dismiss or close a case; plan, defer or withdraw remediation; accept risk or
+authorise a risk request; override priority; approve or reject an action; review a claim; reopen on a person's
+judgement (relevant_change, authorised_reassessment); assign roles. Each is refused by the service (no permission)
+and, for decisions, approvals and claim reviews, by the database guard.
+
+### Gaps found by this review and fixed
+1. **The 0014 guard trusted the decision's authority JSON.** A workload insert naming `priority.apply` was accepted
+   without the database checking that the actor held it. Migration 0016 checks real bindings; a test shows a
+   project-scoped workload refused on another project's case even with a forged authority.
+2. **Workload reopening for any reason** was accepted when the JSON named `case.reopen`, including
+   `authorised_reassessment`. Now only recurrence and acceptance expiry.
+3. **System reopening skipped the permission check in the service** (`reopen(system=True)`). It now requires
+   case.reopen like any reopening, and refuses other reasons before loading the case.
+4. **Nothing stopped binding a human role to a workload principal**, which would have given the system principal
+   discretionary authority (the database guard would still have refused its decisions, approvals and reviews).
+   Workload principals can now hold only workload roles, and humans only human roles.
+5. **The audit trail recorded the in-process context's kind.** It now reads the identity record.
+
+System authority was not broadened: no permission was added to `ingestion_worker`, and `verification.record` is
+still held by no workload, so no system verification result can be recorded until a verification worker is designed
+and authorised.
+
+### Tests
+`tests/integration/test_system_authority_boundary.py` (discretionary approval, risk acceptance and override by the
+system; forged authority; human roles on workloads; principal type in requests and tokens; other tenant and other
+project; revoked system binding; role and membership revocation with the same bearer token); the session variant in
+`test_oidc_sso.py`; override expiry under a newly published policy in `test_authority_and_overrides.py`.
+Limitation: `axiom.holds_permission` duplicates `access.evaluate` in SQL; both must change together.

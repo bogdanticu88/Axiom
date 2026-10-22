@@ -7,7 +7,7 @@
 * The first commit imports the supplied foundation archive; its contents predate this repository.
 
 ## What works and what is missing
-The sections below are a history by checkpoint; the latest is "State after checkpoint 5". For the current position
+The sections below are a history by checkpoint; the latest is "State after checkpoint 6". For the current position
 against the complete register, read "Core product status" in IMPLEMENTATION_STATUS.md and "Core gaps" below.
 The foundation-era gap list has been superseded.
 
@@ -126,22 +126,44 @@ The foundation-era gap list has been superseded.
 * The register counter reports rows verified only against fakes or fixtures separately (18 of 147) and fails when
   such a row lacks the qualifier.
 
+## State after checkpoint 6 (finish and verify the existing workflow)
+* **Starting point verified** (docs/VERIFICATION.md run 18): the checkpoint-5 artifacts match their checksums, the
+  tag points at 622f216, CI passed on 3e95d46 and only documentation changed afterwards. Two discrepancies found and
+  disclosed: the checkpoint-5 chat report gave two checksums against the wrong files (the files and SHA256SUMS were
+  right); the checkpoint-5 mutation harness left a stale mutated bytecode file in the workspace (not in any artifact).
+* **Authority boundary** (ADR 0012 amendment 2, migration 0016): the database now checks a system principal's real
+  role bindings instead of trusting the decision's authority JSON; workload reopening is limited to recurrence and
+  acceptance expiry; system reopening needs case.reopen in the service too; workload principals can hold only workload
+  roles; the audit trail records the kind from identity records. Every system action is listed in the ADR.
+* **Browser coverage**: approval (self-approval and stale version refused, exact payload shown, execution against the
+  local fake tracker), verification (person-entered, recomputed, auditor and stale refusals, closure), reports
+  (export refused for analysts in the UI and at the API, auditor download digest-checked, evidence package) and the
+  new **risk-acceptance screen** (request, independence and permission refusals, expiry by the system sweep, history
+  with and without audit access). The tests found four UI defects (see VERIFICATION), all fixed.
+* **Compose delivers the UI** with a local Keycloak; docs/INSTALL-COMPOSE.md. The smoke test signs in through
+  Keycloak in Chromium, completes a workflow, checks an auditor refusal and server-side logout, and checks that the
+  API refuses production mode with development identity and refuses to start without the client secret.
+* **Deprecated Authlib client replaced** by Authlib's core PKCE helpers and a direct token request; all sign-in
+  regression tests pass against the local Keycloak, including replayed and failed logins.
+* **Evaluation**: the former held-out set is disclosed as exposed (evaluation/EXPOSURE.md) and is now the
+  `regression` split; a blind review procedure, worksheet, sealed author labels and a comparison tool exist;
+  independent review is **pending**.
+
 ## Core gaps (do not let UI work hide these)
 * **No language model verified**; real-provider execution is not authorised.
-* **Entra ID (or any hosted IdP) not tested**; no back-channel logout, JIT/SCIM provisioning or workload identity.
-* UI: no risk-acceptance, identity-candidate, integration-configuration or job-operations screens; approval,
-  verification and report screens are built but not covered by browser tests; Chromium only; no accessibility audit.
-  The Compose image does not include the UI build yet.
-* Evaluation references need a human reviewer; no model quality claim can be made.
-* No connector is sandbox-validated; trackers are fakes; no deployment or rescan integration; no verification worker.
+* **Entra ID (or any hosted IdP) not tested**; no back-channel logout, JIT/SCIM provisioning or workload identity;
+  production sign-in cannot be configured until a secret-manager resolver exists.
+* **No held-out evaluation set; label review pending.**
+* UI: no identity-candidate, integration-configuration or job-operations screens; Chromium only; no accessibility
+  audit; the change-report form has no browser test.
+* No verification worker (deliberately deferred); no connector sandbox-validated; trackers are fakes.
 
 ## Next tasks (in order)
-1. Independent review of the 16 evaluation labels using the review package; record corrections in cases.json.
-2. Browser tests for the approval, verification and report screens; risk-acceptance and identity-candidate screens;
-   accessibility audit; UI build in the Compose image.
-3. With authorisation: an Entra ID test tenant for sign-in; the real-provider test and the evaluation's real-model arm.
-4. Verification worker (VER-04) now that system authority allows it; reassessment triggers (VER-03).
-5. Per-tenant investigation quotas (X09) and model usage metrics (OPS-04); move Authlib off its deprecated httpx client.
+1. Independent label review with evaluation/REVIEW-PROCEDURE.md; a new held-out set written by someone else.
+2. With authorisation: an Entra ID test tenant; a secret-manager resolver for production sign-in.
+3. Verification worker design (VER-04) within the authority rules of ADR 0012 amendment 2.
+4. Identity-candidate screens; accessibility audit; a second browser.
+5. With authorisation: the real-provider test and real-model evaluation arm.
 6. Hosted CI and sandbox validation once a remote and accounts are authorised.
 
 ## Commands
@@ -150,6 +172,7 @@ uv sync --frozen
 scripts/dev/test-db.sh start                 # disposable cluster 127.0.0.1:55432; writes .env.test (gitignored)
 uv run pytest tests -q                       # browser tests need: (cd frontend && npm ci && npm run build); Docker for Keycloak
 (cd frontend && npm ci && npm run build)     # analyst UI; serve with AXIOM_UI_DIST_DIR=frontend/dist
+docs/INSTALL-COMPOSE.md                      # Compose with the UI and a local Keycloak
 scripts/verify/foundation.sh                 # separate fresh cluster + SeaweedFS; log in .var/verify/<stamp>/
 scripts/ci/run.sh                            # full CI pipeline: foundation + restore drill + Compose smoke (BUILD=1)
 AXIOM_RUN_DRILLS=1 uv run pytest tests/drills   # physical snapshot rollback drill on its own cluster (free port)
