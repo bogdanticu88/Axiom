@@ -453,3 +453,67 @@ Not covered:
 * the witness on a production store;
 * hosted CI;
 * load.
+
+### Run 17: analyst UI, enterprise sign-in, override expiry and preview, claim-check precision (2026-10-22 ~10:30Z to 12:07Z)
+**Tested object: the exact committed tree.** The first CI attempt on a clean clone of `3d093ea` **failed** the secret scan: the checkpoint-4 foundation log, committed after that checkpoint's CI run and
+never scanned, contained synthetic secrets that pytest had echoed into test IDs. Commit `3e95d46` gives the test
+explicit IDs and replaces the four affected ID lines in the archived log with markers (original digest in
+`docs/verification/2026-10-22-phase-c/REDACTION-NOTE.md`). The scanner was not weakened. Log:
+`docs/verification/2026-10-22-checkpoint5/ci-run1-failed-secret-scan.out`.
+
+**CI PASS** on a fresh clone of commit `3e95d461c7cc4f59686d4b07f33835b723c29b79`:
+* tree `4c2384cbc20e45faa3bf0c665b0b428b7e970551`;
+* executable-input digest `sha256:47ebe5d6905c4d1fffae4398eff1db3ecc9a68fe50ac0ed4a6985434bb83dffd`;
+* stages: input manifest, dependencies, byte-compile, secret scan, no `.env` files, requirements register, action
+  pins (3), **analyst UI build (new: `npm ci`, type check, production build)**, foundation, evaluation report,
+  **evaluation review package (new)**, physical restore drill, Compose smoke.
+* foundation on a fresh separate cluster with SeaweedFS:
+  * migrations `0001 ... 0015`, `applied: none` on re-run, the same on a second database; an edited migration rejected;
+  * RLS audit: 68 tables forced, 3 global tables without, 0 not owned by `axiom_owner`;
+  * **453 passed, 2 skipped in 306.46s**. Skips: the opt-in physical drill (run as its own stage) and the opt-in
+    real-provider test (**never run**; real-provider execution is not authorised). `AXIOM_REQUIRE_UI=1` was set, so the
+    six browser tests and the eight Keycloak sign-in tests could not skip; all ran and passed.
+* restore drill: 1 passed;
+* Compose smoke with a rebuilt image (`sha256:10f8358fdfcd...`): `SMOKE PASS`. The Compose image does not yet contain
+  the UI build.
+
+Logs, manifest, evaluation report and results: `docs/verification/2026-10-22-checkpoint5/`.
+
+Register: 262 = 147 verified (**18 of them only against fakes or fixtures**) + 69 implementing + 2
+implemented_unverified + 43 planned + 1 blocked. The stricter counter found two rows (B08, A02) verified only against
+fakes without the qualifier; both now carry it.
+
+Problems found while building (fixed before the recorded run):
+* **Deployment provenance was wrong.** The case-context endpoint marked every scanner-imported deployment "manually
+  recorded", because ingestion never sets `source_evidence_id`. Found by the first browser test; provenance now comes
+  from scanner observations of the deployment.
+* **Analysts with project-level roles could not list model routes** (the check required a tenant-root permission).
+  Found by the browser test; any investigation reader in the tenant can now list routes.
+* **The outbox relay test was flaky** because earlier tests leave more than the claim limit of undelivered messages
+  in the shared session database. The test now drains the backlog first; the relay is unchanged.
+* Logout of an already-expired session returned 401 and left cookies; it now clears them (a CSRF failure on a valid
+  session is still refused).
+* Browser-test mistakes: a tenant picker read before the session loaded; users holding memberships in earlier tests'
+  tenants; Keycloak's logout confirmation page.
+
+Mutation checks (`mutation-checks.log`). **First round: 6 of 9 caught.** Three gaps, all fixed:
+* the principal-kind mutation targeted a setting that does not exist (the database context carries only tenant and
+  principal, so there is nothing client-supplied to trust); replaced with "the trigger treats every actor as human";
+* `test_expired_override_does_not_restore_a_stale_priority` contained `(expected != before or True)`, which cannot
+  fail, and its scenario could not distinguish restoring from reassessing; rewritten so it can;
+* the callback-replay test passed for the wrong reason (the cleared binding cookie and the IdP's code-reuse rule
+  refused the replay before the platform's single-use check mattered); it now replays with the copied binding cookie
+  and asserts the platform's own refusal.
+
+**Second round: 9 of 9 caught**: authority trigger opened; principal kind not read from identity records; policy
+apply ignoring an active override; expiry restoring the earlier priority; CSRF check skipped; login state reusable;
+nonce not checked; undetermined contradiction allowed to decide; development tokens accepted in production.
+
+Evaluation (deterministic fake, eval-cases@3, labels author-generated and unreviewed): presence agreement 16 of 16;
+0 unsupported definite conclusions accepted; policy missed 1 of 3 reference-urgent cases (H7, the deliberate
+disagreement). Security-boundary arm, reported separately: 50 adversarial runs, 0 wrong definite conclusions accepted
+(20 rejected, 7 downgraded). **None of this measures a language model.**
+
+Not covered: Microsoft Entra ID or any hosted IdP; any real model call; human review of the evaluation labels;
+browsers other than Chromium; browser tests of the approval, verification and report screens; accessibility; live
+scanners and trackers; hosted CI; load.

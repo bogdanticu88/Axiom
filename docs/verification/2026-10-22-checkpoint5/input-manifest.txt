@@ -1,0 +1,20 @@
+commit:            3e95d461c7cc4f59686d4b07f33835b723c29b79
+tree:              4c2384cbc20e45faa3bf0c665b0b428b7e970551
+executable inputs: sha256:47ebe5d6905c4d1fffae4398eff1db3ecc9a68fe50ac0ed4a6985434bb83dffd over 'git ls-tree -r HEAD -- backend db scripts .github deployments tests evaluation pyproject.toml uv.lock Dockerfile .dockerignore'
+tracked files:     317 total, 172 in executable-input paths
+migrations:        15 files
+pinned by the tree:
+  uv.lock sha256:  ee8ec144ad60f54b07584c79996f0f687d0e622954bc053d53e18eda9433d9dc
+  image:          mirror.gcr.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+  image:          public.ecr.aws/docker/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+  image:          public.ecr.aws/docker/library/python:3.13-slim@sha256:cf50a4f6ac4f026458b08d5222023d700ac806410dff5e9ca8728fa44f2b850f
+  action:         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+  action:         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+  action:         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+NOT pinned by the tree (runner environment, recorded here for this run):
+  python:          Python 3.13.16
+  uv:              uv 0.11.32 (x86_64-unknown-linux-gnu)
+  postgres:        postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+  docker:          Docker version 29.9.1, build dfc520d
+  pip-installed uv inside the image build: uv==0.11.32 (version pinned, hash not pinned)
+excluded from reproducibility claims: .var/ (logs, clusters), uploaded evidence, object-store contents, .env files

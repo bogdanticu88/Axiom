@@ -1,0 +1,15 @@
+
+added 71 packages in 979ms
+
+> axiom-analyst-ui@0.1.0 build
+> tsc --noEmit && vite build
+
+vite v5.4.11 building for production...
+transforming...
+✓ 44 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.41 kB │ gzip:  0.27 kB
+dist/assets/index-D1i01POv.css    5.45 kB │ gzip:  1.78 kB
+dist/assets/index-DJlFmyft.js   226.63 kB │ gzip: 68.92 kB
+✓ built in 1.01s

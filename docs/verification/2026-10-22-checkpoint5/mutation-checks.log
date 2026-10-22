@@ -1,0 +1,22 @@
+Round 1 (before test fixes), same script:
+M1 CAUGHT; M2 NOT CAUGHT; M3 CAUGHT; M4 NOT CAUGHT; M5 CAUGHT; M6 NOT CAUGHT; M7 CAUGHT; M8 CAUGHT; M9 CAUGHT.
+Causes and fixes:
+- M2: the mutation read a setting that does not exist (the database context carries only tenant and principal, so
+  there is no client-supplied kind to trust). Replaced by a mutation that makes the trigger treat every actor as human.
+- M4: test_expired_override_does_not_restore_a_stale_priority contained "(expected != before or True)", which cannot
+  fail, and its scenario could leave expected == before. The test now starts from critical criticality and asserts
+  that the scenario distinguishes restoring from reassessing.
+- M6: the replay was refused anyway, because the callback clears the binding cookie and the IdP refuses code reuse,
+  so the platform's single-use guard was never exercised. The replay now carries the copied binding cookie and the
+  test checks the platform's own "already used" refusal; a forged binding is checked for "another browser".
+Round 2 (after fixes): 9 of 9 caught (below).
+M1 decision trigger: any workload decision allowed: CAUGHT (1 failed, 1 passed, 2 warnings in 1.87s)
+M2 trigger treats every actor as human (principal kind not read from identity records): CAUGHT (1 failed, 2 warnings in 1.54s)
+M3 policy apply ignores an active override: CAUGHT (1 failed, 2 warnings in 2.17s)
+M4 expiry restores the priority before the override: CAUGHT (1 failed, 2 warnings in 2.23s)
+M5 CSRF check skipped: CAUGHT (1 failed, 1 warning in 24.82s)
+M6 login state not single use: CAUGHT (1 failed, 1 warning in 26.12s)
+M7 nonce not checked: CAUGHT (1 failed, 1 passed, 1 warning in 0.22s)
+M8 undetermined contradiction allowed to decide: CAUGHT (1 failed in 2.03s)
+M9 development tokens accepted in production: CAUGHT (1 failed, 1 warning in 0.32s)
+sanity after restore: rc=0 (1 passed, 2 warnings in 2.07s)
