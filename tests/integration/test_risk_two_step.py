@@ -37,11 +37,11 @@ def risk(run, ctx, fn):
     return run(ctx, lambda s: fn(RiskService(s.conn, ctx, s.authz)))
 
 
-def set_priority(admin_conn, case_id, priority):
-    """Fault injection: no prioritisation command exists yet (Phase C)."""
-    admin_conn.execute("SET session_replication_role = replica")
-    admin_conn.execute("UPDATE axiom.finding_cases SET priority = %s WHERE id = %s", (priority, case_id))
-    admin_conn.execute("SET session_replication_role = origin")
+def set_priority(run, ctx_for, case_id, priority, version):
+    """Supported override command (replaces the earlier direct database injection)."""
+    from axiom.domains.cases import priority as prio
+    return run(ctx_for("analyst"), lambda s: prio.override(s.cases, case_id, version, priority=priority,
+                                                           rationale="business owner rated this low impact"))
 
 
 def test_high_impact_needs_someone_other_than_the_requester(run, ctx_for, review_case, admin_conn):
@@ -78,12 +78,12 @@ def test_database_backstop_for_independence(run, ctx_for, review_case, world, up
 
 
 def test_low_impact_short_acceptance_can_be_self_authorised(run, ctx_for, review_case, admin_conn):
-    set_priority(admin_conn, review_case, "low")
+    set_priority(run, ctx_for, review_case, "low", 2)
     owner = ctx_for("risk_owner")
     with pytest.raises(Forbidden) as err:                       # long duration still needs independence
-        run(owner, lambda s: s.cases.accept_risk(review_case, 2, expires_at=now(days=120), rationale="long"))
+        run(owner, lambda s: s.cases.accept_risk(review_case, 3, expires_at=now(days=120), rationale="long"))
     assert err.value.code == "independent_authorisation_required"   # the refused call left no request behind
-    closed = run(owner, lambda s: s.cases.accept_risk(review_case, 2, expires_at=now(days=30), rationale="minor"))
+    closed = run(owner, lambda s: s.cases.accept_risk(review_case, 3, expires_at=now(days=30), rationale="minor"))
     assert closed["workflow"] == "closed"
 
 

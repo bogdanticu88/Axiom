@@ -60,6 +60,7 @@ class _Plan:
     # Called with (decision_id, new_sequence) after the decision is inserted.
     dependents: Callable[[UUID | None, int], dict[str, Any]] | None = None
     topic: str = "case.transitioned"
+    policy_version_id: UUID | None = None
 
 
 class CaseService:
@@ -570,9 +571,11 @@ class CaseService:
                 "system": True, "principal_kind": self.ctx.principal_kind}
             self.conn.execute(
                 """INSERT INTO axiom.decisions(tenant_id, id, case_id, kind, outcome, rationale, limitations,
-                       actor_principal_id, authority) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                       actor_principal_id, authority, policy_version_id)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (self.ctx.tenant_id, decision_id, case["id"], plan.decision_kind, plan.decision_outcome,
-                 plan.rationale, plan.limitations, self.ctx.principal_id, Jsonb(authority_json)))
+                 plan.rationale, plan.limitations, self.ctx.principal_id, Jsonb(authority_json),
+                 plan.policy_version_id))
             for ref in plan.evidence:
                 self.conn.execute(
                     """INSERT INTO axiom.decision_evidence(tenant_id, decision_id, evidence_object_id, relation)

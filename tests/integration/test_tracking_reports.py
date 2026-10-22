@@ -8,7 +8,6 @@ import pytest
 
 from axiom.access import Authorizer, PermissionDenied
 from axiom.domains.actions.sync import TicketSyncHandler
-from axiom.domains.cases.sla import sla_sweep
 from axiom.domains.reports.service import ReportService
 from axiom.errors import Conflict
 from axiom.jobs import Worker, enqueue
@@ -92,37 +91,7 @@ def test_sync_errors_do_not_stop_other_references(env, admin_conn):
     assert result["checked"] == 1 and len(result["errors"]) == 1 and result["changed"] == 1
 
 
-# ------------------------------------------------------------------------------------------------- SLA
-def test_sla_lifecycle(env, admin_conn):
-    sys = env.ctx_for("system")
-    run_sweep = lambda: env.run(sys, lambda s: sla_sweep(s.conn, sys))   # noqa: E731
-    out = run_sweep()
-    assert out["started"] >= 1
-    with env.db.tenant_tx(sys) as conn:
-        sla = conn.execute("SELECT * FROM axiom.case_slas WHERE case_id = %s", (env.case["id"],)).fetchone()
-    assert sla["status"] == "running" and sla["priority"] == "pending"
-    assert (sla["due_at"] - sla["started_at"]).days == 14
-    assert run_sweep()["started"] == 0                                 # idempotent
-    # fault injection: no prioritisation command exists yet (Phase C), and time travel for the due date
-    admin_conn.execute("SET session_replication_role = replica")
-    admin_conn.execute("UPDATE axiom.finding_cases SET priority = 'urgent' WHERE id = %s", (env.case["id"],))
-    admin_conn.execute("UPDATE axiom.case_slas SET started_at = started_at - interval '10 days', "
-                       "due_at = due_at - interval '10 days' WHERE case_id = %s", (env.case["id"],))
-    admin_conn.execute("SET session_replication_role = origin")
-    out = run_sweep()
-    assert out["superseded"] == 1 and out["breached"] == 1             # 7-day urgent SLA from the original start
-    with env.db.tenant_tx(sys) as conn:
-        rows = conn.execute("SELECT status, priority FROM axiom.case_slas WHERE case_id = %s ORDER BY created_at",
-                            (env.case["id"],)).fetchall()
-        n = conn.execute("SELECT count(*) AS n FROM axiom.outbox WHERE topic = 'sla.breached' AND aggregate_id = %s",
-                         (env.case["id"],)).fetchone()["n"]
-    assert [r["status"] for r in rows] == ["superseded", "breached"]
-    assert run_sweep()["breached"] == 0 and n == 1                     # breach announced once
-    with pytest.raises(psycopg.errors.CheckViolation):
-        with env.db.tenant_tx(sys) as conn:
-            conn.execute("UPDATE axiom.case_slas SET status = 'running', breached_at = NULL, "
-                         "record_version = record_version + 1 WHERE case_id = %s AND status = 'breached'",
-                         (env.case["id"],))
+# SLA timers are tested in test_sla_reporting_journey.py (v2 timers, migration 0012).
 
 
 # ------------------------------------------------------------------------------------------ reports
@@ -138,9 +107,9 @@ def test_snapshot_is_immutable_digest_checked_and_separates_outcomes(env, admin_
     sync_once(env)
     snap = report(env, "analyst", lambda r: r.generate(kind="exposure_summary", scope_id=world.a.project))
     c = snap["content"]
-    assert c["cases_total"] >= 1 and c["open_by_workflow"]["received"] >= 1
-    assert c["external_tickets"] == {"open": 1} and c["action_executions"] == {"succeeded": 1}
-    assert set(c) >= {"closed_by_reason", "accepted_exposure", "sla"}
+    assert c["denominators"]["cases"]["total"] >= 1 and c["open_by_workflow"]["received"] >= 1
+    assert c["external_tickets"] == {"open": 1}
+    assert set(c) >= {"closed_by_reason", "accepted_exposure", "sla", "unknowns", "coverage_by_source"}
     again = report(env, "auditor", lambda r: r.get(snap["id"]))
     assert again["content_digest"] == snap["content_digest"]
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
@@ -148,7 +117,7 @@ def test_snapshot_is_immutable_digest_checked_and_separates_outcomes(env, admin_
             conn.execute("UPDATE axiom.report_snapshots SET content = '{}' WHERE id = %s", (snap["id"],))
     # tampering below the application (superuser, triggers off) is detected on read
     admin_conn.execute("SET session_replication_role = replica")
-    admin_conn.execute("UPDATE axiom.report_snapshots SET content = jsonb_set(content, '{cases_total}', '999') "
+    admin_conn.execute("UPDATE axiom.report_snapshots SET content = jsonb_set(content, '{query_version}', '\"forged\"') "
                        "WHERE id = %s", (snap["id"],))
     admin_conn.execute("SET session_replication_role = origin")
     with pytest.raises(Conflict) as err:
@@ -167,13 +136,13 @@ def test_exports_need_their_permission_and_are_verified_on_read(env, admin_conn,
     doc = json.loads(data)
     assert doc["snapshot"]["content_digest"] == snap["content_digest"] and doc["content"] == snap["content"]
     _, csv_data = report(env, "auditor", lambda r: r.read_export(ex_csv["id"]))
-    assert csv_data.decode().splitlines()[0] == "section,key,value" and "cases_total" in csv_data.decode()
+    assert csv_data.decode().splitlines()[0] == "section,key,value" and "denominators" in csv_data.decode()
     # tamper with the stored object: read refuses
     key = ex_json["object_key"]
     path = object_store.root / key if hasattr(object_store, "root") else None
     if path is None:
         pytest.skip("object store has no filesystem root")
-    path.write_bytes(data.replace(b'"cases_total"', b'"cases_totaL"'))
+    path.write_bytes(data.replace(b'"denominators"', b'"denominatorZ"'))
     with pytest.raises(Conflict) as err:
         report(env, "auditor", lambda r: r.read_export(ex_json["id"]))
     assert err.value.code == "export_integrity"

@@ -171,7 +171,8 @@ def register(api: APIRouter, database: Database, Ctx, store=None) -> None:
 
     @api.post("/reports/snapshots", status_code=201)
     def generate_report(ctx: Ctx, body: s.GenerateReport):
-        return tx(ctx, lambda c, a: reports(c, a, ctx).generate(kind=body.kind, scope_id=body.scope_id))
+        return tx(ctx, lambda c, a: reports(c, a, ctx).generate(kind=body.kind, scope_id=body.scope_id,
+                                                                as_of=body.as_of))
 
     @api.get("/reports/snapshots/{snapshot_id}")
     def get_report(ctx: Ctx, snapshot_id: UUID):
@@ -196,7 +197,7 @@ def register(api: APIRouter, database: Database, Ctx, store=None) -> None:
             case = conn.execute("SELECT scope_id FROM axiom.finding_cases WHERE id = %s", (case_id,)).fetchone()
             if case is None or not authz.has("case.read", case["scope_id"]):
                 raise NotFound("case not found", code="case_not_found")
-            return {"items": list(conn.execute("SELECT * FROM axiom.case_slas WHERE case_id = %s ORDER BY created_at",
+            return {"items": list(conn.execute("SELECT * FROM axiom.sla_timers WHERE case_id = %s ORDER BY created_at, kind",
                                                (case_id,)))}
         return tx(ctx, read)
 
@@ -212,3 +213,61 @@ def register(api: APIRouter, database: Database, Ctx, store=None) -> None:
                 "SELECT * FROM axiom.external_ticket_states WHERE reference_id = %s ORDER BY observed_at, id",
                 (reference_id,)))}
         return tx(ctx, read)
+
+    # -------------------------------------------- policies, prioritisation, business context, ownership, packages
+    from ..domains.assets.service import AssetService, assert_business_context
+    from ..domains.cases import ownership as own
+    from ..domains.cases import priority as prio
+    from ..domains.cases.service import CaseService
+    from ..domains.policies.service import PolicyService
+
+    @api.post("/policies", status_code=201)
+    def draft_policy(ctx: Ctx, body: s.DraftPolicy):
+        return tx(ctx, lambda c, a: PolicyService(c, ctx, a).draft(kind=body.kind, definition=body.definition,
+                                                                   rationale=body.rationale,
+                                                                   provisional=body.provisional))
+
+    @api.post("/policies/{policy_id}/publish")
+    def publish_policy(ctx: Ctx, policy_id: UUID, body: s.Rationale):
+        return tx(ctx, lambda c, a: PolicyService(c, ctx, a).publish(policy_id, rationale=body.rationale))
+
+    @api.get("/policies")
+    def list_policies(ctx: Ctx, kind: str | None = None):
+        return {"items": tx(ctx, lambda c, a: PolicyService(c, ctx, a).list(kind))}
+
+    @api.post("/cases/{case_id}/commands/apply-priority-policy")
+    def apply_priority(ctx: Ctx, case_id: UUID, body: s.ApplyPriority):
+        return tx(ctx, lambda c, a: prio.apply(CaseService(c, ctx, a), case_id, body.expected_version,
+                                               rationale=body.rationale))
+
+    @api.post("/cases/{case_id}/commands/override-priority")
+    def override_priority(ctx: Ctx, case_id: UUID, body: s.OverridePriority):
+        return tx(ctx, lambda c, a: prio.override(CaseService(c, ctx, a), case_id, body.expected_version,
+                                                  priority=body.priority, rationale=body.rationale))
+
+    @api.post("/assets/{asset_id}/business-context", status_code=201)
+    def business_context(ctx: Ctx, asset_id: UUID, body: s.AssertContext):
+        return tx(ctx, lambda c, a: assert_business_context(
+            AssetService(c, ctx, a), asset_id=asset_id, rationale=body.rationale, owner_ref=body.owner_ref,
+            criticality=body.criticality, environment=body.environment, data_classification=body.data_classification))
+
+    @api.post("/cases/{case_id}/ownership/route")
+    def route_owner(ctx: Ctx, case_id: UUID):
+        return tx(ctx, lambda c, a: own.route(CaseService(c, ctx, a), case_id))
+
+    @api.post("/cases/{case_id}/ownership/override")
+    def override_owner(ctx: Ctx, case_id: UUID, body: s.OwnerOverride):
+        return tx(ctx, lambda c, a: own.override(CaseService(c, ctx, a), case_id,
+                                                 owner_principal_id=body.owner_principal_id, reason=body.reason))
+
+    @api.get("/cases/{case_id}/ownership")
+    def ownership_history(ctx: Ctx, case_id: UUID):
+        return {"items": tx(ctx, lambda c, a: own.history(CaseService(c, ctx, a), case_id))}
+
+    @api.get("/ownership/unresolved")
+    def unresolved_owners(ctx: Ctx):
+        return {"items": tx(ctx, lambda c, a: own.unresolved_queue(CaseService(c, ctx, a)))}
+
+    @api.post("/cases/{case_id}/evidence-package", status_code=201)
+    def evidence_package(ctx: Ctx, case_id: UUID):
+        return tx(ctx, lambda c, a: reports(c, a, ctx).evidence_package(case_id))

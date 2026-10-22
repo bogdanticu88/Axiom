@@ -4,7 +4,8 @@
 #
 #   scripts/ci/run.sh                 # needs PostgreSQL 16 server binaries, Docker, uv
 #
-# Stages: locked dependency sync; byte-compilation; tracked-file secret scan; foundation verification on a fresh
+# Stages: input manifest of the exact committed tree (refuses a dirty tree unless CI_ALLOW_DIRTY=1); locked
+# dependency sync; byte-compilation; tracked-file secret scan; foundation verification on a fresh
 # separate cluster with S3 (full pytest suite, including the real-SIGKILL, restore and concurrency tests);
 # physical snapshot restore drill on its own cluster; Compose fresh-install smoke with a rebuilt image.
 # Exit status is non-zero if any stage fails. Logs go to .var/ci/<stamp>/.
@@ -17,6 +18,15 @@ mkdir -p "$OUT"
 FAILED=()
 stage() { echo; echo "##### $1 ($(date -u +%H:%M:%SZ))"; }
 record() { if [ "$2" -eq 0 ]; then echo "PASS $1"; else echo "FAIL $1 (exit $2)"; FAILED+=("$1"); fi; }
+
+stage "input manifest (exact committed tree)"
+if [ "${CI_ALLOW_DIRTY:-0}" = "1" ]; then
+  echo "CI_ALLOW_DIRTY=1: working tree may differ from HEAD; results do not describe a committed tree"
+  git status --porcelain | head -20; record input-manifest 0
+else
+  scripts/ci/input-manifest.sh "$OUT/input-manifest.txt"; rc=$?; cat "$OUT/input-manifest.txt" 2>/dev/null
+  record input-manifest $rc
+fi
 
 stage "dependencies (locked)"
 uv sync --frozen 2>&1 | grep -v UV_NATIVE | tail -3; record dependencies "${PIPESTATUS[0]}"

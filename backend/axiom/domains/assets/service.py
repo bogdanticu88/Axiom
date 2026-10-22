@@ -98,3 +98,29 @@ class AssetService:
                      detail={"evidence_id": str(evidence_id), "rationale": rationale,
                              "authority": authority.as_json()})
         return row
+
+
+def assert_business_context(svc: AssetService, *, asset_id: UUID, rationale: str, owner_ref: str | None = None,
+                            criticality: str | None = None, environment: str | None = None,
+                            data_classification: str | None = None, effective_from: datetime | None = None) -> dict:
+    """Record a user assertion of business context (append-only; ``basis='user_assertion'``). Context is an input to
+    prioritisation and ownership routing; it grants no authority to anyone."""
+    import uuid as _uuid
+
+    from ...errors import ValidationFailed
+    asset = svc._asset(asset_id)
+    authority = svc.authz.require("context.assert", asset["scope_id"])
+    if criticality is not None and criticality not in ("low", "medium", "high", "critical"):
+        raise ValidationFailed("criticality must be low, medium, high or critical")
+    if not rationale.strip() or not any([owner_ref, criticality, environment, data_classification]):
+        raise ValidationFailed("assert at least one context field, with a rationale")
+    row = svc.conn.execute(
+        """INSERT INTO axiom.business_context_versions(tenant_id, id, asset_id, owner_ref, criticality, environment,
+               data_classification, basis, asserted_by, effective_from)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, 'user_assertion', %s, COALESCE(%s, clock_timestamp())) RETURNING *""",
+        (svc.ctx.tenant_id, _uuid.uuid4(), asset_id, owner_ref, criticality, environment, data_classification,
+         svc.ctx.principal_id, effective_from)).fetchone()
+    audit.record(svc.conn, svc.ctx, action="asset.context_asserted", resource_type="asset", resource_id=asset_id,
+                 detail={"rationale": rationale, "owner_ref": owner_ref, "criticality": criticality,
+                         "environment": environment, "authority": authority.as_json()})
+    return row

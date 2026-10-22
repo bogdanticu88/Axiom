@@ -1,15 +1,27 @@
-"""SLA timers for open cases (Implementation Plan S 8, Phase D).
+"""SLA timers v2 (provisional targets; ADR 0011).
 
-Thresholds are **defaults pending the business decision** on SLA targets (D-SLA-1 in DECISIONS.md) and are stored
-with each timer. A timer starts when the case is created (or reopened), runs against the case's priority, is
-superseded with the same start time when the priority changes, is marked breached once when overdue (one outbox
-event), and ends when the case closes: ``met`` if closed before breach, ``missed`` otherwise, with the closure reason.
-Deferral does not pause the timer.
+Two clocks per case cycle (a cycle starts at creation, and again at each reopening):
+
+* **Triage**: starts at the cycle start; ends when the case is first prioritised (policy applied or override) in that
+  cycle. It is a deadline to *decide priority*, not to remediate. Met if prioritised by the due time, otherwise missed.
+* **Remediation**: starts at the first prioritisation in the cycle; due = start + target for the current priority +
+  paused time. A priority change *revises* the timer: the old row ends as ``revised`` and a new row keeps the **same
+  start and accumulated pause** with the new target, so elapsed time is never reset. If the new due time has already
+  passed, the revised timer is breached at that due time.
+* **Pause**: when the SLA policy says ``pause_on_deferral``, the clock stops from a ``case.deferred`` event until the
+  next case event (the deferral is replaced by any further decision). Pauses are derived from event timestamps, so the
+  result does not depend on when the sweep runs.
+* **Breach** time is the due time itself (deterministic), recorded once with one outbox event.
+* **End**: on closure, ``verified_remediated`` ends the remediation timer as ``met`` (closed by the due time) or
+  ``missed``; ``accepted_risk`` ends it as ``risk_accepted`` (never ``met``: accepted risk is not remediation);
+  dismissed, duplicate and retired-asset closures end it as ``closed_without_fix``. An open triage timer at closure
+  ends the same way.
+
+Targets come from the published ``sla`` policy or the built-in provisional default, recorded on every timer.
 """
 from __future__ import annotations
 
 import uuid
-from dataclasses import asdict, dataclass, field
 from datetime import timedelta
 
 import psycopg
@@ -17,80 +29,164 @@ from psycopg.types.json import Jsonb
 
 from ... import audit, outbox
 from ...db import TenantContext
+from ..policies.service import current
 
 KIND = "cases.sla_sweep"
+PRIORITY_EVENTS = ("case.prioritised", "case.priority_overridden")
 
 
-@dataclass(frozen=True)
-class SlaPolicy:
-    days: dict = field(default_factory=lambda: {"urgent": 7, "high": 30, "medium": 90, "low": 180, "pending": 14})
+def _cycle(events: list[dict]) -> tuple[int, list[dict]]:
+    reopen = [i for i, e in enumerate(events) if e["event_type"] == "case.reopened"]
+    start = reopen[-1] if reopen else 0
+    return len(reopen) + 1, events[start:]
 
 
-DEFAULT_SLA = SlaPolicy()
+def _paused(events: list[dict], since, until, enabled: bool) -> tuple[float, object]:
+    """Seconds paused between ``since`` and ``until`` and the start of a pause still open at ``until``."""
+    if not enabled:
+        return 0.0, None
+    total, open_since = 0.0, None
+    for i, e in enumerate(events):
+        if e["event_type"] != "case.deferred":
+            continue
+        start = max(e["created_at"], since)
+        nxt = events[i + 1]["created_at"] if i + 1 < len(events) else None
+        end = min(nxt, until) if nxt else until
+        if end > start:
+            total += (end - start).total_seconds()
+        if nxt is None or nxt > until:
+            open_since = start if start <= until else None
+    return total, open_since
 
 
-def sla_sweep(conn: psycopg.Connection, ctx: TenantContext, policy: SlaPolicy = DEFAULT_SLA) -> dict:
-    out = {"started": 0, "superseded": 0, "breached": 0, "ended": 0}
-    now = conn.execute("SELECT clock_timestamp() AS t").fetchone()["t"]
+def _end_status(reason: str | None, due, closed_at, breached: bool) -> str:
+    if reason == "verified_remediated":
+        return "met" if not breached and closed_at <= due else "missed"
+    if reason == "accepted_risk":
+        return "risk_accepted"
+    return "closed_without_fix"
 
-    def start(case, started_at):
-        due = started_at + timedelta(days=policy.days[case["priority"]])
-        status = "breached" if due <= now else "running"
-        conn.execute(
-            """INSERT INTO axiom.case_slas(tenant_id, id, case_id, priority, policy, started_at, due_at, status,
-                   breached_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (ctx.tenant_id, uuid.uuid4(), case["id"], case["priority"], Jsonb(asdict(policy)), started_at, due,
-             status, now if status == "breached" else None))
-        if status == "breached":
-            _breach_event(conn, ctx, case["id"], due)
-            out["breached"] += 1
-        out["started"] += 1
 
-    rows = conn.execute(
-        """SELECT c.id, c.priority, c.workflow, c.created_at, s.id AS sla_id, s.priority AS sla_priority,
-                  s.status AS sla_status, s.started_at, s.due_at,
-                  (SELECT max(e.created_at) FROM axiom.case_events e WHERE e.case_id = c.id
-                     AND e.event_type = 'case.reopened') AS reopened_at,
-                  (SELECT cr.reason FROM axiom.closure_records cr WHERE cr.case_id = c.id
-                     AND cr.case_event_sequence = c.record_version) AS closure_reason
-             FROM axiom.finding_cases c
-             LEFT JOIN axiom.case_slas s ON s.case_id = c.id AND s.status IN ('running', 'breached')
-            FOR UPDATE OF c SKIP LOCKED""").fetchall()
-    for r in rows:
-        if r["workflow"] == "closed":
-            if r["sla_id"] is not None:
-                final = "met" if r["sla_status"] == "running" else "missed"
-                conn.execute("""UPDATE axiom.case_slas SET status = %s, ended_at = clock_timestamp(), end_reason = %s,
-                                       record_version = record_version + 1 WHERE id = %s""",
-                             (final, f"case closed: {r['closure_reason']}", r["sla_id"]))
+def sla_sweep(conn: psycopg.Connection, ctx: TenantContext, *, now=None) -> dict:
+    """``now`` may be supplied by tests to evaluate the clocks at a later instant; workers use the database clock."""
+    out = {"started": 0, "revised": 0, "breached": 0, "ended": 0, "paused": 0, "resumed": 0}
+    definition, policy_id, provisional = current(conn, "sla")
+    snapshot = {**definition, "provisional": provisional, "policy_version_id": str(policy_id) if policy_id else None}
+    if now is None:
+        now = conn.execute("SELECT clock_timestamp() AS t").fetchone()["t"]
+    cases = conn.execute("SELECT * FROM axiom.finding_cases FOR UPDATE SKIP LOCKED").fetchall()
+    for case in cases:
+        events = list(conn.execute(
+            "SELECT event_type, created_at, payload FROM axiom.case_events WHERE case_id = %s ORDER BY sequence",
+            (case["id"],)))
+        if not events:
+            continue
+        cycle, evs = _cycle(events)
+        cycle_start = evs[0]["created_at"]
+        closed = evs[-1]["event_type"].startswith("case.closed.")
+        closure_reason = evs[-1]["event_type"].removeprefix("case.closed.") if closed else None
+        closed_at = evs[-1]["created_at"] if closed else None
+        prio_events = [e for e in evs if e["event_type"] in PRIORITY_EVENTS]
+        timers = {r["kind"]: r for r in conn.execute(
+            "SELECT * FROM axiom.sla_timers WHERE case_id = %s AND cycle = %s AND status IN ('running','paused','breached')",
+            (case["id"], cycle))}
+        done = {r["kind"] for r in conn.execute(
+            "SELECT DISTINCT kind FROM axiom.sla_timers WHERE case_id = %s AND cycle = %s", (case["id"], cycle))}
+        if closed and not timers:
+            continue      # everything for this cycle has already ended
+
+        # ---- triage
+        if "triage" not in done:
+            due = cycle_start + timedelta(days=definition["triage_days"])
+            timers["triage"] = _insert(conn, ctx, case["id"], "triage", cycle, case["priority"], policy_id, snapshot,
+                                       cycle_start, due)
+            out["started"] += 1
+        t = timers.get("triage")
+        if t is not None:
+            end_at = prio_events[0]["created_at"] if prio_events else closed_at
+            if end_at is not None:
+                breached = t["breached_at"] is not None or end_at > t["due_at"]
+                status = ("missed" if breached else "met") if prio_events else _end_status(closure_reason, t["due_at"],
+                                                                                            end_at, True)
+                _end(conn, t, status, end_at, "prioritised" if prio_events else f"closed: {closure_reason}",
+                     breach_at=t["due_at"] if breached and t["breached_at"] is None else None)
                 out["ended"] += 1
+            elif t["due_at"] <= now and t["breached_at"] is None:
+                _breach(conn, ctx, t, out)
+
+        # ---- remediation
+        if not prio_events:
             continue
-        if r["sla_id"] is None:
-            start(r, r["reopened_at"] or r["created_at"])
+        start = prio_events[0]["created_at"]
+        target = definition["remediation_days"][case["priority"]] if case["priority"] in \
+            definition["remediation_days"] else None
+        horizon = closed_at or now
+        paused, open_pause = _paused(evs, start, horizon, definition.get("pause_on_deferral", False))
+        if target is None:
             continue
-        if r["sla_priority"] != r["priority"]:
-            ended = "superseded"
-            conn.execute(
-                """UPDATE axiom.case_slas SET status = %s, ended_at = clock_timestamp(), end_reason = %s,
-                          breached_at = CASE WHEN status = 'breached' THEN breached_at ELSE NULL END,
-                          record_version = record_version + 1 WHERE id = %s""",
-                (ended, f"priority changed {r['sla_priority']} -> {r['priority']}", r["sla_id"]))
-            out["superseded"] += 1
-            start(r, r["started_at"])
+        due = start + timedelta(days=target, seconds=paused)
+        r = timers.get("remediation")
+        if r is not None and r["priority"] != case["priority"]:
+            # revise, never reset: the new timer keeps the original start and the accumulated pause
+            _end(conn, r, "revised", now, f"priority {r['priority']} -> {case['priority']}")
+            out["revised"] += 1
+            r = None
+        if r is None:
+            final = conn.execute(
+                """SELECT 1 FROM axiom.sla_timers WHERE case_id = %s AND cycle = %s AND kind = 'remediation'
+                     AND status NOT IN ('revised', 'running', 'paused', 'breached')""", (case["id"], cycle)).fetchone()
+            if final is None:
+                r = _insert(conn, ctx, case["id"], "remediation", cycle, case["priority"], policy_id, snapshot, start,
+                            due)
+                out["started"] += 1
+        if r is None:
             continue
-        if r["sla_status"] == "running" and r["due_at"] <= now:
-            conn.execute("""UPDATE axiom.case_slas SET status = 'breached', breached_at = clock_timestamp(),
-                                   record_version = record_version + 1 WHERE id = %s""", (r["sla_id"],))
-            _breach_event(conn, ctx, r["id"], r["due_at"])
-            out["breached"] += 1
+        if closed:
+            breached = r["breached_at"] is not None or closed_at > due
+            _end(conn, r, _end_status(closure_reason, due, closed_at, breached), closed_at, f"closed: {closure_reason}",
+                 breach_at=due if breached and r["breached_at"] is None and closure_reason == "verified_remediated"
+                 else None, paused=paused, due=due)
+            out["ended"] += 1
+            continue
+        status = r["status"]
+        if open_pause is not None:
+            status = "paused" if r["breached_at"] is None else "breached"
+            out["paused"] += r["status"] != "paused"
+        elif r["status"] == "paused":
+            status = "running"
+            out["resumed"] += 1
+        conn.execute("""UPDATE axiom.sla_timers SET paused_seconds = GREATEST(paused_seconds, %s), due_at = %s, status = %s,
+                               paused_since = %s, record_version = record_version + 1 WHERE id = %s""",
+                     (int(paused), due, status, open_pause if status == "paused" else None, r["id"]))
+        if open_pause is None and r["breached_at"] is None and due <= now:
+            r = conn.execute("SELECT * FROM axiom.sla_timers WHERE id = %s", (r["id"],)).fetchone()
+            _breach(conn, ctx, r, out)
     return out
 
 
-def _breach_event(conn, ctx, case_id, due) -> None:
-    audit.record(conn, ctx, action="sla.breached", resource_type="finding_case", resource_id=case_id,
-                 detail={"due_at": due.isoformat()})
-    outbox.enqueue(conn, ctx, topic="sla.breached", aggregate_type="finding_case", aggregate_id=case_id,
-                   payload={"due_at": due.isoformat()})
+def _insert(conn, ctx, case_id, kind, cycle, priority, policy_id, snapshot, start, due) -> dict:
+    return conn.execute(
+        """INSERT INTO axiom.sla_timers(tenant_id, id, case_id, kind, cycle, priority, policy_version_id, policy_snapshot,
+               started_at, due_at, status) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'running') RETURNING *""",
+        (ctx.tenant_id, uuid.uuid4(), case_id, kind, cycle, priority, policy_id, Jsonb(snapshot), start, due)).fetchone()
+
+
+def _end(conn, timer, status, ended_at, reason, *, breach_at=None, paused=None, due=None) -> None:
+    conn.execute(
+        """UPDATE axiom.sla_timers SET status = %s, ended_at = %s, end_reason = %s, paused_since = NULL,
+                  breached_at = COALESCE(breached_at, %s), paused_seconds = GREATEST(paused_seconds, %s),
+                  due_at = COALESCE(%s, due_at), record_version = record_version + 1 WHERE id = %s""",
+        (status, ended_at, reason, breach_at, int(paused or 0), due, timer["id"]))
+
+
+def _breach(conn, ctx, timer, out) -> None:
+    conn.execute("""UPDATE axiom.sla_timers SET status = 'breached', breached_at = due_at, paused_since = NULL,
+                           record_version = record_version + 1 WHERE id = %s""", (timer["id"],))
+    audit.record(conn, ctx, action=f"sla.{timer['kind']}_breached", resource_type="finding_case",
+                 resource_id=timer["case_id"], detail={"due_at": timer["due_at"].isoformat()})
+    outbox.enqueue(conn, ctx, topic=f"sla.{timer['kind']}_breached", aggregate_type="finding_case",
+                   aggregate_id=timer["case_id"], payload={"due_at": timer["due_at"].isoformat()})
+    out["breached"] += 1
 
 
 class SlaSweepHandler:

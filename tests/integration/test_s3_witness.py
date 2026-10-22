@@ -143,3 +143,40 @@ def test_insufficient_permissions_refuse(prefix):
         nolist.probe()                                          # can write, cannot list
     with pytest.raises(WitnessUnavailable, match="AccessDenied"):
         nolist.high_water()
+
+
+def test_pruning_follows_every_page_and_matches_exact_identity(prefix):
+    """Pagination with a page size far below the record count, plus worker IDs that are suffixes of each other."""
+    c = client()
+    ids = ["w1", "a-w1", "w1-x"]
+    ws = {i: S3Witness(c, BUCKET, prefix, i, page_size=2) for i in ids}
+    n = 0
+    for _ in range(7):
+        for i in ids:
+            n += 1
+            ws[i].advance(n)
+    assert ws["w1"].high_water() == n
+    names = [k[len(prefix) + 1:] for k in (o["Key"] for page in c.get_paginator("list_objects_v2").paginate(
+        Bucket=BUCKET, Prefix=prefix + "/") for o in page.get("Contents", []))]
+    for i in ids:
+        assert len([x for x in names if x[21:] == i]) == KEEP, i
+
+
+def test_interrupted_prune_on_s3_never_lowers_the_mark(prefix, monkeypatch):
+    c = client()
+    w = S3Witness(c, BUCKET, prefix, "w", page_size=3)
+    calls = {"n": 0}
+    real = S3Witness._delete
+
+    def flaky(self, name):
+        calls["n"] += 1
+        if calls["n"] % 2 == 0:
+            raise RuntimeError("connection reset mid-prune")
+        real(self, name)
+    monkeypatch.setattr(S3Witness, "_delete", flaky)
+    for v in range(1, 15):
+        w.advance(v)
+        assert w.high_water() == v
+    monkeypatch.setattr(S3Witness, "_delete", real)
+    w.advance(15)
+    assert w.high_water() == 15

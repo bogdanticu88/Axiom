@@ -246,6 +246,36 @@ class JobRetry(Body):
 class GenerateReport(Body):
     kind: Literal["exposure_summary"]
     scope_id: UUID
+    as_of: datetime | None = None
+
+
+class DraftPolicy(Body):
+    kind: Literal["priority", "ownership", "sla", "freshness"]
+    definition: dict
+    rationale: str = Field(min_length=1, max_length=5000)
+    provisional: bool = True
+
+
+class ApplyPriority(Body):
+    expected_version: int = Field(ge=0)
+    rationale: str = Field(min_length=1, max_length=5000)
+
+
+class OverridePriority(ApplyPriority):
+    priority: Literal["urgent", "high", "medium", "low"]
+
+
+class AssertContext(Body):
+    rationale: str = Field(min_length=1, max_length=5000)
+    owner_ref: str | None = Field(default=None, max_length=200)
+    criticality: Literal["low", "medium", "high", "critical"] | None = None
+    environment: str | None = Field(default=None, max_length=100)
+    data_classification: str | None = Field(default=None, max_length=100)
+
+
+class OwnerOverride(Body):
+    owner_principal_id: UUID
+    reason: str = Field(min_length=1, max_length=5000)
 
 
 class ExportReport(Body):

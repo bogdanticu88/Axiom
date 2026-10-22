@@ -19,9 +19,11 @@ Test references are abbreviated: `cases::name` = tests/integration/test_cases.py
 `risk2::` = tests/integration/test_risk_two_step.py. `rw::` = tests/integration/test_restore_witness.py.
 `r7::` = tests/integration/test_r7_return_to_review.py. `track::` = tests/integration/test_tracking_reports.py.
 `wf::` = tests/integration/test_workflow_adapters.py. `s3w::` = tests/integration/test_s3_witness.py.
-`ingjob::` = tests/integration/test_ingestion_jobs.py.
+`ingjob::` = tests/integration/test_ingestion_jobs.py. `ppo::` = tests/integration/test_policy_priority_ownership.py.
+`sla::` = tests/integration/test_sla_timers.py. `rpt::` = tests/integration/test_report_depth.py.
+`jrn::` = tests/integration/test_journey_end_to_end.py. `prune::` = tests/unit/test_witness_pruning.py.
 
-Last updated: 2026-10-22 (Phase B checkpoint).
+Last updated: 2026-10-22 (checkpoint 3: policies, ownership, SLA v2, reporting depth, journey). Status counts are in docs/IMPLEMENTATION_STATUS.md.
 
 
 ## Known gaps at this checkpoint (explicit)
@@ -32,8 +34,10 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | Job runner: no operations UI, no multi-step workflows; CI pipeline executed locally only (hosted workflow never run) | ARC-02, DEP-08, ADR 0006 | implementing |
 | Action protocol is fixture-tested only: Jira-style, ServiceNow and GitHub Issues integrations have only met local fakes | INT-15..17, ADR 0010 | fixture-tested |
 | Restore detection cannot see a rollback of the database **and** the witness together; the S3 witness is tested against SeaweedFS only, and its guarantees depend on production storage properties not yet validated | ADR 0010 | documented limitation |
-| Not built: webhooks, merge/split execution, Defender/AWS context (Phase B remainder), investigation and AI, prioritisation (C), pull-request actions, webhooks for inbound ticket events, reporting beyond the exposure snapshot (coverage, freshness, framework mappings, evidence packages) and GRC (D), UI, Helm/AKS, observability, backup/restore, retention and deletion (F), evaluation dataset | sections 8 to 17 | planned |
-| **No connector is sandbox-validated or production-supported.** Four are fixture-tested (Trivy and SARIF with real tool output; Tenable and Azure Resource Graph with synthetic data and local fakes); the other 16 are planned; commercial ones need licensed accounts | INT-01..INT-20 | fixture-tested / planned / blocked for sandbox validation |
+| **Core product functionality not built.** The investigation workspace and AI-assisted investigation (Phase C: evidence snapshots, tool gateway, model gateway, claims) do not exist; analysts record assessments by hand. There is **no user interface**. Enterprise SSO is not integrated | INVS-01..12, ARC-05, AUTHZ-14, J01-J10 | planned |
+| Other items not built: webhooks, merge/split execution, Defender/AWS context (Phase B remainder), priority impact preview and override expiry, reassessment triggers, pull-request actions, framework mappings and GRC attestations (D), Helm/AKS, traces, backup/restore procedure, retention and deletion (F), evaluation dataset | sections 8 to 17 | planned |
+| SLA targets, priority matrix and freshness limits are **provisional defaults** pending business confirmation; no business-hours calendar | D-SLA-2, D-PRIO-1, ADR 0011 | provisional |
+| **No connector is sandbox-validated or production-supported.** Seven are fixture-tested (Trivy and SARIF with real tool output; Tenable and Azure Resource Graph with synthetic data and local fakes; Jira-style, ServiceNow and GitHub Issues against local fakes); the other 13 are planned; commercial ones need licensed accounts | INT-01..INT-20 | fixture-tested / planned / blocked for sandbox validation |
 
 ---
 
@@ -42,7 +46,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | ID | Requirement | Implementation | Verification | Status | Notes / blockers |
 |---|---|---|---|---|---|
 | B01 | Original observations remain distinguishable from conclusions and human decisions | `evidence_objects`, `decisions`, `verification_runs` are separate append-only records | iso::test_append_only_tables_reject_mutation_even_for_owner | implementing | `observations` table and model-analysis records arrive in Phases B/C |
-| B02 | Consequential decisions reference evidence snapshot, policy version and actor authority | `decisions.authority` JSON (bindings, roles, evaluated_at); `decision_evidence` | api::test_analyst_journey_to_verified_closure (evidence link), cases::test_decisions_record_authority | implementing | Authority and evidence verified; snapshot and policy columns null until Phase C |
+| B02 | Consequential decisions reference evidence snapshot, policy version and actor authority | `decisions.authority` JSON; `decision_evidence`; `decisions.policy_version_id` FK (0012) | api::test_analyst_journey_to_verified_closure (evidence link), cases::test_decisions_record_authority, ppo::test_published_policy_and_context_drive_priority... | implementing | Authority, evidence and policy version (prioritisation) verified; evidence *snapshots* need Phase C |
 | B03 | Missing, stale or contradictory evidence cannot justify dismissal, priority reduction or verified closure | `record_assessment`, `dismiss`, `verification_outcome`, `validate_closure` trigger | cases::test_definite_assessment_requires_verified_evidence, ::test_inconclusive_assessment_cannot_be_dismissed, ::test_wrong_deployment_digest_is_inconclusive, ::test_partial_coverage_... | implementing | Verified for dismissal and verified closure; priority-reduction path is Phase C; staleness needs observation freshness (Phase B) |
 | B04 | Failed or partial synchronisation never implies remediation | coverage rules; absence and source fixes never touch cases | ing::test_partial_scan..., ::test_tenable_identity..., sync::test_interrupted_sync_keeps_committed_pages_as_partial | verified | |
 | B05 | Untrusted content cannot grant authority, change policy or choose tool destinations | Authority only from tokens and bindings | none | planned | Investigation tools and gateway (Phase C) |
@@ -50,7 +54,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | B07 | Approvals bind to exact action, arguments, resources, tenant, validity and use count | `approvals` FK on (version, digest); DB-computed digest; expiry, max_uses, counters guarded | act::test_approval_cannot_point_at_a_different_digest, ::test_revision_after_approval_requires_new_approval, ::test_concurrent_reservations_never_exceed_max_uses, ::test_approval_limits | verified | Tenant binding via RLS and composite FKs |
 | B08 | Unknown external outcomes reconcile before retry; no exactly-once claim | EffectGate capability rules (ADR 0010), `axiom.effect_intents`, `action_executions` | act::test_lost_ack_with_lagging_search_parks..., ::test_lost_ack_adopted..., ::test_lost_ack_with_provider_idempotency..., ::test_stale_worker_already_past_the_boundary[*], job::test_sigkill_after_effect... | verified | Against local fakes only; real providers must be shown to have the declared capabilities |
 | B09 | Previous decisions remain retrievable after reassessment | Append-only decisions, events, closure records | cases::test_full_lifecycle_to_verified_closure_and_reopen_preserves_history | verified | |
-| B10 | Report figures derive from reproducible queries over an identified snapshot | none | none | planned | Phase D reporting |
+| B10 | Report figures derive from reproducible queries over an identified snapshot | `ReportService.compute` (one as-of SQL over append-only history; `query_version` recorded) | rpt::test_snapshot_as_of_is_reproducible_after_later_changes (same digest after later priority, timer, workflow and import changes) | verified | A revised-timer reproducibility bug was found by this test and fixed |
 | B11 | Model output is analysis, supported by independent observations | none | none | planned | Phase C |
 | B12 | Audit and event delivery are transactional; failed audit prevents the change | Audit, case update, event and outbox in one transaction; `case_events.audit_event_id` NOT NULL FK; deferred commit guard | cases::test_audit_failure_prevents_transition, ::test_audit_failure_in_application_prevents_transition, iso::test_direct_sql_cannot_bypass_case_commands | verified | |
 
@@ -71,9 +75,9 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | A11 | Risk acceptance expiry reopens review and notifies the owner | cases::test_risk_acceptance_limits_owner_and_expiry_reopens, ingjob::test_risk_expiry_sweep_is_scheduled_once_per_interval_per_tenant | implementing | Reopen, notification event and hourly scheduled sweep verified; notification delivery not built |
 | A12 | Worker restarts at each durable boundary: no lost decisions or repeated effects | job::test_sigkill_after_effect_before_outcome_recorded (both variants), ::test_hung_step_loses_lease..., ing::test_real_process_kill_then_resume, job::test_restore_is_detected... | implementing | Verified for single-effect jobs and ingestion; database-server crash not re-run in product code (experiment only); multi-step workflows not built |
 | A13 | Cross-tenant access via API, jobs, object paths, exports, caches is denied and audited | api::test_cross_tenant_access_through_api_is_denied, evo::test_tenant_object_store_refuses_foreign_keys, iso::test_tenant_selection_and_security_events | implementing | Jobs, exports and caches not built; 404s inside a tenant are not yet audited as denials |
-| A14 | Policy change after assessment keeps old decision and versions reassessment | none | planned | Phase C |
+| A14 | Policy change after assessment keeps old decision and versions reassessment | ppo::test_published_policy_and_context_drive_priority_and_old_decisions_keep_their_version | implementing | Old decisions keep their policy version and a new application records the new one; automatic reassessment on policy change is not built |
 | A15 | Restore backup within RPO/RTO and reconcile pending effects first | none | planned | Phase F; needs WAL archiving profile |
-| A16 | Report reproduces quantities from frozen snapshot and discloses coverage gaps | none | planned | Phase D |
+| A16 | Report reproduces quantities from frozen snapshot and discloses coverage gaps | rpt::test_snapshot_as_of_is_reproducible..., ::test_successful_sync_is_not_complete_coverage_and_freshness_is_per_source, jrn::test_import_to_verified_closure_and_report | verified | Coverage, completeness and freshness per source; unknowns counted |
 | A17 | Concurrent contradictory decisions: one commits, the other conflicts | cases::test_concurrent_contradictory_decisions_one_commits | verified | |
 | A18 | Fix reported against the wrong image digest stays inconclusive or failed | cases::test_wrong_deployment_digest_is_inconclusive; unit::test_verification_outcome | verified | The DB trigger also rejects a forced "passed" (observed during mutation check) |
 | A19 | Failed audit persistence prevents the transition | cases::test_audit_failure_prevents_transition (DB fault), ::test_audit_failure_in_application_prevents_transition | verified | |
@@ -82,7 +86,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | X02 | Multi-membership user cannot reuse one tenant's identifiers in another (D 13) | cases::test_cross_tenant_resource_references_are_invisible, api::test_cross_tenant_access_through_api_is_denied | verified | |
 | X03 | Stale or session-level tenant context does not leak (D 13) | iso::test_session_level_context_does_not_leak_into_next_transaction | verified | |
 | X04 | Background job payload tenant tampering is denied (P 14, D 13) | none | planned | Outbox carries persisted tenant; worker framework pending |
-| X05 | Export paths enforce tenant and classification (P 14) | none | planned | |
+| X05 | Export paths enforce tenant and classification (P 14) | evidence packages include content only for readable classifications; export reads re-check case scope | rpt::test_evidence_package_withholds_content_the_requester_cannot_read, track::test_exports... (tenant) | implementing | Exposure snapshots hold aggregates only; export expiry not built |
 | X06 | Shared caches cannot leak across tenants (P 14) | none | planned | No cache exists |
 | X07 | Object access is tenant-scoped (P 14) | evo::test_tenant_object_store_refuses_foreign_keys, evo::test_cross_tenant_evidence_is_not_found | verified | |
 | X08 | Installation and tenant administration gain no routine evidence access (D 13) | iso::test_tenant_selection_and_security_events, evo::test_classification_permissions_and_denial_audit, cases::test_tenant_admin_delegation_rules | verified | |
@@ -154,7 +158,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | AUTHZ-08 | Emergency access: time-bound, reason, notification, retrospective review | `assign_role(emergency=True)` | cases::test_tenant_admin_delegation_rules | implementing | Review workflow and notification delivery planned |
 | AUTHZ-09 | Administration grants no evidence, risk or approval authority; operators get no tenant access | role catalogue; installation roles outside tenants | X08 tests | verified | |
 | AUTHZ-10 | Delegation limits bound risk acceptance and action approval | `delegation_limits`, `_delegation_limit` | cases::test_risk_acceptance_limits... | implementing | Action approval limits are Phase D |
-| AUTHZ-11 | High-impact decisions prohibit self-approval by default | CASE-15 guards; proposer cannot approve (service + trigger); risk independence (service + CHECK) | act::test_proposer_cannot_approve_in_service_or_database, risk2::test_high_impact_needs_someone_other_than_the_requester, ::test_database_backstop_for_independence | verified for actions and risk acceptance | Policy publishing is Phase C |
+| AUTHZ-11 | High-impact decisions prohibit self-approval by default | CASE-15 guards; proposer cannot approve (service + trigger); risk independence (service + CHECK); policy author cannot publish (service + CHECK) | act::test_proposer_cannot_approve_in_service_or_database, risk2::test_high_impact_needs_someone_other_than_the_requester, ::test_database_backstop_for_independence, ppo::test_publishing_needs_a_second_person_and_supersedes | verified | Actions, risk acceptance and policy publishing |
 | AUTHZ-12 | Workload principals with job-scoped service grants (tools, subjects, expiry, budget) | none | none | planned | Phase C |
 | AUTHZ-13 | No authority caching across requests; revocation effective on next request | per-transaction loading | cases::test_permission_scope_and_revocation | verified | |
 | AUTHZ-14 | Production OIDC SSO integration (e.g. Entra ID, Keycloak) | JWKS URI support | none | planned | Development issuer only so far |
@@ -221,7 +225,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | ING-07 | Provider deletions/tombstones are observations, not closure | `tombstone` observation type and absence rules | ing::test_partial_scan_closes_nothing_and_complete_rescan_records_absence (absence part) | implementing | No source in scope emits tombstones yet |
 | ING-08 | Webhooks: signature verification, replay protection, tenant-bound connection | none | none | planned | |
 | ING-09 | Visible quarantine of invalid records | `quarantined_records`, run API | ing::test_tenable_identity..., api::test_identity_candidate_review_through_api | verified | |
-| ING-10 | Connector health, freshness and operations UI | run listing API only | api::test_ingestion_journey_through_api | implementing | Health/freshness metrics and UI planned |
+| ING-10 | Connector health, freshness and operations UI | run listing API; per-source freshness and completeness in report snapshots | api::test_ingestion_journey_through_api, rpt::test_successful_sync_is_not_complete_coverage... | implementing | Freshness reported (policy-driven); alerting, health metrics and UI planned |
 | ING-11 | Stale ingestion workers cannot commit (fencing) | lease token + `ingestion_page_fence` trigger | ing::test_stale_worker_is_fenced (also passes with the service check removed) | verified | |
 | ING-12 | Source-reported fixes never close cases | `_correlate` | ing::test_tenable_identity_uncertainty_quarantine_and_source_fix | verified | |
 | ING-13 | Imported text is untrusted data | stored in `source_fields` only | ing::test_sarif_import_with_untrusted_text_changes_no_authority | verified (ingestion part) | A05 also needs Phase C model-path tests |
@@ -230,7 +234,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | AST-03 | Reversible merges and splits through recorded links | review decisions recorded only | api::test_identity_candidate_review_through_api | implementing | Merge/split execution not built |
 | AST-04 | No global uniqueness on IP, name or tag | weak identifiers never unique | sync::test_tenable_host_and_azure_vm... (3 assets share a hostname) | verified | |
 | AST-05 | Immutable asset versions with deployment digests | `asset_versions` | ing:: tests | implementing | Effective intervals pending |
-| AST-06 | Business context versions with effective dates and basis | `business_context_versions` | sync::test_azure_resource_graph_sync_context_and_identity | implementing | Source-tag assertions done; user assertions (journey J03) pending |
+| AST-06 | Business context versions with effective dates and basis | `business_context_versions`; `assert_business_context` (basis `user_assertion`, `context.assert`) and `POST /assets/{id}/business-context` | sync::test_azure_resource_graph_sync_context_and_identity, ppo::test_routing_unresolved_queue_rules_and_overrides, jrn:: | verified | Source-tag and user assertions; external CMDB import (INT-18) planned |
 | AST-07 | Asset relationships (deployment and exposure paths) | none | none | planned | |
 | AST-08 | No cross-tenant asset links | composite FKs; RLS | iso::test_cross_tenant_foreign_key_rejected, api::test_identity_candidate_review_through_api | verified | |
 | AST-09 | Declared subjects recorded as importer assertions | `declared_by_importer` origin | ing::test_sarif_without_subject_fails_until_declared | verified | |
@@ -256,15 +260,27 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 
 ## 10. Prioritisation (S 7) - Phase C
 
-| ID | Requirement | Status |
-|---|---|---|
-| PRI-01 | Versioned, testable deterministic policies set authoritative priority | planned |
-| PRI-02 | AI cannot set authoritative priority | planned |
-| PRI-03 | Unknown context triggers conservative rules; unsupported reachability is not unreachability | planned (unknown priority already treated as urgent for delegation checks) |
-| PRI-04 | Record inputs, freshness and rule outcomes | planned |
-| PRI-05 | Overrides with scope, reason, actor, expiry/review; second approver by policy | planned |
-| PRI-06 | Impact preview before policy activation | planned |
-| PRI-07 | Historical decisions retain their policy version (A14) | planned |
+Implemented in migration 0012 and ADR 0011 (`domains/policies`, `domains/cases/priority.py`). Matrix is a provisional default (D-PRIO-1).
+
+| ID | Requirement | Status | Verification / notes |
+|---|---|---|---|
+| PRI-01 | Versioned, testable deterministic policies set authoritative priority | verified | Draft, independent publish, supersede, immutable definitions; `apply-priority-policy` (ppo::*, jrn::). Direct database priority injections removed from tests (act::, risk2:: use the override command) |
+| PRI-02 | AI cannot set authoritative priority | implementing | Only `apply-priority-policy` and a recorded human override set priority; no AI component exists, so this cannot yet be tested against one |
+| PRI-03 | Unknown context triggers conservative rules; unsupported reachability is not unreachability | implementing | Missing severity or criticality substituted with the policy's conservative bucket and listed as limitations (ppo::test_priority_from_default_policy_records_its_limitations). Reachability is not an input yet |
+| PRI-04 | Record inputs, freshness and rule outcomes | implementing | Inputs (severities, criticalities, assets) and outcome in the `case.prioritised` event; policy version on the decision. Input freshness is not recorded |
+| PRI-05 | Overrides with scope, reason, actor, expiry/review; second approver by policy | implementing | Override is a decision with rationale, actor and `override.propose` (ppo::test_override_is_a_recorded_decision_and_needs_permission). Expiry, review and second approver not built |
+| PRI-06 | Impact preview before policy activation | planned | |
+| PRI-07 | Historical decisions retain their policy version (A14) | verified | ppo::test_published_policy_and_context_drive_priority_and_old_decisions_keep_their_version |
+
+## 10a. Ownership routing (B, 11:33 instruction; ADR 0011)
+
+| ID | Requirement | Status | Verification / notes |
+|---|---|---|---|
+| OWN-01 | Versioned ownership rules over explicit asset, project or business context only | verified | Rules match `scope_id`, `asset_kind`, `owner_ref`, `environment`, `criticality`; other keys refused (ppo::test_invalid_definitions_are_refused, ::test_routing_unresolved_queue_rules_and_overrides) |
+| OWN-02 | Unresolved-owner queue | verified | `GET /ownership/unresolved`; reasons recorded (no policy, no context, no match, owner without membership); report counts `open_cases_without_resolved_owner` |
+| OWN-03 | Manual overrides and reassignment history recorded | verified | Append-only `case_ownership` with reason and context; deletion refused |
+| OWN-04 | Ownership grants no approval or risk-acceptance authority | verified | ppo::test_ownership_confers_no_authority (no bindings written; risk.accept, action.approve:*, dismissal, closure unchanged) |
+| OWN-05 | Unresolved cases re-routed when inputs change, without repeated identical rows | verified | ppo::test_sweep_reroutes_unresolved_cases_only_when_inputs_change; jrn:: |
 
 ## 11. Actions and remediation (S 9, P 7, D 7) - Phase D
 
@@ -279,8 +295,14 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | ACT-07 | Transactional approval reservation; timeout never restores single-use approval blindly | verified | act::test_concurrent_reservations..., ::test_reservation_accounting_is_guarded..., ::test_a_use_is_never_returned_once_the_effect_may_have_been_attempted |
 | ACT-08 | Ticket, pull request and production mutation permissions are distinct; production mutation disabled by default | verified | Per-class propose/approve/execute permissions, exact match, no hierarchy (migration 0009); act::test_weaker_class_permissions_never_authorise_a_stronger_effect (production.change enabled in-process only for the test); production.change and pull_request.create stay disabled in the product |
 | ACT-09 | External ticket closure does not close the case | verified | Inbound polling records state changes append-only and never moves the case (track::*, wf::test_externally_closed_ticket_never_moves_the_case for Jira-style, ServiceNow and GitHub fakes) |
-| ACT-11 | SLA timers per priority start, supersede on priority change, breach once, end on closure | verified | track::test_sla_lifecycle (fault injection for priority and time); thresholds are defaults D-SLA-1 |
-| ACT-10 | Material changes invalidate approval | verified | Payload change needs a new version and approval (A08); priority or scope change or closure denies at execution (act::test_material_change_after_approval_denies, using fault injection because no priority command exists yet) |
+| ACT-11 | SLA timers per priority start, supersede on priority change, breach once, end on closure | verified | Replaced by SLA v2 (see SLA-01..06); thresholds are provisional defaults D-SLA-2 |
+| SLA-01 | Triage deadline (pending assessment/priority) distinct from remediation deadline | verified | sla::test_triage_is_a_deadline_to_prioritise_not_to_remediate, ::test_triage_missed_when_priority_comes_late... |
+| SLA-02 | Clock start, pause and resumption documented and derived from events | verified (deferral pause only) | ADR 0011; sla::test_deferral_pauses_and_a_priority_change_revises_without_resetting. Other pause reasons not modelled |
+| SLA-03 | Priority change never silently resets elapsed time | verified | Revised timer keeps start and pause (same test); mutation that restarts from now is caught |
+| SLA-04 | Accepted risk is not verified remediation | verified | sla::test_accepted_risk_is_never_counted_as_met... (`risk_accepted`, never `met`; mutation caught) |
+| SLA-05 | Targets configurable through versioned policy and labelled provisional | verified | sla::test_published_sla_policy_is_recorded_on_the_timer; every timer stores policy version and snapshot |
+| SLA-06 | Business-hours calendars and escalation delivery | planned | Breach produces audit and outbox events only |
+| ACT-10 | Material changes invalidate approval | verified | Payload change needs a new version and approval (A08); priority or scope change or closure denies at execution (act::test_material_change_after_approval_denies, now using the supported override command) |
 
 ## 12. Verification, risk and reassessment (S 10) 
 
@@ -300,12 +322,12 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 
 | ID | Requirement | Status |
 |---|---|---|
-| RPT-01 | Immutable report snapshots: query definition/version, as-of, coverage, denominators, membership, result digest | implementing | Immutable, digest-checked snapshots computed by one SQL statement (track::test_snapshot...). Query version, coverage and denominators are not recorded yet |
-| RPT-02 | Reports show freshness, missing coverage, unresolved ownership, inconclusive cases, accepted exposure | implementing | Accepted exposure, SLA state, open work by state; freshness, coverage and ownership not yet |
+| RPT-01 | Immutable report snapshots: query definition/version, as-of, coverage, denominators, membership, result digest | implementing | Query version (`exposure_summary@3`), as-of, per-source coverage, separate denominators and digest recorded and verified (rpt::*, track::*). Case **membership lists** are not stored (counts only) |
+| RPT-02 | Reports show freshness, missing coverage, unresolved ownership, inconclusive cases, accepted exposure | verified | rpt::test_successful_sync_is_not_complete_coverage_and_freshness_is_per_source, jrn::; freshness limits are provisional defaults |
 | RPT-03 | AI summaries cite case/query identifiers; figures must match snapshot calculations | planned |
 | RPT-04 | Framework mappings are versioned references, not compliance verdicts | planned |
-| RPT-05 | Auditor can reconstruct a decision and export an evidence package (journey J08) | planned |
-| RPT-06 | Exports record tenant, actor, scope, classification, expiry and downloads | implementing | Export records tenant, actor, snapshot, format, digest; reads are audited and digest-verified (track::test_exports...); classification and expiry not recorded |
+| RPT-05 | Auditor can reconstruct a decision and export an evidence package (journey J08) | verified (API) | Decisions with policy versions, evidence references, approvals, executions, verification, ownership, SLA history; content per classification (rpt::test_evidence_package..., jrn::). No UI |
+| RPT-06 | Exports record tenant, actor, scope, classification, expiry and downloads | implementing | Export records tenant, actor, snapshot, format, digest; reads are audited and digest-verified; packages record withheld evidence and audit each content read. Export expiry not recorded |
 | RPT-07 | Cross-client portfolio metrics keep source tenant and coverage | planned |
 | RPT-08 | Owner attestations and exception expiry captured for GRC | planned |
 
@@ -353,6 +375,7 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | OPS-03 | Worker health | implementing | Worker counters and job metrics; no liveness endpoint or alerting |
 | OPS-04 | Model cost monitoring | planned | |
 | OPS-05 | Operator access to security events and audit without tenant evidence | planned | |
+| OPS-14 | Restore-witness pruning cannot remove the evidence needed to detect rollback | verified (algorithm) | ADR 0010 "Witness pruning"; prune::* (randomised listings, interruptions, shared IDs, concurrency), s3w::test_pruning_follows_every_page..., ::test_interrupted_prune...; suffix-matching bug fixed. Production storage properties unverified |
 | OPS-06 | Backup and restore procedures with drills (A15) | implementing | Restore detection drills (logical same-OID restore, physical snapshot rollback, pg_dump/pg_restore) and operator acknowledgement; no backup procedure or RPO/RTO drill |
 | OPS-07 | Disaster recovery exercises | planned | |
 | OPS-08 | Secret rotation | planned | |
@@ -376,13 +399,14 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 |---|---|---|
 | J01 | Operator installs, configures SSO and integrations, checks ingestion health | implementing (Compose install verified; SSO and ingestion pending) |
 | J02 | Analyst reviews a correlated case and follows every material conclusion to evidence | implementing (API path verified in api::test_analyst_journey...; UI pending) |
-| J03 | Asset owner corrects ownership/importance with effective date | planned |
-| J04 | Approver reviews exact remediation scope and authorises or rejects | planned |
+| J03 | Asset owner corrects ownership/importance with effective date | implementing (API: business-context assertion and ownership override verified; UI pending) |
+| J04 | Approver reviews exact remediation scope and authorises or rejects | implementing (API verified in act_api:: and jrn::; UI pending) |
 | J05 | Risk owner accepts scoped exposure with reason and expiry | implementing (service and API verified; UI pending) |
 | J06 | Remediation owner supplies deployment evidence and requests verification | implementing (API verified; UI pending) |
 | J07 | Verifier confirms or rejects resolution against the correct deployment | implementing (API verified; UI pending) |
-| J08 | Auditor reconstructs a decision and exports an evidence package | planned |
-| J09 | Manager inspects verified risk reduction, accepted exposure, missing coverage | planned |
+| J08 | Auditor reconstructs a decision and exports an evidence package | implementing (API verified: rpt::, jrn::; UI pending) |
+| J09 | Manager inspects verified risk reduction, accepted exposure, missing coverage | implementing (snapshot API verified; UI pending) |
+| J11 | End-to-end: import -> context and ownership -> investigation with uncertainty -> versioned priority -> approved ticket -> external status -> verified deployment -> closure -> report with coverage limits | implementing | jrn::test_import_to_verified_closure_and_report over HTTP with each step labelled real / fixture / fake / manual / test-read. Manual: business context, assessment (no investigation workspace), linking the ticket as external work, redeploy record, rescan evidence. Fake: tracker |
 | J10 | Operator restores backup and reconciles uncertain external actions first | planned |
 
 ## 17. Evaluation (S 16, P 10, B)

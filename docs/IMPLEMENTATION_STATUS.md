@@ -1,108 +1,124 @@
 # Implementation status
 
-Last updated: 2026-10-22 (Phase B checkpoint). Requirement-level detail is in REQUIREMENTS.md.
+Last updated: 2026-10-22, checkpoint 3 (policies, ownership, SLA v2, reporting depth, end-to-end journey).
+Requirement-level detail is in REQUIREMENTS.md.
 
 Capability states used here:
-**verified** (built and exercised by tests that were run), **implemented** (built, not yet exercised),
-**experimental** (throwaway experiment, not product code), **incomplete** (partly built), **blocked**, **not started**.
+* **verified**: built and exercised by tests that were run.
+* **implemented**: built, not yet exercised.
+* **experimental**: a throwaway experiment, not product code.
+* **incomplete**: partly built.
+* **blocked**.
+* **not started**.
+
+## Core product status against the complete register (review of 2026-10-22)
+
+The action runner and approval protocol received most of the recent effort. The table below shows where the core
+product actually stands, so that work does not hide what is missing.
+
+| Area | State | What exists | What is missing |
+|---|---|---|---|
+| Ingestion | **verified core, fixture-tested sources** | Fenced, resumable import and API-sync pipeline; coverage rules; quarantine; replay safety. Trivy and SARIF use real tool output; Tenable and Azure Resource Graph use synthetic data and fakes | Webhooks; Defender and AWS; 13 catalogue sources; no source validated against a live service |
+| Asset context | **verified (incomplete scope)** | Strong and weak identity; review candidates; immutable versions with digests; business context from source tags and user assertions with effective dates (0012) | Merge and split execution; asset relationships and exposure paths; CMDB import |
+| Investigation | **not started** | Analysts record assessments with limitations and evidence by hand | All of Phase C: evidence snapshots, tool and model gateways, claims, schema-checked model output, adversarial suite (INVS-01..12, A05, A06) |
+| Prioritisation | **verified (deterministic part)** | Versioned priority policy with independent publishing; apply command from explicit inputs, with conservative substitution recorded as limitations; recorded override; history keeps policy versions | Impact preview; override expiry and second approver; reachability and threat-intelligence inputs; any AI assistance (none exists) |
+| Ownership | **verified** | Versioned rules on explicit context; unresolved queue; append-only history with overrides; re-routing when inputs change; no authority conferred | CMDB-sourced ownership; owner notifications |
+| SLA | **verified (provisional targets)** | Separate triage and remediation clocks; pause on deferral; revise-not-reset on priority change; breach recorded once; accepted risk never counted as met | Business-hours calendars; other pause reasons; escalation delivery |
+| Reporting | **verified (exposure summary, evidence packages)** | As-of reproducible snapshots; separate denominators; coverage, completeness and freshness per source; explicit unknowns; classification-aware auditor packages | Case membership lists in snapshots; framework mappings; GRC attestations; portfolio views; performance at volume |
+| User interface | **not started** | None. Every journey is exercised over the HTTP API only | ARC-05 and all UI parts of J01 to J10 |
+| Enterprise authentication | **not started** | Development token authentication with a generated key; JWKS-URI support in code | OIDC SSO integration, IdP tests and a revocation strategy (AUTHZ-14) |
+
+Register counts (262 rows with an ID; the integration catalogue is listed separately):
+
+| Status | Now | Previous checkpoint |
+|---|---|---|
+| verified | 133 | 115 |
+| implementing | 56 | 47 |
+| implemented_unverified | 2 | 2 |
+| planned | 70 | 84 |
+| blocked | 1 | 1 |
+
+Integration catalogue: 7 fixture-tested, 13 planned, none sandbox-validated or production-supported.
 
 ## Phase A: Foundation and recovery contracts
 
 | Item | State | Evidence / gap |
 |---|---|---|
 | Repository, layout, design inputs preserved | verified | ADR 0001; commit 6ef0e0d holds the archive unmodified |
-| Cluster role provisioning, ledgered migrations | verified | Fresh cluster, two databases, re-migration, edited-checksum rejection (VERIFICATION.md run 1) |
-| Tenancy schema: tenants, scopes, memberships, roles, bindings, delegation limits | verified | iso::, cases:: tests |
-| Transaction-bound tenant context, forced RLS, composite FKs | verified | ADR 0002; iso:: tests |
+| Cluster role provisioning, ledgered migrations | verified | Fresh cluster, two databases, re-migration, edited-checksum rejection (every verification run) |
+| Tenancy, scoped permissions, hierarchy, expiry, revocation, delegation, emergency access | verified | iso::, cases::, unit:: |
+| Transaction-bound tenant context, forced RLS, composite FKs | verified | ADR 0002; iso:: |
 | Authentication | **incomplete** | Development token authentication verified; **production enterprise OIDC/SSO not implemented** (ADR 0008) |
-| Scoped permissions, hierarchy, expiry, revocation, delegation rules, emergency access | verified | unit::, cases::test_tenant_admin..., ::test_permission_scope... |
-| Case commands with optimistic concurrency and DB guards | verified | cases:: (27 tests), iso::test_direct_sql... |
-| Atomic audit, events and outbox; leased relay; inbox dedupe | verified | B12/A19 tests, evo::test_outbox..., ::test_concurrent_relays... |
+| Case commands with optimistic concurrency and DB guards (incl. R7) | verified | cases::, r7::, iso::test_direct_sql... |
+| Atomic audit, events and outbox; leased relay; inbox dedupe | verified | B12/A19 tests, evo:: |
 | Evidence upload, finalisation, classified audited reads, tamper detection | verified | evo::, s3:: |
-| HTTP API (/api/v1) | verified for implemented endpoints | api:: tests and Compose smoke |
-| Compose single-host install | **incomplete** | PostgreSQL, SeaweedFS, init, API and job worker verified by fresh-install smoke; UI and real IdP not included |
-| Workflow engine decision (ADR 0006) | **accepted** | PostgreSQL-backed runner chosen on the project owner's "Proceed"; Temporal is the named alternative with revisit triggers |
-| Durable job runner `axiom.jobs` | **verified (single-effect jobs)**; operations API, metrics and CI added (see Phase D and ADR 0006 condition table) | job::* (24 tests incl. real SIGKILL and pg_dump/pg_restore drill), mutation-check log; leases capped at step deadline, claim counter dead-letters poison jobs, fenced results, per-tenant cap, version pinning and migration, cancellation, operator tooling, effect gate with intents, lookup-before-create, operator parking and restore detection. **Not built:** an operations UI, hosted CI execution, multi-step workflows, cancellation after an external call has started |
-| CI pipeline | not started | DEP-08 |
-| Phase A ADRs (workflow engine, isolation, evidence retention) | incomplete | 0002, 0005 and 0006 (accepted) written; retention rules not yet decided |
-
-**Phase A gate** (Plan 8): tenant isolation tests pass (met); audit failures roll back commands (met); object
-finalisation is safe (met for API-streamed uploads); workflow survives crash/restart and approval waiting without
-duplicate action (**met for single-effect jobs with a fake integration**: job::test_sigkill_after_effect_before_outcome_recorded,
-job::test_wait_then_done; approval records themselves are Phase D, so approval waiting is shown with `Wait`, not real approvals).
+| HTTP API (/api/v1) | verified for implemented endpoints | api::, act_api::, jrn::, Compose smoke |
+| Compose single-host install | **incomplete** | PostgreSQL, SeaweedFS, init, API and job worker; no UI and no real IdP |
+| Durable job runner (ADR 0006, accepted, provisional) | verified (single-effect jobs) | job::*, metrics, operations API; no operations UI, no multi-step workflows |
+| CI pipeline | **incomplete** | `scripts/ci/run.sh` run locally on a clean clone of the exact commit; GitHub workflow pinned to verified action commits; **never run on a hosted service** |
 
 ## Phase B: Ingestion and inventory - incomplete (core verified)
 
 | Item | State | Evidence / gap |
 |---|---|---|
-| Import pipeline: runs, fenced page commits, resume, replay safety | verified | ing:: tests incl. real SIGKILL resume; ADR 0009 |
-| Original evidence preservation and re-verification | verified | ing::test_tampered_original_fails_the_run |
-| Source identities, observations, occurrence history | verified | ing::test_replayed_import..., ::test_partial_scan... |
-| Quarantine and partial-import coverage | verified | ing::, sync::, API quarantine listing |
-| Asset correlation with explicit uncertainty (strong/weak identifiers, candidates, review decisions) | verified | strong conflicts and weak overlaps; merge/split execution **not built** |
-| Case correlation and recurrence reopening | verified | ing::test_recurrence_after_verified_closure_reopens |
-| Trivy JSON | verified at **fixture-tested** level | real Trivy 0.76.1 output |
-| Generic SARIF 2.1.0 | verified at **fixture-tested** level | real Trivy SARIF + synthetic; real CodeQL/Semgrep not tested |
-| Tenable export (parser + API client + sync) | verified at **fixture-tested** level | synthetic chunks, local fake API; **no live Tenable validation** |
-| Azure Resource Graph context (client + sync + tag context) | verified at **fixture-tested** level | synthetic pages, local fake API; **no live Azure validation**; production credential resolution (Key Vault / workload identity) not built |
-| Connections with secret references; checkpoints after complete runs | verified | sync:: tests |
-| Ingestion dispatch | verified | run requests enqueue an `ingestion.run` job in the same transaction; generic worker `axiom.workers.jobs` (Compose `job-worker`); ingjob::* tests; interim dispatcher removed |
-| Scheduled risk-expiry sweep | verified (scheduling) | one `cases.risk_expiry_sweep` job per tenant per hour bucket (ingjob::test_risk_expiry_sweep_is_scheduled_once...); expiry behaviour itself: cases::test_risk_acceptance_limits_owner_and_expiry_reopens; notification delivery not built |
-| API: imports, runs, quarantine, connections, sync, adapters, identity candidates, asset view | verified | api:: tests, Compose smoke |
-| Webhooks, connector health/freshness metrics, connector operations UI | not started | ING-08, ING-10 |
-| Defender for Cloud, AWS inventory and other Phase E connectors | not started | catalogue lists them as planned |
+| Import pipeline, resume, replay safety, coverage, quarantine | verified | ing::, sync::, ingjob:: (ADR 0009) |
+| Asset correlation with explicit uncertainty | verified | Merge and split execution **not built** |
+| Business context: source tags and user assertions | verified | sync::, ppo::, jrn:: |
+| Trivy JSON, SARIF 2.1.0 | **fixture-tested** | Real Trivy 0.76.1 output; real CodeQL and Semgrep output not tested |
+| Tenable export, Azure Resource Graph | **fixture-tested** | Synthetic data, local fakes; no live validation |
+| Webhooks, connector health metrics and UI | not started | Freshness now appears in reports (ING-10 partial) |
 
-**Phase B gate** (Plan 8): repeat import is stable (met); partial ingestion is visible (met); ambiguous assets stay
-separate (met for weak overlaps); live access validates advertised API operations (**not met**: no vendor accounts,
-so no adapter is advertised beyond fixture-tested).
+**Phase B gate:**
+* Repeat import is stable: met.
+* Partial ingestion is visible: met.
+* Ambiguous assets stay separate: met.
+* Live access validates the advertised operations: **not met**, because there are no vendor accounts.
 
-## Phase C: Investigation and prioritisation - not started
-## Phase D: Remediation and GRC lifecycle - incomplete (action protocol and risk flow verified)
+## Phase C: Investigation and prioritisation - incomplete
 
 | Item | State | Evidence / gap |
 |---|---|---|
-| Action proposals (immutable versions, DB-computed binding digest, preconditions, expiry) | verified | act::* (ADR 0010) |
-| Approvals bound to version and digest; SoD in service and DB; expiry; use counts; revocation | verified | act::*, mutation checks |
-| Pre-execution re-check (approver and requester authority, membership, revocation, preconditions, connection) | verified | act::test_revocation..., ::test_approver_losing_membership..., ::test_material_change... |
-| Transactional use reservation; uses returned only if never attempted | verified | act::test_concurrent_reservations..., ::test_a_use_is_never_returned... |
-| API idempotency keys (required on execution) | verified | act::test_idempotency..., act_api:: |
-| Effect gate: capability-based repeat rule, race-safe first attempt, lost-ack and stale-worker handling | verified against fakes | act::test_lost_ack..., ::test_stale_worker_already_past_the_boundary[4 variants], ::test_two_jobs_racing..., ::test_concurrent_workers_many_executions_no_duplicates |
-| Jira-style ticket integration | **fixture-tested** | local fake only; not Jira support |
-| Operator reconciliation (adopt / not applied / abandon), preserves approvals, audited | verified | act::test_lost_ack_with_lagging_search..., ::test_operator_actions_are_audited..., act_api:: |
-| Two-step risk acceptance: request, independent authorisation, reject, withdraw, renew, reassessment notices, lapse | verified | risk2::*, act_api::test_risk_request..., defaults D-RISK-1 |
-| R7 return to review (approved with conditions) | verified | r7::* incl. database backstops; Specification S 4 amended |
-| Per-effect-class propose/approve/execute permissions | verified | act::test_weaker_class_permissions_never_authorise_a_stronger_effect |
-| ServiceNow and GitHub Issues ticket integrations | **fixture-tested** | wf::* against local fakes only |
-| Pull requests, production change | not started | production change disabled by design |
-| Inbound ticket synchronisation (polling) | verified | track::*, wf::test_externally_closed_ticket...; webhooks not built |
-| SLA timers | verified | track::test_sla_lifecycle; defaults D-SLA-1 |
-| Immutable report snapshots and JSON/CSV exports | verified (exposure summary only) | track::*, act_api::test_reports_sla_and_ticket_state_over_http |
-| Ownership routing, evidence packages, framework mappings, portfolio reports | not started | |
+| Versioned policies (priority, ownership, SLA, freshness) with independent publishing | verified | ppo::test_publishing_needs_a_second_person_and_supersedes (service and DB) |
+| Deterministic prioritisation command and recorded override | verified | ppo::, jrn::; direct database priority injection removed from tests |
+| Investigation workspace, tool and model gateways, claims, AI analysis | **not started** | INVS-01..12; A05, A06 |
+| Priority impact preview, override expiry | not started | PRI-05, PRI-06 |
 
-**Phase D gate** (Plan 8): ingestion through approved ticket (**met against the fake tracker only**), deployed fix
-verification and closure (met in case tests), recurrence (met), unknown action outcome reconciles safely (met against
-fakes; see ADR 0010 for the exact guarantee and its limits).
+## Phase D: Remediation and GRC lifecycle - incomplete (action, risk, ownership, SLA, reporting verified)
+
+| Item | State | Evidence / gap |
+|---|---|---|
+| Action proposals, approvals, reservations, idempotency, effect gate, reconciliation | verified against fakes | act::, act_api::, wf:: (ADR 0010) |
+| Jira-style, ServiceNow, GitHub Issues ticket integrations | **fixture-tested** | Local fakes only |
+| Two-step risk acceptance, R7, per-class permissions | verified | risk2::, r7::, act:: |
+| Inbound ticket synchronisation (polling) | verified | track::, wf::; webhooks not built |
+| Ownership routing | verified | ppo:: (ADR 0011) |
+| SLA timers v2 | verified | sla::; targets provisional (D-SLA-2) |
+| Report snapshots (as-of, coverage, freshness, unknowns) and exports | verified | rpt::, track::, jrn:: |
+| Auditor evidence packages, classification-aware | verified (API) | rpt::test_evidence_package..., jrn:: |
+| Approved ticket automatically advancing the case | not built by design so far | The owner records the ticket as external work (CASE-07) |
+| Pull requests, production change | not started | Production change disabled by design |
+| Framework mappings, portfolio reports, attestations | not started | RPT-04, RPT-07, RPT-08 |
+
+**Phase D gate** (Plan 8). The journey test (jrn::) runs over HTTP and covers:
+* ingestion of real scanner output;
+* context and ownership;
+* versioned priority;
+* an approved ticket in the **fake** tracker;
+* external status;
+* verification of the deployed digest;
+* closure;
+* a report with its coverage limits.
+
+The redeploy record and the rescan evidence are supplied manually. Unknown action outcomes reconcile safely, which is
+met against fakes only.
+
 ## Phase E: Integration breadth - not started
-All 20 catalogue connectors are at "planned". None is fixture-tested, sandbox-validated or production-supported.
-## Phase F: Production operations and evaluation - not started
+Seven catalogue integrations are fixture-tested and 13 are planned. None is sandbox-validated or production-supported.
 
-## Capability summary
+## Phase F: Production operations and evaluation - not started (restore detection drills only)
 
-| Capability | State |
-|---|---|
-| Tenant isolation (DB, API, objects) | verified |
-| Tenant isolation (jobs) | verified (job::test_jobs_are_tenant_isolated; RLS on all job, action and risk tables) |
-| Tenant isolation (caches, search, exports, credentials, model requests) | not started (components do not exist) |
-| Case lifecycle and closure routes, including asset retirement | verified |
-| Request/authorise/renew risk acceptance | verified (thresholds are interim defaults) |
-| Approvals and external actions in product code | verified against fakes; Jira-style integration fixture-tested |
-| Restore detection | fingerprint plus write-once external witness (directory, S3 tested on SeaweedFS); acknowledgement never authorises replay; blind spots and storage assumptions documented (ADR 0010) |
-| Job operations (API, metrics, retry, reconciliation) and CI | verified locally; hosted CI never run |
-| Production SSO | not started |
-| Ingestion and correlation | verified core (see Phase B) |
-| Connectors | 4 fixture-tested, 16 planned, none sandbox-validated |
-| Investigation, model gateway, policy engine | not started |
-| Reporting, GRC, exports | not started |
-| Web UI | not started |
-| Helm, AKS, observability, backup/restore, retention | not started |
-| Evaluation dataset and benchmarks | not started; release thresholds blocked on a business decision |
+| Item | State | Evidence / gap |
+|---|---|---|
+| Restore detection: fingerprint and external witness | verified with documented blind spots | rw::, s3w::, drills; ADR 0010 |
+| Witness pruning invariant | verified (algorithm) | prune::, s3w:: (SeaweedFS); production storage unverified |
+| Backup procedure, RPO/RTO drill, Helm/AKS, traces, retention and deletion, evaluation | not started | |

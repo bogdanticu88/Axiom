@@ -280,14 +280,13 @@ def test_approver_losing_membership_before_execution_denies(env, admin_conn, wor
 
 
 def test_material_change_after_approval_denies(env, admin_conn):
-    """ACT-10. No prioritisation command exists yet (Phase C), so the priority change is injected directly as a
-    superuser with triggers disabled; this is fault injection, not a supported path."""
+    """ACT-10: a priority change after approval (through the supported override command) denies execution."""
     p = env.propose()
     a = env.approve(p)
     e = env.execute(p, a)
-    admin_conn.execute("SET session_replication_role = replica")
-    admin_conn.execute("UPDATE axiom.finding_cases SET priority = 'urgent' WHERE id = %s", (env.case["id"],))
-    admin_conn.execute("SET session_replication_role = origin")
+    from axiom.domains.cases import priority as prio
+    env.run(env.ctx_for("analyst2"), lambda s: prio.override(s.cases, env.case["id"], 0, priority="urgent",
+                                                              rationale="actively exploited per vendor advisory"))
     assert env.drive(admin_conn, e["job_id"])["state"] == "failed"
     assert "material change" in env.execution(e["id"])["outcome_detail"]["error"]
     assert env.fake.create_requests == 0

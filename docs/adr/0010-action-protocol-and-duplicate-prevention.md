@@ -101,7 +101,7 @@ the database has issued watermarks is also refused (lost witness). Acknowledgeme
 witness. Records are **write-once**: one file or object per watermark, named `<watermark:020d>-<worker>`; the high-water mark
 is the largest name in a listing. Concurrent writers, duplicate worker IDs and retried writes after a lost
 acknowledgement can therefore never lower it (an earlier per-worker overwrite design could, if two instances shared a
-worker ID). Older records are pruned below the newest only. Backends: a directory (fsync and atomic rename) or an S3
+worker ID). Older records are pruned as described in "Witness pruning" below. Backends: a directory (fsync and atomic rename) or an S3
 prefix. An unreadable witness makes effects retry later (nothing is sent); a failed write rolls back the transaction
 that would have marked the intent executing, so nothing is sent. Workers refuse to start when the witness is missing
 in production, malformed, or fails a write/list/delete probe (`unit::test_witness_config`).
@@ -123,8 +123,37 @@ read-only and no-list identities). For a production store the following must be 
   must be in a different backup domain (different volume, bucket or account, not part of the same snapshot policy).
 * A rollback that loses no effects (no attempt after the backup point) is not flagged, and needs no reconciliation.
 * Effects attempted without the witness configured are not covered. The worker refuses to start in production without
-  `AXIOM_RESTORE_WITNESS` (implemented in `workers/jobs.build_witness`; that refusal itself is not tested).
+  `AXIOM_RESTORE_WITNESS` (`workers/jobs.build_witness`; `unit::test_witness_config::test_production_without_witness_refuses`).
 * S3 witness: exercised against SeaweedFS only; see "Storage assumptions" above for what a production store must prove.
+
+### Witness pruning (audited 2026-10-22)
+**Who may delete.** Only a worker process, through its own witness client, and only records whose owner part of the
+name (`name[21:]`, after `<20 digits>-`) is *exactly* its own sanitised worker ID. The earlier implementation matched
+by suffix (`endswith("-w1")`), so worker `w1` could prune worker `a-w1`'s records; that is fixed and tested. Nothing
+else in the platform deletes witness records. Operators and storage administrators must not; the storage identity
+should allow delete only to the workers' identities (see "Storage assumptions").
+
+**What may be deleted.** Only records named in the listing the worker has just read, and only those ranked below the
+newest `KEEP` (3) of that worker's own records in that listing (`witness.prune_candidates`). A `KEEP` below 1 deletes
+nothing.
+
+**Invariant.** Every deleted record had at least `KEEP` records with a higher watermark in the listing it came from.
+The record holding the global maximum has no higher record, so it can never be deleted, whatever the listing:
+stale, partial, cut short by pagination, or missing the worker's own newest write. The high-water mark therefore
+never decreases, so pruning cannot remove the evidence needed to detect a rollback. Consequences:
+* interrupted pruning leaves extra records only;
+* workers that share an ID (misconfiguration), or whose raw IDs sanitise to the same string, may prune each other's
+  records, which still keeps the newest `KEEP` of that ID and never the maximum;
+* a pruning failure never fails the effect: the record was already written before the prune began.
+
+**Tests.** `unit::test_witness_pruning` - exact identity with suffix and prefix look-alikes (`w1`, `a-w1`, `w1-x`,
+`1`, `w`); candidate selection; a randomised model (40 seeds x 119 writes) with stale, paginated and arbitrary partial
+listings, shared IDs and interruptions after any number of deletes, asserting after every step that the maximum
+survives; 5 threads (two sharing an ID) writing and pruning one directory with a concurrent reader that never sees the
+mark decrease; an interrupted prune. `s3w::test_pruning_follows_every_page_and_matches_exact_identity` (page size 2)
+and `s3w::test_interrupted_prune_on_s3_never_lowers_the_mark` against SeaweedFS. Mutations that delete all own records
+or restore suffix matching are caught. These tests establish the algorithm; the storage properties listed below remain
+**unverified for any production store**.
 
 ### Support levels
 All three ticket integrations are **fixture-tested** against local fakes and have never met the real services:

@@ -20,6 +20,7 @@ from ..db import Database
 from ..domains.actions.jobs import ActionExecuteHandler
 from ..domains.actions.sync import KIND as TICKET_SYNC, TicketSyncHandler
 from ..domains.cases.jobs import KIND as RISK_SWEEP, RiskExpirySweepHandler
+from ..domains.cases.ownership import SWEEP_KIND as OWNERSHIP_SWEEP, OwnershipSweepHandler
 from ..domains.cases.sla import KIND as SLA_SWEEP, SlaSweepHandler
 from ..errors import ConfigurationError
 from ..domains.evidence.service import EvidenceService
@@ -40,11 +41,12 @@ def build_worker(db: Database, ingestion: IngestionService, sync: SyncService, *
                  action_handler: ActionExecuteHandler | None = None, witness=None,
                  ticket_sync: TicketSyncHandler | None = None) -> Worker:
     return Worker(db, [IngestionRunHandler(ingestion, sync), RiskExpirySweepHandler(),
-                       action_handler or ActionExecuteHandler(), ticket_sync or TicketSyncHandler(), SlaSweepHandler()],
+                       action_handler or ActionExecuteHandler(), ticket_sync or TicketSyncHandler(), SlaSweepHandler(), OwnershipSweepHandler()],
                   worker_id=worker_id, config=config,
                   schedules=[Schedule(RISK_SWEEP, 1, risk_sweep_interval),
                              Schedule(SLA_SWEEP, 1, SLA_SWEEP_INTERVAL_SECONDS),
-                             Schedule(TICKET_SYNC, 1, TICKET_SYNC_INTERVAL_SECONDS)],
+                             Schedule(TICKET_SYNC, 1, TICKET_SYNC_INTERVAL_SECONDS),
+                             Schedule(OWNERSHIP_SWEEP, 1, SLA_SWEEP_INTERVAL_SECONDS)],
                   witness=witness)
 
 

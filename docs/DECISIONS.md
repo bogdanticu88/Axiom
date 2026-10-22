@@ -15,7 +15,8 @@ completeness.
 | [0007](adr/0007-dependency-pinning.md) | Dependency pinning | accepted | uv lock with cooldown; digest-pinned images |
 | [0008](adr/0008-authentication.md) | Authentication | accepted for development | Dev token auth only; production SSO is a tracked gap |
 | [0009](adr/0009-ingestion-pipeline.md) | Ingestion pipeline, source identity, asset correlation | accepted for Phase B | Fenced page commits, coverage rules, strong/weak identifiers, no automatic merges |
-| [0010](adr/0010-action-protocol-and-duplicate-prevention.md) | Action protocol, duplicate prevention, restore detection | accepted | DB-computed proposal digests; approvals bound to version and digest; locked reservations; capability-based effect gate (no repeat without provider dedupe or fencing); external restore witness |
+| [0010](adr/0010-action-protocol-and-duplicate-prevention.md) | Action protocol, duplicate prevention, restore detection | accepted | DB-computed proposal digests; approvals bound to version and digest; locked reservations; capability-based effect gate (no repeat without provider dedupe or fencing); external restore witness; audited pruning invariant |
+| [0011](adr/0011-policies-ownership-sla-and-reporting.md) | Policies, ownership routing, SLA clocks, report semantics | accepted (thresholds provisional) | Versioned policies with independent publishing; deterministic priority with recorded limitations; rule-based ownership with unresolved queue and no authority; triage vs remediation clocks, revise-not-reset; as-of reproducible reports with per-source coverage and freshness; classification-aware evidence packages |
 
 ## Proposed specification changes awaiting approval
 | Ref | Proposal | Why | Status |
@@ -27,8 +28,11 @@ completeness.
 |---|---|---|---|
 | D-RISK-1 | Independent risk authorisation for pending/urgent/high priority or more than 90 days; maximum 365 days; requests lapse after 14 days; reassessment notice 14 days before expiry | `RiskPolicy` (stored with each request) | Approval thresholds (Specification S 17) |
 | D-ACT-1 | `ticket.create` approvals: at most 3 uses; proposals expire within 30 days | `domains/actions/model.py` | Approval thresholds (Specification S 17) |
-| D-SLA-1 | SLA targets from case creation (or reopening): urgent 7 days, high 30, medium 90, low 180, unprioritised (pending) 14; deferral does not pause | `domains/cases/sla.py` (stored with each timer) | SLA policy (Specification S 17) |
-| D-SYNC-1 | Inbound ticket polling and SLA sweeps every 15 minutes per tenant | `workers/jobs.py` | Operational targets |
+| D-SLA-1 | Superseded by D-SLA-2 (migration 0012 replaced the single SLA timer) | - | - |
+| D-SLA-2 | Triage 7 days from case creation or reopening; remediation from first prioritisation: urgent 7 days, high 30, medium 90, low 180; deferral pauses the remediation clock; calendar days, no business hours | Built-in default in `domains/policies/service.py`, replaceable by a published `sla` policy; recorded on every timer | SLA policy (Specification S 17) |
+| D-PRIO-1 | Priority matrix (source severity x asserted criticality) with unknown severity and unknown criticality treated as high | Built-in default; replaceable by a published `priority` policy | Prioritisation policy (Specification S 17) |
+| D-FRESH-1 | Source freshness: default 168 h; Tenable and Azure Resource Graph 48 h; Trivy and SARIF 336 h | Built-in default; replaceable by a published `freshness` policy | Operational targets per source |
+| D-SYNC-1 | Inbound ticket polling, SLA and ownership sweeps every 15 minutes per tenant | `workers/jobs.py` | Operational targets |
 
 ## Business decisions still open (from the specification, section 17)
 Product name and licence; supported vendor editions and test accounts; approved model providers and offline-model

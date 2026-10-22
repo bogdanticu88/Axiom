@@ -13,7 +13,21 @@ with it. The witness keeps the highest effect watermark outside the database:
 Records are **write-once**: one object or file per watermark, named ``<watermark:020d>-<worker>``. The high-water
 mark is the largest name in a listing, so concurrent writers, duplicate worker IDs, retried writes after a lost
 acknowledgement and partial failures can never lower it, and no read-modify-write or conditional write is needed.
-Older records are pruned best-effort (only records below the newest are deleted, so pruning cannot lower the mark).
+Older records are pruned best-effort; see "Pruning" below and ADR 0010 for the invariant.
+
+Pruning
+-------
+* **Who deletes**: a worker deletes only records whose parsed owner (``name[21:]``) *equals* its own sanitised ID,
+  never another worker's (an exact comparison, so ``w1`` cannot prune ``a-w1``).
+* **What**: only records named in the listing it has just read, and only those ranked below the newest ``KEEP`` of
+  its own records in that listing.
+* **Invariant**: every deleted record had at least ``KEEP`` (>= 1) records with a *higher* watermark present in the
+  listing it came from. The record holding the global maximum has no higher record, so no worker, listing (stale,
+  partial or paginated) or interleaving can delete it; the mark therefore never decreases. An interrupted prune only
+  leaves extra records. Workers that share an ID (a misconfiguration) may prune each other's records, which still
+  keeps the newest ``KEEP`` of that ID and never the maximum.
+* Sanitisation maps characters outside ``[A-Za-z0-9._-]`` to ``_``, so distinct raw IDs can collide; the effect is
+  the shared-ID case above.
 
 The witness only helps if it is **not** restored together with the database: keep it in a different backup domain.
 Its guarantees also depend on the storage: durable writes, and a listing that shows a completed write
@@ -45,6 +59,16 @@ def _record_name(watermark: int, worker: str) -> str:
 def _parse(name: str) -> int | None:
     m = _NAME.match(name)
     return int(m.group(1)) if m else None
+
+
+def _owner(name: str) -> str | None:
+    return name[21:] if _NAME.match(name) else None
+
+
+def prune_candidates(names: list[str], worker: str, keep: int = KEEP) -> list[str]:
+    """Record names this worker may delete from a listing (see "Pruning")."""
+    mine = sorted((n for n in names if _owner(n) == worker), key=_parse)
+    return mine[:-keep] if keep >= 1 else []
 
 
 class FileWitness:
@@ -86,17 +110,22 @@ class FileWitness:
                 os.close(dir_fd)
             self._prune()
 
+    def _list(self) -> list[str]:
+        return [p.name for p in self.dir.iterdir()]
+
+    def _delete(self, name: str) -> None:
+        (self.dir / name).unlink()
+
     def _prune(self) -> None:
-        mine = sorted(p for p in self.dir.iterdir() if p.name.endswith(f"-{self.worker}") and _parse(p.name) is not None)
-        for p in mine[:-KEEP]:
-            try:
-                p.unlink()
-            except OSError:
-                pass
+        try:
+            for name in prune_candidates(self._list(), self.worker):
+                self._delete(name)
+        except OSError:
+            pass          # best effort: an interrupted prune only leaves extra records
 
     def high_water(self) -> int | None:
         try:
-            values = [v for p in self.dir.iterdir() if (v := _parse(p.name)) is not None]
+            values = [v for n in self._list() if (v := _parse(n)) is not None]
         except OSError as exc:
             raise WitnessUnavailable(f"witness directory unreadable: {exc}") from exc
         return max(values) if values else None
@@ -105,8 +134,8 @@ class FileWitness:
 class S3Witness:
     """Write-once objects under a prefix in an S3-compatible bucket outside the database backup domain."""
 
-    def __init__(self, client, bucket: str, prefix: str, worker_id: str):
-        self.client, self.bucket = client, bucket
+    def __init__(self, client, bucket: str, prefix: str, worker_id: str, *, page_size: int | None = None):
+        self.client, self.bucket, self.page_size = client, bucket, page_size
         self.prefix = prefix.strip("/") + "/"
         self.worker = _SAFE.sub("_", worker_id)
         self._lock = threading.Lock()
@@ -130,24 +159,29 @@ class S3Witness:
                 raise WitnessUnavailable(f"could not record watermark {watermark}: {exc}") from exc
             self._prune()
 
-    def _keys(self) -> list[str]:
-        keys = []
-        for page in self.client.get_paginator("list_objects_v2").paginate(Bucket=self.bucket, Prefix=self.prefix):
-            keys += [o["Key"] for o in page.get("Contents", [])]
-        return keys
+    def _list(self) -> list[str]:
+        """Names (without the prefix) of every object under the prefix, following all pages. Keys in a deeper
+        "directory" (e.g. the probe) never parse as records."""
+        names = []
+        cfg = {"PageSize": self.page_size} if self.page_size else {}
+        for page in self.client.get_paginator("list_objects_v2").paginate(Bucket=self.bucket, Prefix=self.prefix,
+                                                                          PaginationConfig=cfg):
+            names += [o["Key"][len(self.prefix):] for o in page.get("Contents", [])]
+        return names
+
+    def _delete(self, name: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=self.prefix + name)
 
     def _prune(self) -> None:
         try:
-            mine = sorted(k for k in self._keys() if k.endswith(f"-{self.worker}")
-                          and _parse(k[len(self.prefix):]) is not None)
-            for k in mine[:-KEEP]:
-                self.client.delete_object(Bucket=self.bucket, Key=k)
+            for name in prune_candidates(self._list(), self.worker):
+                self._delete(name)
         except Exception:  # noqa: BLE001 - pruning is best effort and can never lower the mark
             pass
 
     def high_water(self) -> int | None:
         try:
-            values = [v for k in self._keys() if (v := _parse(k[len(self.prefix):])) is not None]
+            values = [v for n in self._list() if (v := _parse(n)) is not None]
         except Exception as exc:  # noqa: BLE001
             raise WitnessUnavailable(f"S3 witness unreadable: {exc}") from exc
         return max(values) if values else None
