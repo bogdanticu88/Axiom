@@ -171,4 +171,25 @@ def test_production_sso_settings_are_checked():
         with pytest.raises(ConfigurationError):
             Settings(**{**base, **bad}).validate_for_runtime()
     Settings(**{**base, "oidc_issuer": "https://idp.example"}).validate_for_runtime()
+    # checkpoint 6: further fail-closed checks
+    for bad in ({"oidc_issuer": "https://idp.example", "oidc_metadata_url": "http://idp.internal/.well-known/x"},
+                {"oidc_issuer": "https://idp.example", "oidc_post_logout_redirect_uri": "http://axiom.example/ui/"},
+                {"ui_dist_dir": "/app/ui"},                              # a UI without sign-in
+                {"trusted_issuers_json": "[]"},                          # no issuer at all
+                {"oidc_issuer": "https://idp.example", "oidc_client_secret_ref": None}):
+        with pytest.raises(ConfigurationError):
+            Settings(**{**base, **bad}).validate_for_runtime()
     _ = os
+
+
+def test_unresolvable_client_secret_stops_start_up(db, issuer, monkeypatch):
+    from axiom.api.app import create_app
+    kw = dict(database_dsn="postgresql://unused", trusted_issuers_json=json.dumps(
+        [{"issuer": issuer.issuer, "audience": issuer.audience, "jwks": issuer.jwks()}]),
+        oidc_issuer="http://127.0.0.1:1/realms/x", oidc_client_id="ui",
+        oidc_client_secret_ref="secretref:env/AXIOM_TEST_SECRET_THAT_IS_NOT_SET", oidc_redirect_uri="http://127.0.0.1/cb")
+    monkeypatch.delenv("AXIOM_TEST_SECRET_THAT_IS_NOT_SET", raising=False)
+    with pytest.raises(ConfigurationError, match="did not resolve"):
+        create_app(Settings(env="test", **kw), db=db)
+    monkeypatch.setenv("AXIOM_TEST_SECRET_THAT_IS_NOT_SET", "value")
+    create_app(Settings(env="test", **kw), db=db)                       # resolves: starts (no IdP call at start)

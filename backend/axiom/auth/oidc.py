@@ -1,8 +1,10 @@
 """Enterprise sign-in for the analyst UI: OpenID Connect authorization code flow with PKCE (ADR 0013).
 
-Libraries: Authlib 1.8 (``authlib.integrations.httpx_client.OAuth2Client``) builds the authorization request with an
-S256 code challenge and performs the code exchange; joserfc 1.7 verifies the ID token signature and claims (Authlib's
-own ``authlib.jose`` is deprecated in favour of joserfc).
+Libraries: Authlib's framework-independent OAuth 2 helpers (``authlib.oauth2.rfc7636.create_s256_code_challenge``,
+``authlib.common.urls.add_params_to_uri``) build the authorization request; the code exchange is one form POST made
+here with httpx, authenticated with ``client_secret_basic`` (RFC 6749 section 2.3.1); joserfc 1.7 verifies the ID
+token signature and claims. Checkpoint 6 removed ``authlib.integrations.httpx_client.OAuth2Client``: since Authlib
+1.8.0 that integration is built on ``httpx2`` and its fallback to ``httpx`` is deprecated and due for removal.
 
 Checks, in order, on the callback:
 
@@ -22,15 +24,20 @@ Checks, in order, on the callback:
    refused.
 
 Tenant membership and permissions are not stored in the session; every request re-checks them.
-The discovery document's ``issuer`` must equal the configured issuer (mix-up defence).
+The discovery document's ``issuer`` must equal the configured issuer (mix-up defence). ``metadata_url`` lets the
+server fetch discovery from an internal address (for example a container network name) while the issuer, which the
+browser and the ID token use, stays the public URL; the issuer check is unchanged.
 """
 from __future__ import annotations
 
+import base64
 import time
 from dataclasses import dataclass
+from urllib.parse import quote
 
 import httpx
-from authlib.integrations.httpx_client import OAuth2Client
+from authlib.common.urls import add_params_to_uri
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from joserfc import jwt
 from joserfc.errors import JoseError
 from joserfc.jwk import KeySet
@@ -51,8 +58,9 @@ class IdTokenClaims:
 class OidcClient:
     def __init__(self, *, issuer: str, client_id: str, client_secret: callable, redirect_uri: str,
                  scopes: str = "openid profile email", transport: httpx.BaseTransport | None = None,
-                 leeway: int = 30, cache_seconds: int = 300):
+                 leeway: int = 30, cache_seconds: int = 300, metadata_url: str | None = None):
         self.issuer, self.client_id, self._secret = issuer.rstrip("/"), client_id, client_secret
+        self.metadata_url = metadata_url or f"{self.issuer}/.well-known/openid-configuration"
         self.redirect_uri, self.scopes, self.transport, self.leeway = redirect_uri, scopes, transport, leeway
         self._meta: tuple[float, dict] | None = None
         self._jwks: tuple[float, KeySet] | None = None
@@ -65,7 +73,7 @@ class OidcClient:
         if self._meta and time.monotonic() - self._meta[0] < self._cache:
             return self._meta[1]
         with self._http() as c:
-            r = c.get(f"{self.issuer}/.well-known/openid-configuration")
+            r = c.get(self.metadata_url)
         if r.status_code != 200:
             raise ConfigurationError(f"OIDC discovery failed: HTTP {r.status_code}")
         meta = r.json()
@@ -88,27 +96,38 @@ class OidcClient:
         self._jwks = (time.monotonic(), keys)
         return keys
 
-    def _oauth(self) -> OAuth2Client:
-        return OAuth2Client(client_id=self.client_id, client_secret=self._secret(), scope=self.scopes,
-                            redirect_uri=self.redirect_uri, code_challenge_method="S256",
-                            token_endpoint_auth_method="client_secret_basic", transport=self.transport, timeout=10)
-
     def authorization_url(self, *, state: str, nonce: str, code_verifier: str) -> str:
-        with self._oauth() as client:
-            url, _ = client.create_authorization_url(self.metadata()["authorization_endpoint"], state=state,
-                                                     nonce=nonce, code_verifier=code_verifier)
-        return url
+        params = [("response_type", "code"), ("client_id", self.client_id), ("redirect_uri", self.redirect_uri),
+                  ("scope", self.scopes), ("state", state), ("nonce", nonce),
+                  ("code_challenge", create_s256_code_challenge(code_verifier)), ("code_challenge_method", "S256")]
+        return add_params_to_uri(self.metadata()["authorization_endpoint"], params)
 
     def exchange(self, code: str, code_verifier: str) -> dict:
-        with self._oauth() as client:
+        # client_secret_basic: form-urlencoded client id and secret, then Base64 (RFC 6749 section 2.3.1)
+        basic = base64.b64encode(f"{quote(self.client_id, safe='')}:{quote(self._secret(), safe='')}".encode()).decode()
+        try:
+            with self._http() as c:
+                r = c.post(self.metadata()["token_endpoint"],
+                           data={"grant_type": "authorization_code", "code": code, "redirect_uri": self.redirect_uri,
+                                 "code_verifier": code_verifier},
+                           headers={"Authorization": f"Basic {basic}", "Accept": "application/json"})
+        except httpx.HTTPError as exc:
+            raise Unauthenticated(f"code exchange failed: {type(exc).__name__}") from exc
+        if r.status_code != 200:
             try:
-                token = client.fetch_token(self.metadata()["token_endpoint"], grant_type="authorization_code",
-                                           code=code, code_verifier=code_verifier)
-            except Exception as exc:  # noqa: BLE001 - provider and transport errors alike refuse the login
-                raise Unauthenticated(f"code exchange refused: {type(exc).__name__}") from exc
-        if not token.get("id_token"):
+                reason = str(r.json().get("error", ""))[:60]
+            except (ValueError, AttributeError):
+                reason = ""
+            raise Unauthenticated(f"code exchange refused: HTTP {r.status_code} {reason}".rstrip())
+        try:
+            token = r.json()
+        except ValueError as exc:
+            raise Unauthenticated("code exchange returned no JSON") from exc
+        if not isinstance(token, dict) or not token.get("id_token"):
             raise Unauthenticated("no ID token returned")
-        return dict(token)
+        if str(token.get("token_type", "")).lower() != "bearer":
+            raise Unauthenticated("unexpected token type")
+        return token
 
     def validate_id_token(self, id_token: str, *, nonce: str) -> IdTokenClaims:
         try:

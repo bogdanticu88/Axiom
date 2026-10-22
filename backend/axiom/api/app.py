@@ -86,9 +86,11 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
         from ..auth.sessions import SessionService
         from ..ingestion.sync import EnvSecretResolver
         secret_ref = settings.oidc_client_secret_ref
+        EnvSecretResolver().resolve(secret_ref)      # fail at start-up, not at the first login, if it cannot resolve
         oidc = OidcClient(issuer=settings.oidc_issuer, client_id=settings.oidc_client_id,
                           client_secret=lambda: EnvSecretResolver().resolve(secret_ref),
-                          redirect_uri=settings.oidc_redirect_uri, scopes=settings.oidc_scopes)
+                          redirect_uri=settings.oidc_redirect_uri, scopes=settings.oidc_scopes,
+                          metadata_url=settings.oidc_metadata_url)
         sessions = SessionService(database, oidc, ttl_seconds=settings.ui_session_ttl_seconds,
                                   idle_seconds=settings.ui_session_idle_seconds)
 

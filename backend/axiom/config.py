@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     oidc_client_id: str | None = None
     oidc_client_secret_ref: str | None = None      # secretref:env/NAME (never the secret itself)
     oidc_redirect_uri: str | None = None
+    # Optional internal address of the discovery document (e.g. http://keycloak:8080/... inside Compose) when the
+    # public issuer URL is not reachable from the API container. The document's issuer must still equal oidc_issuer.
+    oidc_metadata_url: str | None = None
     oidc_scopes: str = "openid profile email"
     oidc_post_logout_redirect_uri: str | None = None
     ui_session_ttl_seconds: int = 8 * 3600
@@ -101,11 +104,15 @@ class Settings(BaseSettings):
             if self.object_store == "filesystem":
                 raise ConfigurationError("filesystem object store is not permitted in production")
             if self.oidc_issuer:
-                for name in ("oidc_issuer", "oidc_redirect_uri"):
-                    if not (getattr(self, name) or "").startswith("https://"):
+                for name in ("oidc_issuer", "oidc_redirect_uri", "oidc_metadata_url", "oidc_post_logout_redirect_uri"):
+                    value = getattr(self, name)
+                    if (value is not None or name in ("oidc_issuer", "oidc_redirect_uri")) \
+                            and not (value or "").startswith("https://"):
                         raise ConfigurationError(f"{name} must use HTTPS in production")
                 if not self.ui_cookie_secure:
                     raise ConfigurationError("UI session cookies must be Secure in production")
+            if self.ui_dist_dir and not self.oidc_issuer:
+                raise ConfigurationError("serving the analyst UI in production requires OIDC sign-in")
         if self.oidc_issuer and not (self.oidc_client_id and self.oidc_client_secret_ref and self.oidc_redirect_uri):
             raise ConfigurationError("OIDC sign-in needs client id, client secret reference and redirect URI")
         if self.oidc_client_secret_ref and not self.oidc_client_secret_ref.startswith("secretref:"):
