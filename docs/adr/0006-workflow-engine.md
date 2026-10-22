@@ -1,6 +1,7 @@
 # ADR 0006: Durable workflow engine
 
-Status: **accepted** (2026-10-22). The recommendation below was presented to the project owner, who replied "Proceed" at
+Status: **accepted, provisional** (2026-10-22). Evidence-based: it stays in force while the operating limits below
+hold and no switching criterion is met; each checkpoint re-states the evidence. The recommendation below was presented to the project owner, who replied "Proceed" at
 01:48 local time on 2026-10-22; that reply is recorded here as acceptance. The conditions in "Conditions before
 production effects rely on it" remain binding.
 
@@ -84,6 +85,23 @@ an idempotency key or fencing token, or be marked lookup-only with operator park
 | Metrics | done: `GET /api/v1/jobs/metrics` (tenant, `job.read`) and an opt-in Prometheus endpoint on the worker (`AXIOM_WORKER_METRICS_PORT`): jobs by kind and state, oldest due age, last-hour lease expiries, fenced refusals, parks, adoptions, attempts, denials, operator retries; per-process counters | job::test_worker_metrics_endpoint..., actions_api::test_parked_execution_reconciled_through_the_api |
 | Kill/fault suite in CI | **partly done**: `scripts/ci/run.sh` runs the full suite (real SIGKILL, restore drills, concurrency) on a fresh cluster, the physical snapshot drill and the Compose smoke; `.github/workflows/ci.yml` runs that script. Executed locally only; the hosted workflow has never run (nothing pushed) and its actions are tag-pinned, not SHA-pinned | VERIFICATION run 13 |
 | Integrations accept idempotency keys or fencing, or are lookup-only with parking | enforced by the `EffectAdapter` contract; no real integration exists yet | |
+
+## Operating limits (what has actually been exercised)
+| Dimension | Exercised so far | Not known |
+|---|---|---|
+| Concurrency | 4 worker threads x 12 action executions with no duplicate claims or effects; 8 concurrent reservation requests | Behaviour above that; no load test |
+| Tenants per pass | Tests run with a handful of tenants; a pass is O(tenants) (one transaction per tenant) | Pass latency at hundreds of tenants |
+| Job shape | Single-effect jobs, waits, retries, dead letters, operator retry | Multi-step workflows with compensation (not built) |
+| Effect watermark | One database sequence for the installation (no row contention) | Throughput limits of the witness store under load |
+| Scheduling | Per-tenant schedules bucketed by interval (risk 1 h, SLA and ticket sync 15 min) | Clock skew between workers beyond tests |
+| Recovery | Real SIGKILL, SIGSTOP-like holds, pg_dump/pg_restore, same-OID restore, physical snapshot rollback | Point-in-time recovery, replication failover |
+
+## Switching criteria (re-evaluate Temporal, or Temporal Cloud subject to residency and commercial review)
+* Any revisit trigger below occurs.
+* A pass over all tenants exceeds the scheduling interval of the shortest schedule (15 minutes) under normal load, or
+  per-tenant fairness cannot be kept without a cross-tenant claim path.
+* More than two runner defects per quarter that cause a lost decision or an unreconciled effect.
+* Phase C or later requires durable multi-step workflows that the single-step model would have to emulate.
 
 ## Revisit triggers (choose Temporal, or Temporal Cloud subject to residency and commercial review, if any occurs)
 * Investigation or remediation workflows need more than a few durable steps with compensation or fan-out.

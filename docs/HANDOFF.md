@@ -43,20 +43,30 @@ observability, backup/restore, retention; no connectors at any support level. Se
   plus `.github/workflows/ci.yml` (never run on a hosted service).
 * Restore detection: fingerprint plus external witness (`AXIOM_RESTORE_WITNESS=dir:...|s3:...`, required in production).
   Rolling back database and witness together is undetectable by design; keep the witness in another backup domain.
-* **R7 is still open** (route back from remediation_planned / remediating to review): awaiting the project owner's decision.
+* R7 was still open at this checkpoint; it was decided and implemented at the next one.
+
+## State after the R7 checkpoint
+* R7 approved (Option A with conditions) and implemented: `withdraw_remediation`, migration 0008, Specification S 4
+  amended, database backstops for the evidence and unresolved-effect conditions.
+* Per-effect-class action permissions (migration 0009); production.change and pull_request.create stay disabled.
+* Restore: write-once witness records (directory and S3), start-up probe and refusal, acknowledgement never
+  authorises replay (migration 0010). S3 tested against SeaweedFS only; production storage assumptions in ADR 0010.
+* Phase D tracking: inbound ticket polling, SLA timers (defaults D-SLA-1), immutable exposure snapshots, JSON/CSV
+  exports (migration 0011). ServiceNow and GitHub Issues ticket adapters: fixture-tested only.
+* GitHub Actions pinned to verified commit hashes (docs/ci-action-pins.md); hosted CI still never run.
 
 ## Next tasks (in order)
-1. On the R7 decision: implement or record the rejection (see the checkpoint report for options).
-2. Phase D remainder: inbound ticket status sync (ACT-09 negative path), SLA timers, ownership routing, immutable
-   report snapshots and GRC exports; per-effect-class approval permissions (ACT-08); expired idempotency-key cleanup.
-3. Workflow integrations beyond the fake: ServiceNow and GitHub adapters (fixture-tested first); a Jira Cloud sandbox
-   is needed before any Jira support claim.
-4. Operations: S3 witness backend test against SeaweedFS; operations UI; pin CI actions to verified SHAs and run CI on
-   a hosted service once a remote.
-5. Phase B remainder: merge/split execution (AST-03), webhooks (ING-08), connector health (ING-10), real CodeQL /
-   Semgrep SARIF fixtures, production secret resolution.
-6. Production SSO (AUTHZ-14). Phase C (investigation, prioritisation, policy engine), which also provides the
-   priority command the material-change test currently injects.
+1. Reporting depth: query versions, coverage and denominators in snapshots (RPT-01/02), evidence packages for
+   auditors (RPT-05, J08), export classification and expiry (RPT-06), webhook-based inbound ticket events (ING-08).
+2. Ownership routing and attestations (RPT-08, J03); per-class delegation limits for approvers.
+3. Sandbox validation of any workflow integration once a Jira Cloud site, ServiceNow developer
+   instance or GitHub org/app (needs explicit authorisation to connect).
+4. Witness on the intended production store: run `tests/integration/test_s3_witness.py` against it and record the
+   storage properties ADR 0010 lists.
+5. Phase B remainder (AST-03 merge/split, ING-08 webhooks, ING-10 connector health, real CodeQL/Semgrep SARIF,
+   production secret resolution); production SSO (AUTHZ-14); Phase C (which also supplies the priority command the
+   material-change and SLA tests currently inject).
+6. Hosted CI once a remote is authorised.
 
 ## Commands
 ```

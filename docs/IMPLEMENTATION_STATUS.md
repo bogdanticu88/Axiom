@@ -70,8 +70,14 @@ so no adapter is advertised beyond fixture-tested).
 | Jira-style ticket integration | **fixture-tested** | local fake only; not Jira support |
 | Operator reconciliation (adopt / not applied / abandon), preserves approvals, audited | verified | act::test_lost_ack_with_lagging_search..., ::test_operator_actions_are_audited..., act_api:: |
 | Two-step risk acceptance: request, independent authorisation, reject, withdraw, renew, reassessment notices, lapse | verified | risk2::*, act_api::test_risk_request..., defaults D-RISK-1 |
-| ServiceNow, GitHub, pull requests, production change | not started | production change disabled by design |
-| SLA timers, ownership routing, inbound ticket sync, immutable report snapshots, GRC exports | not started | |
+| R7 return to review (approved with conditions) | verified | r7::* incl. database backstops; Specification S 4 amended |
+| Per-effect-class propose/approve/execute permissions | verified | act::test_weaker_class_permissions_never_authorise_a_stronger_effect |
+| ServiceNow and GitHub Issues ticket integrations | **fixture-tested** | wf::* against local fakes only |
+| Pull requests, production change | not started | production change disabled by design |
+| Inbound ticket synchronisation (polling) | verified | track::*, wf::test_externally_closed_ticket...; webhooks not built |
+| SLA timers | verified | track::test_sla_lifecycle; defaults D-SLA-1 |
+| Immutable report snapshots and JSON/CSV exports | verified (exposure summary only) | track::*, act_api::test_reports_sla_and_ticket_state_over_http |
+| Ownership routing, evidence packages, framework mappings, portfolio reports | not started | |
 
 **Phase D gate** (Plan 8): ingestion through approved ticket (**met against the fake tracker only**), deployed fix
 verification and closure (met in case tests), recurrence (met), unknown action outcome reconciles safely (met against
@@ -90,7 +96,7 @@ All 20 catalogue connectors are at "planned". None is fixture-tested, sandbox-va
 | Case lifecycle and closure routes, including asset retirement | verified |
 | Request/authorise/renew risk acceptance | verified (thresholds are interim defaults) |
 | Approvals and external actions in product code | verified against fakes; Jira-style integration fixture-tested |
-| Restore detection | fingerprint plus external witness; blind spots tested and documented (ADR 0010) |
+| Restore detection | fingerprint plus write-once external witness (directory, S3 tested on SeaweedFS); acknowledgement never authorises replay; blind spots and storage assumptions documented (ADR 0010) |
 | Job operations (API, metrics, retry, reconciliation) and CI | verified locally; hosted CI never run |
 | Production SSO | not started |
 | Ingestion and correlation | verified core (see Phase B) |

@@ -56,9 +56,19 @@ retirement).
 * **Verifier role**: `verification.record` is held by analysts; the change reporter cannot verify or close.
 
 ### Open items (not silently changed)
-* **No route back** from `remediation_planned` or `remediating` to review when a plan is abandoned (R7). Proposed
-  specification change: allow `remediation_planned -> review_required` and `remediating -> review_required` with an
-  authorised decision. Awaiting approval; not implemented.
+* ~~No route back from remediation to review (R7).~~ **Decided 2026-10-22 by the project owner (Option A with conditions),
+  implemented in migration 0008 and `CaseService.withdraw_remediation`, and recorded in Specification S 4:**
+  * `remediation_planned -> review_required` through an authorised (`remediation.propose`), recorded
+    `remediation_withdrawal` decision with rationale;
+  * `remediating -> review_required` only when verified evidence (relation `supports`) establishes that no change was
+    deployed; the database guard on case events refuses it otherwise, even if the service check is bypassed;
+  * deployed, partially deployed or unknown changes go `remediating -> awaiting_verification` on an *abandoned*
+    remediation report (deployment state recorded; an unknown deployment has no target, so verification can only be
+    inconclusive). A failed check on an abandoned plan returns to review, not to remediating;
+  * neither route may bypass an execution that is prepared, executing or reconciling (service and database guard);
+  * tickets, approvals, consumed approval uses, action history and evidence are kept; nothing is closed or restored;
+  * open proposals for the case are withdrawn, and the case's `plan_epoch` advances; proposals carry the epoch as a
+    precondition, so a proposal from a superseded plan cannot execute even if it was created concurrently.
 * ~~Risk acceptance is single-step (R9).~~ **Resolved 2026-10-22:** request / authorise / reject / withdraw / renew /
   reassess is built (`domains/cases/risk.py`, migration 0007). Independent authorisation is required for pending,
   urgent or high priority and for durations over 90 days; these thresholds are **defaults pending the business

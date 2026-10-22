@@ -17,6 +17,8 @@ Test references are abbreviated: `cases::name` = tests/integration/test_cases.py
 `spike::` = experiments/workflow-spike/tests/test_scenarios.py. `job::` = tests/integration/test_jobs.py.
 `act::` = tests/integration/test_actions.py. `act_api::` = tests/integration/test_actions_api.py.
 `risk2::` = tests/integration/test_risk_two_step.py. `rw::` = tests/integration/test_restore_witness.py.
+`r7::` = tests/integration/test_r7_return_to_review.py. `track::` = tests/integration/test_tracking_reports.py.
+`wf::` = tests/integration/test_workflow_adapters.py. `s3w::` = tests/integration/test_s3_witness.py.
 `ingjob::` = tests/integration/test_ingestion_jobs.py.
 
 Last updated: 2026-10-22 (Phase B checkpoint).
@@ -28,10 +30,9 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 |---|---|---|
 | Authentication is **development token authentication** (generated key, inline JWKS). No production enterprise OIDC/SSO login, IdP integration test, revocation strategy or workload identity yet | AUTHZ-14, ADR 0008 | planned |
 | Job runner: no operations UI, no multi-step workflows; CI pipeline executed locally only (hosted workflow never run) | ARC-02, DEP-08, ADR 0006 | implementing |
-| Action protocol is fixture-tested only: the Jira-style integration has never met a real Jira; no other workflow integration exists | INT-15..17, ADR 0010 | fixture-tested |
-| Restore detection cannot see a rollback of the database **and** the witness together; S3 witness backend untested | ADR 0010 | documented limitation |
-| No route back from planned/remediating to review | R7, DECISIONS.md | awaiting decision |
-| Not built: webhooks, merge/split execution, Defender/AWS context (Phase B remainder), investigation and AI, prioritisation (C), ServiceNow and GitHub workflow adapters, inbound ticket status sync, reporting and GRC (D), UI, Helm/AKS, observability, backup/restore, retention and deletion (F), evaluation dataset | sections 8 to 17 | planned |
+| Action protocol is fixture-tested only: Jira-style, ServiceNow and GitHub Issues integrations have only met local fakes | INT-15..17, ADR 0010 | fixture-tested |
+| Restore detection cannot see a rollback of the database **and** the witness together; the S3 witness is tested against SeaweedFS only, and its guarantees depend on production storage properties not yet validated | ADR 0010 | documented limitation |
+| Not built: webhooks, merge/split execution, Defender/AWS context (Phase B remainder), investigation and AI, prioritisation (C), pull-request actions, webhooks for inbound ticket events, reporting beyond the exposure snapshot (coverage, freshness, framework mappings, evidence packages) and GRC (D), UI, Helm/AKS, observability, backup/restore, retention and deletion (F), evaluation dataset | sections 8 to 17 | planned |
 | **No connector is sandbox-validated or production-supported.** Four are fixture-tested (Trivy and SARIF with real tool output; Tenable and Azure Resource Graph with synthetic data and local fakes); the other 16 are planned; commercial ones need licensed accounts | INT-01..INT-20 | fixture-tested / planned / blocked for sandbox validation |
 
 ---
@@ -65,7 +66,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | A06 | Model conclusion citing nonexistent observation is rejected | none | planned | Phase C |
 | A07 | Revoked evidence access or approval before execution denies and records why | cases::test_permission_scope_and_revocation, act::test_revocation_before_execution_denies_and_returns_the_unused_use, ::test_approver_losing_membership_before_execution_denies | verified | Denial reason recorded on the execution and in job events |
 | A08 | Changed arguments after approval require new approval | act::test_revision_after_approval_requires_new_approval, act_api::test_action_journey_with_idempotent_execution | verified | |
-| A09 | External ticket closure without deployment proof keeps the case open | cases::test_no_closure_path_from_remediating | implementing | Domain side verified; Jira/ServiceNow sync must preserve it (Phase D) |
+| A09 | External ticket closure without deployment proof keeps the case open | cases::test_no_closure_path_from_remediating, track::test_external_ticket_closure_is_recorded_but_never_closes_the_case, wf::test_externally_closed_ticket_never_moves_the_case[3 adapters] | verified | Polling only; webhooks (ING-08) not built; adapters fixture-tested |
 | A10 | Losing a connector or model preserves work and resumes with bounded retry | sync::test_interrupted_sync..., adp::test_tenable_client_bounded_retries... | implementing | Connector part verified against fakes; model part is Phase C |
 | A11 | Risk acceptance expiry reopens review and notifies the owner | cases::test_risk_acceptance_limits_owner_and_expiry_reopens, ingjob::test_risk_expiry_sweep_is_scheduled_once_per_interval_per_tenant | implementing | Reopen, notification event and hourly scheduled sweep verified; notification delivery not built |
 | A12 | Worker restarts at each durable boundary: no lost decisions or repeated effects | job::test_sigkill_after_effect_before_outcome_recorded (both variants), ::test_hung_step_loses_lease..., ing::test_real_process_kill_then_resume, job::test_restore_is_detected... | implementing | Verified for single-effect jobs and ingestion; database-server crash not re-run in product code (experiment only); multi-step workflows not built |
@@ -104,13 +105,13 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 
 | ID | Requirement | Implementation | Verification | Status | Notes |
 |---|---|---|---|---|---|
-| CASE-01 | Workflow, assessment, priority and disposition enumerations and the allowed transition table | `domains/cases/model.py`; `axiom.case_transition_allowed`, row guard trigger | unit::test_transition_table_matches_specification, iso::test_direct_sql_cannot_bypass_case_commands | verified | |
+| CASE-01 | Workflow, assessment, priority and disposition enumerations and the allowed transition table | `domains/cases/model.py`; `axiom.case_transition_allowed` (replaced in 0008 for R7), row guard trigger | unit::test_transition_table_matches_specification (includes the two R7 transitions), iso::test_direct_sql_cannot_bypass_case_commands | verified | Specification S 4 amended for R7 (approved 2026-10-22) |
 | CASE-02 | Optimistic concurrency with expected versions | `_apply` versioned UPDATE; DB increments-by-one guard | cases::test_stale_version_..., ::test_concurrent_... | verified | |
-| CASE-03 | Unsupported transitions return a structured conflict and commit nothing | `Conflict` errors, transaction rollback | cases::test_stale_version_rejected_without_partial_state, api::test_conflicts_and_structured_errors | verified | |
+| CASE-03 | Unsupported transitions return a structured conflict and commit nothing | `Conflict` errors, transaction rollback | cases::test_stale_version_rejected_without_partial_state, api::test_conflicts_and_structured_errors, r7::* | verified | |
 | CASE-04 | received -> investigating needs valid scope and scheduled investigation | `start_investigation` (decision + permission) | cases lifecycle tests | implementing | Investigation runs are scheduled in Phase C |
 | CASE-05 | investigating -> review needs assessment with limitations and policy decision, or explicit escalation | `record_assessment`, `escalate` | cases::test_definite_assessment_requires_verified_evidence | implementing | Policy decision is Phase C |
 | CASE-06 | review -> remediation_planned needs authorised decision and eligible assigned owner | `plan_remediation` | cases::test_plan_requires_eligible_owner | verified | |
-| CASE-07 | remediation_planned -> remediating needs approved action or recorded external work | `record_external_work` | lifecycle tests | implementing | Approved-action route is Phase D |
+| CASE-07 | remediation_planned -> remediating needs approved action or recorded external work | `record_external_work` | lifecycle tests | implementing | Moving the case on an executed approved action is not automatic (ACT-09 keeps tickets from moving cases); record_external_work remains the route |
 | CASE-08 | remediating -> awaiting_verification needs a reported change with identified deployment of an affected asset | `report_change`, `remediation_report_target` trigger | lifecycle tests; cases::test_remediation_target_must_be_affected_asset | verified | Negative path currently enforced by the DB trigger (service returns a 409 guard_violation via the API mapping) |
 | CASE-09 | Verification passed/failed/inconclusive drive closed / remediating / review | `record_verification`, `close_verified` | cases::test_partial_coverage_..., ::test_wrong_deployment_..., lifecycle | verified | |
 | CASE-10 | Distinct closure reasons with reason-specific prerequisites (verified, accepted risk, dismissed, duplicate, retired) | `_close`, `closure_records` CHECKs, `validate_closure` | cases::test_full_lifecycle..., ::test_risk_acceptance..., ::test_dismissal..., ::test_duplicate..., ::test_asset_retirement... | verified | Asset retirement route per R2 |
@@ -121,6 +122,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | CASE-15 | Separation of duties: reporter cannot verify or close; assessor cannot dismiss; case owner cannot accept risk | service guards; dismissal SoD also in DB | cases::test_reporter_cannot_verify_own_change, ::test_dismissal..., ::test_case_owner_cannot_accept_own_risk | verified | |
 | CASE-16 | Case correlation keeps per-scanner identities | `finding_occurrences` unique per source identity; links | cases::test_duplicate_requires_shared_vulnerability_on_same_asset | implementing | Full correlation engine is Phase B |
 | CASE-17 | Asset-retirement closure: from review only, verified lifecycle evidence readable by the closer, every linked affected asset retired with its own verified evidence, recorded separately from remediation | `close_asset_retired`, `AssetService.retire`, `validate_closure` | cases::test_asset_retirement_closure_requires_retired_assets | implementing | Closure route verified (refused while active, accepted after retirement); separate reporting is planned (VER-05). See ADR 0004 |
+| CASE-18 | R7 (approved 2026-10-22): remediation_planned -> review via authorised recorded decision; remediating -> review only with verified evidence of no deployment; deployed/partial/unknown goes through verification (may return to review); never bypasses unresolved external effects; keeps tickets, approvals, consumed uses, history and evidence; obsolete proposals cannot execute | `withdraw_remediation`, migration 0008 (`r7_return_guard`, abandoned remediation reports, plan epoch) | r7::* (10 tests incl. two database-backstop tests with the service check bypassed), mutation checks 2026-10-22 | verified | ADR 0004; Specification S 4 amendment |
 
 ## 4. Evidence (S 3, P 3, D 4)
 
@@ -275,8 +277,9 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | ACT-05 | Provider idempotency keys where available | verified (fake provider) | The gate uses them when declared (act::test_lost_ack_with_provider_idempotency..., stale-worker variants). Jira is not known to offer them, so jira_style declares none |
 | ACT-06 | Reconcile unknown outcomes; operator intervention when unidentifiable | verified | act::test_lost_ack_with_lagging_search..., ::test_unprocessed_and_connect_failures..., ::test_operator_actions_are_audited... |
 | ACT-07 | Transactional approval reservation; timeout never restores single-use approval blindly | verified | act::test_concurrent_reservations..., ::test_reservation_accounting_is_guarded..., ::test_a_use_is_never_returned_once_the_effect_may_have_been_attempted |
-| ACT-08 | Ticket, pull request and production mutation permissions are distinct; production mutation disabled by default | implementing | Distinct effect classes; production.change and pull_request.create disabled (act::test_payload_validation_and_disabled_effect_classes). Per-class approval permissions beyond action.approve are not split yet |
-| ACT-09 | External ticket closure does not close the case | implementing | Ticket creation does not move the case (act::test_execution_creates_one_verified_ticket_and_does_not_touch_the_case); inbound ticket status sync is not built |
+| ACT-08 | Ticket, pull request and production mutation permissions are distinct; production mutation disabled by default | verified | Per-class propose/approve/execute permissions, exact match, no hierarchy (migration 0009); act::test_weaker_class_permissions_never_authorise_a_stronger_effect (production.change enabled in-process only for the test); production.change and pull_request.create stay disabled in the product |
+| ACT-09 | External ticket closure does not close the case | verified | Inbound polling records state changes append-only and never moves the case (track::*, wf::test_externally_closed_ticket_never_moves_the_case for Jira-style, ServiceNow and GitHub fakes) |
+| ACT-11 | SLA timers per priority start, supersede on priority change, breach once, end on closure | verified | track::test_sla_lifecycle (fault injection for priority and time); thresholds are defaults D-SLA-1 |
 | ACT-10 | Material changes invalidate approval | verified | Payload change needs a new version and approval (A08); priority or scope change or closure denies at execution (act::test_material_change_after_approval_denies, using fault injection because no priority command exists yet) |
 
 ## 12. Verification, risk and reassessment (S 10) 
@@ -287,22 +290,22 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | VER-02 | Unavailable systems or incomplete scans give inconclusive, never passed | verified | unit::test_verification_outcome, cases::test_partial_coverage... |
 | VER-03 | Reassessment triggers (deployment, exposure, intelligence, ownership, exception validity) with storm deduplication | planned | |
 | VER-04 | Verification worker collecting outcome evidence with scoped credentials | planned | Currently recorded by a human verifier |
-| VER-05 | Retired asset closure distinct and not counted as a fix | implementing | Closure verified; reporting pending |
+| VER-05 | Retired asset closure distinct and not counted as a fix | verified | Closure route (cases::test_asset_retirement...); report snapshots count closures by reason separately (track::test_snapshot_is_immutable_digest_checked_and_separates_outcomes) |
 | RISK-01 | Acceptance with owner, scope, rationale, compensating controls, expiry, delegation limits | verified | cases::test_risk_acceptance... |
 | RISK-02 | Request/authorise/renew flow | verified | risk2::* (independence, stale requests, renewal chain, reassessment notices, lapse), act_api::test_risk_request_and_authorise_over_http. Thresholds are defaults (D-RISK-1) |
 | RISK-03 | Durable expiry scheduling plus reconciliation sweep | verified | Hourly per-tenant sweep job (ingjob::test_risk_expiry_sweep...); expiry, reassessment and lapse (risk2::*) |
-| RISK-04 | Accepted exposure remains in reports | planned | |
+| RISK-04 | Accepted exposure remains in reports | verified | Snapshot section `accepted_exposure` (active acceptances, expiring within 14 days) and `closed_by_reason` keeps accepted_risk separate |
 
 ## 13. Reporting and GRC (S 11) - Phase D
 
 | ID | Requirement | Status |
 |---|---|---|
-| RPT-01 | Immutable report snapshots: query definition/version, as-of, coverage, denominators, membership, result digest | planned |
-| RPT-02 | Reports show freshness, missing coverage, unresolved ownership, inconclusive cases, accepted exposure | planned |
+| RPT-01 | Immutable report snapshots: query definition/version, as-of, coverage, denominators, membership, result digest | implementing | Immutable, digest-checked snapshots computed by one SQL statement (track::test_snapshot...). Query version, coverage and denominators are not recorded yet |
+| RPT-02 | Reports show freshness, missing coverage, unresolved ownership, inconclusive cases, accepted exposure | implementing | Accepted exposure, SLA state, open work by state; freshness, coverage and ownership not yet |
 | RPT-03 | AI summaries cite case/query identifiers; figures must match snapshot calculations | planned |
 | RPT-04 | Framework mappings are versioned references, not compliance verdicts | planned |
 | RPT-05 | Auditor can reconstruct a decision and export an evidence package (journey J08) | planned |
-| RPT-06 | Exports record tenant, actor, scope, classification, expiry and downloads | planned |
+| RPT-06 | Exports record tenant, actor, scope, classification, expiry and downloads | implementing | Export records tenant, actor, snapshot, format, digest; reads are audited and digest-verified (track::test_exports...); classification and expiry not recorded |
 | RPT-07 | Cross-client portfolio metrics keep source tenant and coverage | planned |
 | RPT-08 | Owner attestations and exception expiry captured for GRC | planned |
 
@@ -328,8 +331,8 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | INT-13 | AWS Security Hub | scanner/context | planned | AWS account |
 | INT-14 | AWS resource inventory (e.g. AWS Config) | context | planned | AWS account |
 | INT-15 | Jira | workflow | fixture-tested (Jira-style fake only) | Shapes from Atlassian REST v3 docs; never run against a Jira site; sandbox validation needs a Jira Cloud site |
-| INT-16 | ServiceNow | workflow | planned | ServiceNow developer instance |
-| INT-17 | GitHub (issues, pull requests) | workflow | planned | GitHub org/app |
+| INT-16 | ServiceNow | workflow | fixture-tested (local fake only) | Table API shapes from ServiceNow docs; table, correlation field and state mapping are per-instance assumptions; needs a developer instance for sandbox validation |
+| INT-17 | GitHub (issues, pull requests) | workflow | fixture-tested for issues (local fake only); pull requests planned | REST 2022-11-28 shapes; needs an org or app for sandbox validation |
 | INT-18 | Structured business inventory import | context | planned | Schema to be defined |
 | INT-19 | Threat intelligence feeds (candidates: CISA KEV, FIRST EPSS, OSV/NVD) with provenance, freshness and licence | intelligence | planned | Licence terms to record per feed |
 | INT-20 | Witness (optional evidence provider; platform runs without it) | evidence provider | planned | |
@@ -364,7 +367,7 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | DEP-05 | AKS reference deployment with portable interfaces | planned | |
 | DEP-06 | Workload identity, network policies, restricted service accounts, limits, health checks | implementing | Compose hardening (read-only, cap_drop, internal network); Kubernetes pending |
 | DEP-07 | Signed and pinned images | implementing | Pinned; signing planned |
-| DEP-08 | Continuous integration running unit, DB, isolation and lint gates | implementing | `scripts/ci/run.sh` (executed locally) and `.github/workflows/ci.yml` (never run on a hosted service; actions not SHA-pinned). No linter configured; byte-compilation and a tracked-file secret scan instead |
+| DEP-08 | Continuous integration running unit, DB, isolation and lint gates | implementing | `scripts/ci/run.sh` executed locally (CI PASS, run 14); `.github/workflows/ci.yml` with actions pinned to verified commit hashes (docs/ci-action-pins.md, scripts/ci/check-action-pins.sh). Never run on a hosted service (no remote authorised). No linter; byte-compilation and secret scan instead |
 | DEP-09 | Disposable execution with explicit egress and no ambient credentials before any untrusted code capability | planned | Capability stays disabled |
 
 ## 16. User journeys (P 9)

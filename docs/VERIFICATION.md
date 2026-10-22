@@ -242,3 +242,43 @@ CI pipeline `scripts/ci/run.sh` (this is a local execution; the hosted workflow 
 
 Not covered: any live tracker (the Jira-style integration is fixture-tested only); the S3 witness backend; hosted CI;
 load beyond the 4 x 12 concurrency test; point-in-time recovery.
+
+### Run 14: R7, per-class permissions, witness hardening, Phase D tracking, workflow adapters (2026-10-22 ~07:50Z to 08:15Z)
+Problems found while building (fixed before the recorded run):
+* Design flaw in my own witness: one overwritten record per worker could be **lowered** by a second instance sharing
+  a worker ID. Replaced by write-once records (`<watermark>-<worker>`); the high-water mark is the largest name listed.
+* Acknowledging a same-fingerprint rollback would have let a job carried across the restore run its effect again.
+  Acknowledgements are now an append-only log, and jobs older than the latest one park until reconciled individually.
+* An unreadable witness parked every action for an operator; it now makes the step retry (nothing is sent).
+* The permission catalogue allows no dot after the colon, so class permissions use `action.approve:ticket_create`.
+* Test-side mistakes: unescaped `%` in a LIKE pattern; an SLA test shifted the case's creation time instead of the
+  timer's start; one test never set its object store; the adapter catalogue rename broke an older assertion; two of
+  my R7 tests had assertions that could not fail (`pytest.raises(Exception)` and an `or`); both tightened.
+
+Mutation checks (`docs/verification/2026-10-22-r7-mutation-checks.log`), 11 of 11 caught: R7 evidence check and
+unresolved-effect check removed from the service (the database guard still refused; the tests fail on the raw error),
+obsolete proposals not withdrawn, plan-epoch precondition ignored, failed check on an abandoned plan sent back to
+remediating, every class checked as ticket.create, acknowledgement clearing carried jobs, one overwritten S3 object
+per worker, SLA breach announced on every sweep, snapshot digest not checked, export digest not checked.
+
+GitHub Actions pins: resolved with `git ls-remote` and shallow fetches from the official repositories; inputs checked
+in each pinned `action.yml` (docs/ci-action-pins.md). `scripts/ci/check-action-pins.sh`: 3 ok.
+
+S3 witness development runs used a separate local SeaweedFS (port 18335) with three identities (full, read+list,
+read+write). The permission failures were confirmed to be `AccessDenied` on PutObject (read-only identity) and on
+ListObjectsV2 (no-list identity) before the assertions were made strict.
+
+CI pipeline `scripts/ci/run.sh`, **CI PASS on the first run** (local execution; hosted CI never run):
+dependencies, byte-compile, secret scan, no `.env` files, action pins (3 ok); foundation on a fresh separate cluster
+with fresh SeaweedFS and three identities: migrations `applied: 0001 ... 0011`, re-run `applied: none`, second
+database `applied: 0001 ... 0011`, edited migration rejected, RLS audit 55 tables forced, 3 global tables without,
+0 not owned by `axiom_owner`; **256 passed, 1 skipped (opt-in drill), 1 warning in 128.02s** (new or changed files:
+R7 10, workflow adapters 18, tracking/reports 7, restore witness 7, S3 witness 5 with no skips, witness config 12,
+actions 30, actions API 5); physical snapshot drill 1 passed; Compose smoke with a rebuilt image
+(`sha256:d76aa782a774...`): `SMOKE PASS (axiom-smoke-081224)`. Logs: `docs/verification/2026-10-22-r7/`.
+
+The run used the uncommitted working tree. Content hash of every tracked or new file under backend, tests, scripts,
+deployments, Dockerfile, .github, pyproject.toml and uv.lock at run time (sorted `sha256sum` of each file, hashed):
+`a12af0d98c129695f5c6b633ce74aec24958237153bd8b070d076393fbc2f813`; the code commit e7a2f3602674b264b15b426741497436e3881206 reproduces exactly this hash (recomputed from the commit with `git show` per file), so it is the tested code.
+
+Not covered: any live tracker; the witness on a production object store; hosted CI; load; point-in-time recovery.

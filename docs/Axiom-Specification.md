@@ -59,12 +59,21 @@ Operational job failure does not erase the case's last valid business state.
 | review_required | investigating | Reviewer requests more evidence |
 | review_required | remediation_planned | Authorised remediation decision and assigned owner |
 | remediation_planned | remediating | Approved action or recorded externally initiated work |
+| remediation_planned | review_required | Authorised, recorded withdrawal decision with rationale; no unresolved external effect (amendment R7) |
 | remediating | awaiting_verification | Reported change with affected deployment identified |
+| remediating | review_required | Verified evidence that no change was deployed; no unresolved external effect (amendment R7) |
 | awaiting_verification | closed | Verification passes and authorised closure policy permits |
 | awaiting_verification | remediating | Verification fails |
 | awaiting_verification | review_required | Verification inconclusive or scope changed |
 | review_required | closed | Approved acceptance, supported dismissal or validated duplicate, with distinct closure reason |
 | closed | investigating | Relevant change, recurrence, acceptance expiry or authorised reassessment |
+
+Amendment R7 (approved by the product owner 2026-10-22): when remediation is abandoned and a change was deployed,
+partially deployed or its deployment state is unknown, the case goes through verification (remediating to
+awaiting_verification on an abandoned-remediation report); verification may conclude inconclusive or failed and return
+the case to review. Returning to review never bypasses an executing or unresolved external effect, which must be
+reconciled first; it keeps linked tickets, approvals, consumed approval uses, action history and evidence, never closes
+tickets or restores uses, and makes existing proposals for the superseded plan unable to execute.
 
 Deferral remains open with review date and reason. Risk acceptance closes the treatment workflow but does not remove the exposure from reports. Duplicate closure retains links and original observations. Inconclusive assessments cannot close as verified remediated.
 Cancellation affects a run; it cannot silently resolve a finding.

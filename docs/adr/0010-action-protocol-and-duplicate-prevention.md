@@ -27,8 +27,11 @@ from review shaped this ADR:
 | `external_references` | Append-only, unique per execution and per (provider, connection, external id); records whether the reference was verified and how it was obtained (created, adopted by lookup, adopted by operator). |
 | `idempotency_keys` | (tenant, principal, endpoint, key) with request digest over path parameters and body, and the stored response (API-07). |
 
-Effect classes are distinct (ACT-08): `ticket.create` (enabled; Jira-style, fixture-tested), `pull_request.create`
-(planned, disabled), `production.change` (disabled by default, no executor).
+Effect classes are distinct (ACT-08): `ticket.create` (enabled; Jira-style, ServiceNow and GitHub Issues adapters, all
+fixture-tested), `pull_request.create` (planned, disabled), `production.change` (disabled by default, no executor).
+Each class has its own `action.propose:<class>`, `action.approve:<class>` and `action.execute:<class>` permission
+(migration 0009). Checks match the exact class with no hierarchy, so a permission for a weaker class never authorises
+a stronger one, and the generic `action.*` permissions are no longer granted or checked.
 
 ### Pre-execution re-check (ACT-03, A07, A08, ACT-10)
 Inside the effect gate's fenced transaction, immediately before marking the intent executing (and again before the
@@ -83,14 +86,37 @@ same data directory (`tests/drills/test_physical_snapshot.py`, real stop / copy 
 restore into a database recreated with the same OID (`test_restore_witness.py`). The acknowledgement table is
 restored with the database, so a marker kept in the database cannot reveal its own rollback.
 
+**Acknowledging a restore does not authorise replay (migration 0010).** Acknowledgements are an append-only log. Any
+job created before the latest acknowledgement counts as carried across a restore: for integrations that cannot
+deduplicate, its effect parks until an operator reconciles **that job** (adopt, not applied, or abandon), which sets
+`recovery_cleared_at`. Acknowledging, retrying or re-running never clears it (`rw::test_acknowledging_a_restore_does_
+not_authorise_replay`). Jobs created after the acknowledgement run normally.
+
 **Mechanism 2: external witness.** The gate draws a watermark from `axiom.effect_watermark_seq` in the transaction that
 marks an intent executing and records it in a witness **outside the database before the request is sent** (if the
 witness write fails, the transaction rolls back and nothing is sent). Sequences are not rolled back with failed
 transactions, so normally the database value is at or above the witness. A database whose watermark is below the
 witness was rolled back after effects were recorded: workers refuse to run and gates park. An empty witness while
 the database has issued watermarks is also refused (lost witness). Acknowledgement moves the sequence past the
-witness. Backends: a directory (per-worker files, fsync and atomic rename) or an S3 prefix (per-worker objects).
-Each worker writes only its own record, upwards only.
+witness. Records are **write-once**: one file or object per watermark, named `<watermark:020d>-<worker>`; the high-water mark
+is the largest name in a listing. Concurrent writers, duplicate worker IDs and retried writes after a lost
+acknowledgement can therefore never lower it (an earlier per-worker overwrite design could, if two instances shared a
+worker ID). Older records are pruned below the newest only. Backends: a directory (fsync and atomic rename) or an S3
+prefix. An unreadable witness makes effects retry later (nothing is sent); a failed write rolls back the transaction
+that would have marked the intent executing, so nothing is sent. Workers refuse to start when the witness is missing
+in production, malformed, or fails a write/list/delete probe (`unit::test_witness_config`).
+
+**Storage assumptions that need independent validation for each production store.** The tests use SeaweedFS 4.48
+and a local directory only (`s3w::*`: write-once records and pruning, 8 concurrent writers including two with the
+same worker ID with a monotonic high-water mark observed between listings, unavailable endpoint, lost acknowledgement,
+read-only and no-list identities). For a production store the following must be shown, not assumed:
+* durability of an acknowledged PUT;
+* a listing issued after a successful PUT returns that object (read-after-write list consistency);
+* the witness bucket or account is not restored or rolled back with the database (no shared snapshot policy; object
+  versioning or lock must not be used to roll it back);
+* the worker identity can write, list and delete only under its prefix, and nothing else can delete there (deletion
+  of the newest records would hide a rollback);
+* availability: an outage pauses all external effects (fail closed).
 
 **Blind spots of mechanism 2 (tested or stated).**
 * Witness restored together with the database: the rollback is invisible (tested; duplicate occurs). The witness
@@ -98,11 +124,17 @@ Each worker writes only its own record, upwards only.
 * A rollback that loses no effects (no attempt after the backup point) is not flagged, and needs no reconciliation.
 * Effects attempted without the witness configured are not covered. The worker refuses to start in production without
   `AXIOM_RESTORE_WITNESS` (implemented in `workers/jobs.build_witness`; that refusal itself is not tested).
-* S3 witness: not exercised against SeaweedFS or any S3 service yet (the directory backend is tested).
+* S3 witness: exercised against SeaweedFS only; see "Storage assumptions" above for what a production store must prove.
 
 ### Support levels
-The Jira-style integration is **fixture-tested** against a local fake whose request and response shapes follow
-Atlassian's public REST v3 documentation. It has not been run against a Jira site. This is not Jira support.
+All three ticket integrations are **fixture-tested** against local fakes and have never met the real services:
+* Jira-style: shapes from Atlassian's REST v3 documentation; search is documented as not read-after-write consistent.
+* ServiceNow-style: Table API shapes from ServiceNow's documentation, which says nothing about idempotency or
+  read-after-write consistency; table, correlation field and state mapping are per-instance assumptions.
+* GitHub Issues: REST 2022-11-28 shapes; the operation key is a marker line in the issue body (label-name length
+  limits are not documented on the labels page); lookup scans recent issues and is bounded.
+None declares deduplication, so the same rule applies: adopt on a lookup hit, otherwise park after an uncertain create
+(`wf::*`, 6 scenarios x 3 adapters). Inbound polling records ticket state append-only and never moves the case.
 
 ## Consequences
 Parks are more frequent than with a naive lookup-then-create policy (every uncertain Jira-style create needs an
@@ -110,6 +142,6 @@ operator unless the index has caught up). That is the price of not creating dupl
 idempotency keys, unique external identifiers or fencing removes most parks.
 
 ## Not tested
-Live Jira or any live tracker; S3 witness backend; witness in a separate account; point-in-time recovery (archive
+Live Jira, ServiceNow or GitHub; the S3 witness on any store other than SeaweedFS; witness in a separate account; point-in-time recovery (archive
 recovery creates a new timeline per PostgreSQL documentation, so the fingerprint should change, but this was not run);
 load beyond 4 workers by 12 executions.
