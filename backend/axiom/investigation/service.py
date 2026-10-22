@@ -103,7 +103,9 @@ class InvestigationService:
         return row
 
     def list_routes(self) -> list[dict]:
-        if not self.authz.has("model.configure", self._root()):
+        # Route definitions are tenant configuration, not case data: anyone who may read investigations somewhere in
+        # the tenant may see which routes exist (and how they are labelled) so they can choose one.
+        if not self.authz.has("model.configure", self._root()) and not self.authz.readable_scopes("investigation.read"):
             self.authz.require("investigation.read", self._root())
         return list(self.conn.execute(
             """SELECT id, name, provider, model, endpoint, region, max_classification, status, timeout_seconds,

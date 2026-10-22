@@ -28,6 +28,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-16
           sudo systemctl stop postgresql || true
+      - name: Install Chromium for the browser tests (version pinned by the locked playwright package)
+        run: |
+          uv sync --frozen
+          sudo -E env "PATH=$PATH" uv run --frozen playwright install --with-deps chromium
       - name: Run the pipeline
         run: sudo -E env "PATH=$PATH" scripts/ci/run.sh
       - name: Keep logs

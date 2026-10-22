@@ -362,3 +362,103 @@ def register(api: APIRouter, database: Database, Ctx, store=None, settings=None)
     def review_claim(ctx: Ctx, claim_id: UUID, body: s.ReviewClaim):
         return tx(ctx, lambda c, a: inv(c, a, ctx).review_claim(claim_id, verdict=body.verdict, note=body.note,
                                                                 corrected_conclusion=body.corrected_conclusion))
+
+    # -------------------------------------------------------------------------------- read models for the UI
+    def _case_or_404(conn, authz, case_id):
+        case = conn.execute("SELECT * FROM axiom.finding_cases WHERE id = %s", (case_id,)).fetchone()
+        if case is None or not authz.has("case.read", case["scope_id"]):
+            raise NotFound("case not found", code="case_not_found")
+        return case
+
+    @api.get("/cases/{case_id}/context")
+    def case_context(ctx: Ctx, case_id: UUID):
+        """Affected assets and deployments with their provenance (scanner observation or manual record) and the
+        business-context versions with their basis (source tag or manual assertion)."""
+        def read(conn, authz):
+            _case_or_404(conn, authz, case_id)
+            occ = conn.execute(
+                """SELECT o.id, o.source_system, o.vulnerability_ref, o.component_locator, o.source_severity,
+                          av.id AS asset_version_id, av.deployment_digest, av.version_label, av.observed_at,
+                          av.source_evidence_id, a.id AS asset_id, a.display_name, a.asset_kind, a.lifecycle_status,
+                          l.linked_at
+                     FROM axiom.case_occurrence_links l JOIN axiom.finding_occurrences o ON o.id = l.occurrence_id
+                     JOIN axiom.asset_versions av ON av.id = o.asset_version_id JOIN axiom.assets a ON a.id = av.asset_id
+                    WHERE l.case_id = %s AND l.unlinked_at IS NULL ORDER BY o.vulnerability_ref""",
+                (case_id,)).fetchall()
+            asset_ids = sorted({o["asset_id"] for o in occ}, key=str)
+            versions = conn.execute(
+                """SELECT av.*, CASE
+                          WHEN EXISTS (SELECT 1 FROM axiom.finding_occurrences o JOIN axiom.occurrence_observations ob
+                                         ON ob.occurrence_id = o.id WHERE o.asset_version_id = av.id) THEN 'ingestion'
+                          WHEN av.source_evidence_id IS NOT NULL THEN 'manual_with_evidence'
+                          ELSE 'manual' END AS provenance
+                     FROM axiom.asset_versions av WHERE av.asset_id = ANY(%s) ORDER BY av.observed_at DESC""", (asset_ids,)).fetchall()
+            contexts = conn.execute(
+                """SELECT id, asset_id, owner_ref, criticality, environment, data_classification, basis, asserted_by,
+                          effective_from, recorded_at FROM axiom.business_context_versions WHERE asset_id = ANY(%s)
+                    ORDER BY recorded_at DESC""", (asset_ids,)).fetchall()
+            return {"occurrences": occ, "asset_versions": versions, "business_context": contexts}
+        return tx(ctx, read)
+
+    @api.get("/cases/{case_id}/evidence-snapshots")
+    def case_snapshots(ctx: Ctx, case_id: UUID):
+        def read(conn, authz):
+            _case_or_404(conn, authz, case_id)
+            return {"items": conn.execute(
+                """SELECT id, as_of, purpose, member_count, max_classification, digest, created_by, created_at,
+                          jsonb_array_length(contradictions) AS contradictions, jsonb_array_length(gaps) AS gaps
+                     FROM axiom.evidence_snapshots WHERE case_id = %s ORDER BY created_at DESC""", (case_id,)).fetchall()}
+        return tx(ctx, read)
+
+    @api.get("/cases/{case_id}/action-proposals")
+    def case_proposals(ctx: Ctx, case_id: UUID):
+        def read(conn, authz):
+            _case_or_404(conn, authz, case_id)
+            rows = conn.execute("SELECT id FROM axiom.action_proposals WHERE case_id = %s ORDER BY created_at",
+                                (case_id,)).fetchall()
+            svc = ActionService(conn, ctx, authz)
+            out = []
+            for r in rows:
+                try:
+                    out.append(svc.get(r["id"]))
+                except NotFound:
+                    continue                      # not readable by this requester
+            return {"items": out}
+        return tx(ctx, read)
+
+    @api.get("/connections")
+    def list_connections(ctx: Ctx):
+        """Connections with the adapter's support level, so the UI can label fixture-tested integrations."""
+        from ..adapters.catalogue import catalogue
+        levels = {a["name"]: a["support_level"] for a in catalogue()}
+
+        def read(conn, authz):
+            rows = conn.execute("""SELECT id, scope_id, adapter, adapter_kind, display_name, base_url, status, created_at
+                                     FROM axiom.connections ORDER BY created_at""").fetchall()
+            return {"items": [{**r, "support_level": levels.get(r["adapter"], "unknown")} for r in rows
+                              if any(authz.has(p, r["scope_id"]) for p in ("proposal.read", "ingestion.read"))]}
+        return tx(ctx, read)
+
+    @api.get("/reports/live")
+    def live_report(ctx: Ctx, scope_id: UUID):
+        """The exposure summary computed now and not stored (not a reproducible record; generate a snapshot for
+        that). Needs report.read on the scope."""
+        def read(conn, authz):
+            authz.require("report.read", scope_id)
+            now = conn.execute("SELECT clock_timestamp() AS t").fetchone()["t"]
+            return {"stored": False, "content": ReportService(conn, ctx, authz, store).compute(scope_id, now)}
+        return tx(ctx, read)
+
+    @api.get("/scopes")
+    def list_scopes(ctx: Ctx):
+        """Scopes in the selected tenant where the requester holds at least one role binding (and their children)."""
+        def read(conn, authz):
+            mine = set(authz.readable_scopes("case.read")) | set(authz.readable_scopes("report.read"))
+            rows = conn.execute(
+                """WITH RECURSIVE covered(id) AS (SELECT id FROM axiom.scopes WHERE id = ANY(%s)
+                       UNION SELECT c.id FROM axiom.scopes c JOIN covered ON c.parent_id = covered.id)
+                   SELECT s.id, s.kind, s.name, s.parent_id FROM axiom.scopes s WHERE s.id IN (SELECT id FROM covered)
+                    ORDER BY s.kind = 'tenant_root' DESC, s.name""", (list(mine),)).fetchall()
+            return {"items": [{**r, "report_read": authz.has("report.read", r["id"]),
+                               "report_generate": authz.has("report.generate", r["id"])} for r in rows]}
+        return tx(ctx, read)
