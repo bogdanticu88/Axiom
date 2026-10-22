@@ -12,6 +12,44 @@ approval protocol, risk acceptance, policies, ownership, SLA clocks, reporting, 
 local Keycloak**, and a verification worker tested **only against a local fixture endpoint**. Connectors are at most
 **fixture-tested**; none has been validated against a live service. Details: `docs/IMPLEMENTATION_STATUS.md`.
 
+## Why Axiom exists
+
+Most vulnerability programmes run on two kinds of tool. A scanner dashboard lists findings, and a ticket workflow
+tracks the work. Neither records why a finding was judged real or not, which deployment it applied to, who was
+allowed to decide that, or whether the fix was ever checked on the thing that is actually running. Findings get
+closed because a ticket was closed or because the next scan stopped reporting them, and when an auditor or an
+incident asks "how do you know?", the answer is usually reconstructed after the fact. Adding a language model to
+that loop makes it worse if the model's output can set priority or close work without anything checking it.
+
+Axiom treats each finding as a case with a recorded history. The difference from a dashboard or a ticket queue is in
+what the platform refuses to do, and most of that is built and tested today:
+
+* A case is tied to a specific asset and deployment version. Results about a different deployment are not accepted
+  as proof about this one.
+* Every decision records who made it and the permission it relied on, and the history is append-only. People with
+  the right role decide; system jobs can only record the narrow result types their own role permits.
+* A case closes only through an explicit route: verified remediation, accepted risk, dismissal with supporting
+  evidence, duplicate or asset retirement. These are reported separately. A scanner no longer reporting a finding
+  never closes it, and neither does an external ticket being closed.
+* Verification is recomputed by the platform. A pass needs the reported deployment, complete coverage and stored
+  evidence whose digest has been verified. Anything missing or unavailable is inconclusive, never a pass.
+* Actions such as creating a ticket need a human approval bound to the exact payload, and the authority behind it is
+  checked again when the action runs.
+* AI investigation runs on frozen evidence snapshots with read-only tools. Its claims are checked against recorded
+  facts before anyone can cite them, and the model cannot set priority.
+
+Some of this is design intent that has not been shown to work in practice yet:
+
+* **AI usefulness is unmeasured.** No language model has been called. The investigation path runs against a
+  deterministic fake. The claim checks are record checks (does the cited evidence exist, is it fresh, does it
+  belong to this deployment); they do not judge whether a claim is semantically correct or relevant.
+* **Nothing has met a real system.** Scanner and context connectors, ticket integrations and the verification
+  worker are tested against fixtures and local fakes only. Sign-in has been tested against a local Keycloak only.
+* **It is not production-ready.** It has not been deployed behind a real proxy, run at scale, or reviewed by an
+  independent party. The evaluation labels were written by the author and still await independent review.
+
+The documents under `docs/` record what was tested, how, and what was not.
+
 ## Documents
 * Design inputs: `docs/Axiom-Specification.md`, `...-Implementation-Plan.md`, `...-Data-and-Access-Design.md`
 * Review of the supplied foundation: `docs/REVIEW-2026-10-22.md`
