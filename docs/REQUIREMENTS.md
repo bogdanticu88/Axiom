@@ -371,7 +371,7 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | INT-18 | Structured business inventory import | context | planned | Schema to be defined |
 | INT-19 | Threat intelligence feeds (candidates: CISA KEV, FIRST EPSS, OSV/NVD) with provenance, freshness and licence | intelligence | planned | Licence terms to record per feed |
 | INT-20 | Witness (optional evidence provider; platform runs without it) | evidence provider | planned | |
-| INT-21 | Verification check endpoint (`axiom-check/1`, platform-defined contract for the verification worker) | evidence | **fixture-tested** (local TLS fixture endpoint in the test process) | No external product implements the contract; a real rescan service needs an adapter or a shim, credentials and its own validation (ADR 0014) |
+| INT-21 | Verification check endpoint (`axiom-check/2`, platform-defined contract for the verification worker) | evidence | **fixture-tested** (local TLS fixture endpoint in the test process; the local demonstration check service in scripts/demo, which rescans a running container with Trivy) | No external product implements the contract; the demonstration service is not a supported component. A real rescan service needs its own deployment, credentials and validation (ADR 0014, docs/DEMO.md) |
 
 ## 15. Architecture, operations and deployment (S 13-14, P 1, 11)
 

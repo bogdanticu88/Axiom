@@ -10,7 +10,7 @@
 * The first commit imports the supplied foundation archive; its contents predate this repository.
 
 ## What works and what is missing
-The sections below are a history by checkpoint; the latest is "State after checkpoint 8". For the current position
+The sections below are a history by checkpoint; the latest is "After checkpoint 8: closing review and demonstration". For the current position
 against the complete register, read "Core product status" in IMPLEMENTATION_STATUS.md and "Core gaps" below.
 The foundation-era gap list has been superseded.
 
@@ -193,6 +193,23 @@ The foundation-era gap list has been superseded.
   Chromium end to end. Local only.
 * **Evaluation:** unchanged; independent review still pending.
 
+## After checkpoint 8: closing review and demonstration
+* **Destination pinning:** the test no longer depends on the system resolver. Two servers on 127.0.0.1 and 127.0.0.2
+  share a port and a certificate for `localhost`; a controlled resolver points the name at the allowed one. The test
+  shows the worker contacts only the validated address and verifies TLS for the name. Mutations that skip pinning or
+  drop the TLS server name are caught by that assertion, not by an incidental DNS or TLS failure.
+* **Disabled principals (ADR 0012 amendment 5):** a disabled workload identity kept its authority, and an approval
+  by a since-disabled approver still executed, because the authority check never read the principal's status. Both
+  checks now require an active principal (migration 0020). Suspension and expiry already applied from the next
+  request; none of the three waits for a command that has passed its check, and a job in flight at suspension is
+  left leased, not cancelled (TEN-16 stays open).
+* **Check endpoint configuration:** the API refused the `verification_check` adapter that the installation guide
+  tells operators to configure. Fixed; found by the demonstration.
+* **Demonstration (docs/DEMO.md):** real Trivy scans of two local services, import bound to the running digests,
+  investigation with the deterministic fake, approval and closure in the browser, a rebuilt and redeployed service,
+  and the verification worker asking a local check service that rescans the running container. Two controls on the
+  unchanged service do not pass: failed when nothing changed, inconclusive when a fix was built but not deployed.
+
 ## Core gaps (do not let UI work hide these)
 * **No language model verified**; real-provider execution is not authorised.
 * **Entra ID (or any hosted IdP) not tested**; no back-channel logout, JIT/SCIM provisioning or workload identity;
@@ -200,15 +217,17 @@ The foundation-era gap list has been superseded.
 * **No held-out evaluation set; label review pending.**
 * UI: no identity-candidate, integration-configuration or job-operations screens; Chromium only; focused
   accessibility checks only, no audit.
-* Verification worker tested against a local fixture endpoint only; no real check service; no connector
-  sandbox-validated; trackers are fakes.
+* Verification worker tested against a local fixture endpoint and the local demonstration check service only; no
+  supported check service; no connector sandbox-validated; trackers are fakes. A check endpoint's claims are
+  unauthenticated: a dishonest endpoint can record a false pass (docs/DEMO.md).
 * The application database credential is equivalent to administrator access to every tenant of the installation
   (ADR 0012 amendment 4). A tenant that needs stronger separation needs a dedicated installation.
 
 ## Next tasks (in order)
 1. Independent label review with evaluation/REVIEW-PROCEDURE.md; a new held-out set written by someone else.
 2. With authorisation: an Entra ID test tenant; a staging deployment with a real certificate and proxy.
-3. A real check service behind the verification worker (adapter or shim for `axiom-check/2`), validated in a sandbox.
+3. A supported check service behind the verification worker (the demonstration service is a starting point, not a
+   product), validated in a sandbox; cancel a suspended tenant's waiting work (TEN-16).
 4. Identity-candidate screens; an accessibility audit; a second browser.
 5. With authorisation: the real-provider test and real-model evaluation arm.
 6. Hosted CI and sandbox validation once a remote and accounts are authorised.

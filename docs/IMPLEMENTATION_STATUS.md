@@ -1,6 +1,6 @@
 # Implementation status
 
-Last updated: 2026-10-22, checkpoint 8 (database identity boundary stated and tested, revocation edges, verification worker as an untrusted-input boundary, documented deployment tested over local TLS).
+Last updated: 2026-10-22, after checkpoint 8 (disabled principals refused at the authority check, check endpoints configurable through the API, local end-to-end demonstration in docs/DEMO.md). Checkpoint 8: database identity boundary stated and tested, revocation edges, verification worker as an untrusted-input boundary, documented deployment tested over local TLS.
 Requirement-level detail is in REQUIREMENTS.md.
 
 Capability states used here:
@@ -103,7 +103,7 @@ or production-supported.
 | SLA timers v2 | verified | sla::; targets provisional (D-SLA-2) |
 | Report snapshots (as-of, coverage, freshness, unknowns) and exports | verified | rpt::, track::, jrn:: |
 | Auditor evidence packages, classification-aware | verified (API) | rpt::test_evidence_package..., jrn:: |
-| Verification worker (VER-04) | **fixture-tested** | vw::, vcu::, vdst::, vlc:: (ADR 0014 and amendment 1: destination policy, pinned connections, request-bound responses, lifecycle); local TLS fixture endpoints only; closing after a pass stays human |
+| Verification worker (VER-04) | **fixture-tested** | vw::, vcu::, vdst::, vlc:: (ADR 0014 and amendment 1: destination policy, pinned connections, request-bound responses, lifecycle); local TLS fixture endpoints, plus the opt-in demonstration against a local Trivy-rescan check service (docs/DEMO.md); closing after a pass stays human |
 | Approved ticket automatically advancing the case | not built by design so far | The owner records the ticket as external work (CASE-07) |
 | Pull requests, production change | not started | Production change disabled by design |
 | Framework mappings, portfolio reports, attestations | not started | RPT-04, RPT-07, RPT-08 |
