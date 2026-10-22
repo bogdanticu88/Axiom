@@ -10,7 +10,7 @@
 * The first commit imports the supplied foundation archive; its contents predate this repository.
 
 ## What works and what is missing
-The sections below are a history by checkpoint; the latest is "State after checkpoint 7". For the current position
+The sections below are a history by checkpoint; the latest is "State after checkpoint 8". For the current position
 against the complete register, read "Core product status" in IMPLEMENTATION_STATUS.md and "Core gaps" below.
 The foundation-era gap list has been superseded.
 
@@ -175,6 +175,24 @@ The foundation-era gap list has been superseded.
 * **Evaluation**: unchanged labels and splits; review still pending (outstanding steps in
   evaluation/REVIEW-PROCEDURE.md).
 
+## State after checkpoint 8 (trust boundaries made explicit and tested)
+* **Baseline:** the checkpoint-7 tag, manifest, checksums and artifact contents verified in the private history and in
+  the published Axiom history; the commits after the CI commit change records only (plus the comment-only commit,
+  checked to leave the code unchanged, and README text).
+* **Database identity (ADR 0012 amendment 4):** the shared runtime login can bind any tenant and any principal, so a
+  holder can read any tenant, act as anyone, approve through impersonation and attribute audit rows to anyone; it
+  cannot rewrite history or escape its role. This is an accepted trust assumption, now stated precisely and tested.
+  The earlier "of its tenant" wording was wrong and is corrected; the D1/D2 fixes are narrowed to integrity checks
+  against application defects.
+* **Revocation:** failed and rolled-back commands release the authority locks at once; shortening a membership waits
+  like a suspension; disabling a principal and suspending a tenant are documented as outside the boundary.
+* **Verification worker (ADR 0014 amendment 1):** operator-allowed destinations only, addresses checked and pinned,
+  TLS names verified, responses bound to job, nonce and asset, echoed credentials redacted; lifecycle tests check the
+  records, not only job status.
+* **Local TLS deployment:** the documented proxy arrangement with production settings and a mounted secret, tested in
+  Chromium end to end. Local only.
+* **Evaluation:** unchanged; independent review still pending.
+
 ## Core gaps (do not let UI work hide these)
 * **No language model verified**; real-provider execution is not authorised.
 * **Entra ID (or any hosted IdP) not tested**; no back-channel logout, JIT/SCIM provisioning or workload identity;
@@ -184,12 +202,13 @@ The foundation-era gap list has been superseded.
   accessibility checks only, no audit.
 * Verification worker tested against a local fixture endpoint only; no real check service; no connector
   sandbox-validated; trackers are fakes.
-* A compromised runtime database credential can act as any principal of its tenant (ADR 0012 amendment 3).
+* The application database credential is equivalent to administrator access to every tenant of the installation
+  (ADR 0012 amendment 4). A tenant that needs stronger separation needs a dedicated installation.
 
 ## Next tasks (in order)
 1. Independent label review with evaluation/REVIEW-PROCEDURE.md; a new held-out set written by someone else.
-2. With authorisation: an Entra ID test tenant; sign-in over TLS behind a reverse proxy in a staging deployment.
-3. A real check service behind the verification worker (adapter or shim for `axiom-check/1`), validated in a sandbox.
+2. With authorisation: an Entra ID test tenant; a staging deployment with a real certificate and proxy.
+3. A real check service behind the verification worker (adapter or shim for `axiom-check/2`), validated in a sandbox.
 4. Identity-candidate screens; an accessibility audit; a second browser.
 5. With authorisation: the real-provider test and real-model evaluation arm.
 6. Hosted CI and sandbox validation once a remote and accounts are authorised.

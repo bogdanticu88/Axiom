@@ -267,7 +267,8 @@ def test_browser_sign_in_over_tls_with_secure_cookies_csrf_logout_and_replay(dep
         page.wait_for_url(f"{t['origin']}/ui/**")
         page.get_by_test_id("sign-out").wait_for()
         assert page.url.startswith("https://")
-        page.get_by_test_id("sources").wait_for()
+        page.wait_for_load_state("networkidle")
+        page.locator("[data-state='loading']").first.wait_for(state="detached")
         shot(page, "30-signed-in-over-tls")
         cookies = {c["name"]: c for c in ctx.cookies(t["origin"])}
         session, csrf = cookies["axiom_session"], cookies["axiom_csrf"]
