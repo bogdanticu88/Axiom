@@ -231,7 +231,7 @@ CI pipeline `scripts/ci/run.sh` (this is a local execution; the hosted workflow 
   leftover cluster from an earlier run. My earlier "port free" check used `ss`, which is not installed here, so
   it proved nothing. Fixes: started `dockerd`; the drill now picks a free port and destroys its cluster even when
   start fails. Output kept as `docs/verification/2026-10-22-actions/ci-run1-failed.out`.
-* **Second run: CI PASS.** Dependencies (locked), byte-compile, tracked-file secret scan (no keys, no `.env` files)
+* **Second run: CI PASS** (on the working tree then committed unchanged as f07607b; only documentation changed after). Dependencies (locked), byte-compile, tracked-file secret scan (no keys, no `.env` files)
   passed. Foundation on a fresh separate cluster with fresh SeaweedFS: migrations `applied: 0001 ... 0007`,
   re-run `applied: none`, second database `applied: 0001 ... 0007`, edited migration rejected (checksum), RLS audit 51
   tables forced, 3 global tables without (`permissions`, `role_permissions`, `recovery_acknowledgements`), 0 not owned
