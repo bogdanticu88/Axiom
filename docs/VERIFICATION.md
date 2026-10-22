@@ -282,3 +282,84 @@ deployments, Dockerfile, .github, pyproject.toml and uv.lock at run time (sorted
 `a12af0d98c129695f5c6b633ce74aec24958237153bd8b070d076393fbc2f813`; the code commit e7a2f3602674b264b15b426741497436e3881206 reproduces exactly this hash (recomputed from the commit with `git show` per file), so it is the tested code.
 
 Not covered: any live tracker; the witness on a production object store; hosted CI; load; point-in-time recovery.
+
+### Run 15: policies, ownership, SLA v2, reporting depth, witness pruning audit, journey (2026-10-22 ~08:40Z to 09:02Z)
+**Tested object: the exact committed tree.** CI ran on a fresh `git clone` of commit
+`4a3069ac903b2f7b991c70c72c0c3df95a52e85b` (tree `06603b6504afaef8414f68e1e353aecd2f99928c`). The new first stage,
+`scripts/ci/input-manifest.sh`, refused nothing: the clone had no modified or untracked files, and no ignored files
+under executable-input paths except caches. The executable-input digest is
+`sha256:a98b5b6b1782de27f64158a6032c4effda3af2c986bfa6acfdac5473f9a7b216`. It covers `git ls-tree -r` of backend, db,
+scripts, .github, deployments, tests, pyproject.toml, uv.lock, Dockerfile and .dockerignore.
+
+Pinned inputs:
+* `uv.lock`;
+* the three container images, by digest;
+* the three actions, by commit.
+
+Not pinned by the tree, recorded only:
+* Python 3.13.16;
+* uv 0.11.32;
+* PostgreSQL 16.15 from Ubuntu packages;
+* Docker 29.9.1;
+* the uv wheel installed by pip in the image build (version pinned, hash not pinned).
+
+Mutable development data (`.var/`, clusters, evidence, object stores) is excluded. The clone was still clean after
+the run.
+
+Problems found while building (fixed before the recorded run):
+* As-of reproducibility bug in my report query: revised SLA timers were excluded regardless of when they were revised,
+  so a snapshot regenerated later for the same `as_of` differed. Found by
+  `rpt::test_snapshot_as_of_is_reproducible_after_later_changes`; fixed (exclude only timers revised by `as_of`).
+* Witness pruning matched the worker by suffix, so `w1` could prune `a-w1`'s records. The mark was never at risk,
+  because only records below newer ones were deleted, but the "own records only" rule was broken. Fixed to an exact
+  match.
+* The ownership sweep only routed never-routed cases, so cases swept before a policy or context existed stayed
+  unresolved forever. It now re-routes unresolved cases when a newer policy or business context exists, and never
+  writes identical rows otherwise.
+* Test-side mistakes, all fixed:
+  * wrong module path;
+  * a `public` classification that does not exist;
+  * the wrong exception type;
+  * an invalid reopen reason;
+  * the remediation owner lacking `asset.manage` (the analyst records the redeploy instead);
+  * response keys (`states`, not `items`);
+  * one assertion with an `or` that could not fail, now tightened.
+
+Mutation checks (`docs/verification/2026-10-22-checkpoint3/mutation-checks.log`) caught 5 of 5:
+* the reproducibility fix reverted;
+* pruning deleting all own records;
+* suffix matching restored;
+* a revised timer restarting from now;
+* accepted risk ending the timer as `met`.
+
+A dirty-tree run of `scripts/verify/foundation.sh` before the last changes was 321 passed, 1 skipped. It is superseded
+by the clean-clone run below.
+
+CI pipeline on the clean clone, **CI PASS** (local execution; hosted CI never run). Stages:
+* input manifest;
+* dependencies;
+* byte-compile;
+* secret scan;
+* no `.env` files;
+* action pins (3 ok);
+* foundation on a fresh separate cluster with fresh SeaweedFS:
+  * migrations `applied: 0001 ... 0012`, then `applied: none` on the re-run;
+  * a second database `applied: 0001 ... 0012`;
+  * an edited migration rejected;
+  * RLS audit: 57 tables forced, 3 global tables without, 0 not owned by `axiom_owner`;
+  * **322 passed, 1 skipped (opt-in drill), 1 warning in 151.46s**, with all 7 S3 witness tests run (none skipped);
+* physical snapshot drill: 1 passed;
+* Compose smoke with a rebuilt image (`sha256:b696e8aa3bb0...`): `SMOKE PASS (axiom-smoke-090112)`.
+
+Logs, the input manifest and the journey step log are in `docs/verification/2026-10-22-checkpoint3/`.
+
+The journey step log (`journey-steps.json`, 18 steps) was produced by running the same journey test from the commit
+on the development cluster. Its labels are real, fixture, fake, manual and test-read.
+
+Not covered:
+* any live scanner, tracker or identity provider;
+* the witness on a production object store;
+* hosted CI;
+* report performance at volume;
+* business-hours SLA calendars;
+* any UI.

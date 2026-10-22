@@ -1,0 +1,128 @@
+[
+  {
+    "n": 1,
+    "label": "fixture",
+    "step": "upload real Trivy 0.76.1 report (debian bullseye subset) as evidence",
+    "sha256": "7371ba3faa35c1dff2f0873a676db4d9b14696c99cb7cc06c8808ff2a7b67c10"
+  },
+  {
+    "n": 2,
+    "label": "real",
+    "step": "import through POST /imports and the job worker",
+    "run_id": "e54daf62-595f-4571-9a4b-7e4812a48517",
+    "coverage": "complete",
+    "counts": {
+      "assets": 0,
+      "findings": 30,
+      "quarantined": 0,
+      "cases_linked": 1,
+      "non_findings": 0,
+      "cases_created": 29,
+      "pages_skipped": 0,
+      "cases_reopened": 0,
+      "occurrences_new": 30,
+      "pages_committed": 1,
+      "identity_candidates": 0,
+      "absent_in_complete_scan": 0
+    }
+  },
+  {
+    "n": 3,
+    "label": "test-read",
+    "step": "pick one imported high/critical case",
+    "case": "747b58b1-5856-4844-bc6d-f2de5b58997b",
+    "vuln": "CVE-2022-1304",
+    "severity": "HIGH"
+  },
+  {
+    "n": 4,
+    "label": "manual",
+    "step": "assert business context for the image (owner_ref, criticality, environment)"
+  },
+  {
+    "n": 5,
+    "label": "real",
+    "step": "versioned ownership policy drafted, published by a second person, case routed by rule",
+    "policy": "06d2c1ac-2826-492a-b974-7fe75243226a",
+    "rule": "payments"
+  },
+  {
+    "n": 6,
+    "label": "manual",
+    "step": "analyst records assessment with explicit limitations (no investigation workspace exists yet)"
+  },
+  {
+    "n": 7,
+    "label": "real",
+    "step": "priority from published policy and asserted criticality (no direct database injection)",
+    "priority": "high",
+    "policy": "22ead6cb-a9e1-49ad-81b4-3c8d72038245",
+    "provisional": true
+  },
+  {
+    "n": 8,
+    "label": "real",
+    "step": "proposal approved by a different person; execution through the effect gate"
+  },
+  {
+    "n": 9,
+    "label": "fake",
+    "step": "ticket created in the in-process Jira-style fake (fixture-tested adapter, no live tracker)",
+    "ticket": "SEC-1"
+  },
+  {
+    "n": 10,
+    "label": "manual",
+    "step": "owner records the ticket as the external work (an approved ticket does not advance the case)"
+  },
+  {
+    "n": 11,
+    "label": "fake",
+    "step": "tracker marks SEC-1 Done; inbound sync records it; case is not moved by it"
+  },
+  {
+    "n": 12,
+    "label": "manual",
+    "step": "analyst records the redeployed image as a new asset version (no deployment integration)",
+    "digest": "sha256:edaa21f8df3377cb21a78f18848d558ff3c3ad6b434d7b22cc1f796861059dec"
+  },
+  {
+    "n": 13,
+    "label": "manual",
+    "step": "rescan evidence: the Trivy fixture with the finding removed (synthetic, not scanner output)"
+  },
+  {
+    "n": 14,
+    "label": "real",
+    "step": "independent verifier (not the reporter) records a passed verification bound to the deployed digest"
+  },
+  {
+    "n": 15,
+    "label": "real",
+    "step": "closed as verified remediated with the verification run and its evidence"
+  },
+  {
+    "n": 16,
+    "label": "real",
+    "step": "ownership sweep job (enqueued by the test instead of waiting 15 minutes) re-routed the other unresolved cases after the policy and context appeared"
+  },
+  {
+    "n": 17,
+    "label": "real",
+    "step": "snapshot shows verified closure, per-source coverage and the open unprioritised remainder",
+    "closed": {
+      "verified_remediated": 1
+    },
+    "open": 28,
+    "unprioritised": 28,
+    "source": "file_import:trivy_json",
+    "completeness": "complete",
+    "freshness": "fresh"
+  },
+  {
+    "n": 18,
+    "label": "real",
+    "step": "auditor evidence package; evidence content withheld for lack of classification access",
+    "withheld": 2
+  }
+]

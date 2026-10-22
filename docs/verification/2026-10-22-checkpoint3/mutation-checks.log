@@ -1,0 +1,9 @@
+# Mutation checks, 2026-10-22, run on the working tree before commit 4a3069a, with the dev test cluster.
+# Script: mutation-checks.py (each mutation applied, the named test file run with -x, file restored).
+# Output copied verbatim:
+KILLED backend/axiom/domains/reports/service.py AND s.status <> 'revised'), ['1 failed, 1 passed in 2.50s']
+KILLED backend/axiom/jobs/witness.py return mine ['1 failed in 0.11s']
+KILLED backend/axiom/jobs/witness.py if n.endswith('-' + worker) ['1 failed in 0.08s']
+KILLED backend/axiom/domains/cases/sla.py r = _insert(conn, ctx, case["id"], "remediation",  ['1 failed in 1.10s']
+KILLED backend/axiom/domains/cases/sla.py if reason == "accepted_risk":
+        return "met" ['1 failed, 3 passed in 3.61s']

@@ -1,0 +1,738 @@
+
+=== versions (08:58:23Z)
+git HEAD: 4a3069ac903b2f7b991c70c72c0c3df95a52e85b dirty=0
+Python 3.13.16
+uv 0.11.32 (x86_64-unknown-linux-gnu)
+postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+Docker version 29.9.1, build dfc520d
+Docker Compose version v5.6.0
+fastapi 0.143.0 psycopg 3.3.6 psycopg_pool 3.3.3 pydantic 2.14.1 pyjwt 2.15.1 boto3 1.43.113 pytest 9.1.1
+
+=== fresh cluster + role provisioning (first run) (08:58:24Z)
+test PostgreSQL ready on 127.0.0.1:55433 (env: /home/dev/ci-4a3069a/.var/ci/run15/foundation/env.test)
+
+=== role provisioning (second run, idempotency) (08:58:25Z)
+test PostgreSQL ready on 127.0.0.1:55433 (env: /home/dev/ci-4a3069a/.var/ci/run15/foundation/env.test)
+
+=== database 1: create, migrate, migrate again (08:58:25Z)
+applied: 0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008, 0009, 0010, 0011, 0012
+applied: none
+
+=== database 2 in the same cluster: create, migrate (08:58:25Z)
+applied: 0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008, 0009, 0010, 0011, 0012
+
+=== edited migration is rejected by the CLI runner (08:58:26Z)
+rejected as expected: checksum mismatch for applied migration 0001_foundation.sql; applied migrations must not be edited
+
+=== RLS structural audit as runtime role (database 2) (08:58:26Z)
+forced_rls no_rls no_rls_tables not_owner_owned
+57 3 permissions,role_permissions,recovery_acknowledgements 0
+(1 row)
+current_user rolsuper rolbypassrls owner_member
+axiom_app f f f
+(1 row)
+
+=== fresh SeaweedFS for S3 tests (08:58:26Z)
+bucket created after 1 attempt(s)
+
+=== complete pytest suite (unit + PostgreSQL + S3), fresh session database (08:58:35Z)
+============================= test session starts ==============================
+platform linux -- Python 3.13.16, pytest-9.1.1, pluggy-1.6.0 -- /home/dev/ci-4a3069a/.venv/bin/python
+rootdir: /home/dev/ci-4a3069a
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collecting ... collected 323 items
+
+tests/drills/test_physical_snapshot.py::test_storage_snapshot_rollback_is_caught_only_by_the_witness SKIPPED [  0%]
+tests/integration/test_actions.py::test_digest_is_computed_by_the_database_and_versions_are_immutable PASSED [  0%]
+tests/integration/test_actions.py::test_payload_validation_and_disabled_effect_classes PASSED [  0%]
+tests/integration/test_actions.py::test_proposer_cannot_approve_in_service_or_database PASSED [  1%]
+tests/integration/test_actions.py::test_approval_cannot_point_at_a_different_digest PASSED [  1%]
+tests/integration/test_actions.py::test_revision_after_approval_requires_new_approval PASSED [  1%]
+tests/integration/test_actions.py::test_approval_limits PASSED           [  2%]
+tests/integration/test_actions.py::test_concurrent_reservations_never_exceed_max_uses PASSED [  2%]
+tests/integration/test_actions.py::test_reservation_accounting_is_guarded_in_the_database PASSED [  2%]
+tests/integration/test_actions.py::test_execution_creates_one_verified_ticket_and_does_not_touch_the_case PASSED [  3%]
+tests/integration/test_actions.py::test_revocation_before_execution_denies_and_returns_the_unused_use PASSED [  3%]
+tests/integration/test_actions.py::test_approver_losing_membership_before_execution_denies PASSED [  3%]
+tests/integration/test_actions.py::test_material_change_after_approval_denies PASSED [  4%]
+tests/integration/test_actions.py::test_cancel_before_any_attempt_returns_the_use PASSED [  4%]
+tests/integration/test_actions.py::test_a_use_is_never_returned_once_the_effect_may_have_been_attempted PASSED [  4%]
+tests/integration/test_actions.py::test_lost_ack_with_lagging_search_parks_instead_of_creating_again PASSED [  4%]
+tests/integration/test_actions.py::test_lost_ack_adopted_when_the_index_has_caught_up PASSED [  5%]
+tests/integration/test_actions.py::test_lost_ack_with_provider_idempotency_retries_safely PASSED [  5%]
+tests/integration/test_actions.py::test_misdeclared_capability_is_the_failure_mode PASSED [  5%]
+tests/integration/test_actions.py::test_unprocessed_and_connect_failures_retry_without_duplicates PASSED [  6%]
+tests/integration/test_actions.py::test_stale_worker_already_past_the_boundary[jira-style] PASSED [  6%]
+tests/integration/test_actions.py::test_stale_worker_already_past_the_boundary[provider-idempotency] PASSED [  6%]
+tests/integration/test_actions.py::test_stale_worker_already_past_the_boundary[provider-unique-id] PASSED [  7%]
+tests/integration/test_actions.py::test_stale_worker_already_past_the_boundary[provider-fencing] PASSED [  7%]
+tests/integration/test_actions.py::test_two_jobs_racing_on_one_operation_key_send_one_first_attempt PASSED [  7%]
+tests/integration/test_actions.py::test_concurrent_workers_many_executions_no_duplicates PASSED [  8%]
+tests/integration/test_actions.py::test_idempotency_key_replays_and_rejects_reuse_with_different_arguments PASSED [  8%]
+tests/integration/test_actions.py::test_idempotency_keys_are_scoped_per_principal PASSED [  8%]
+tests/integration/test_actions.py::test_operator_actions_are_audited_and_need_their_permission PASSED [  8%]
+tests/integration/test_actions.py::test_weaker_class_permissions_never_authorise_a_stronger_effect PASSED [  9%]
+tests/integration/test_actions.py::test_generic_action_permissions_no_longer_grant_anything PASSED [  9%]
+tests/integration/test_actions_api.py::test_action_journey_with_idempotent_execution PASSED [  9%]
+tests/integration/test_actions_api.py::test_parked_execution_reconciled_through_the_api PASSED [ 10%]
+tests/integration/test_actions_api.py::test_risk_request_and_authorise_over_http PASSED [ 10%]
+tests/integration/test_actions_api.py::test_job_retry_requires_operate_permission_and_is_audited PASSED [ 10%]
+tests/integration/test_actions_api.py::test_reports_sla_and_ticket_state_over_http PASSED [ 11%]
+tests/integration/test_api.py::test_analyst_journey_to_verified_closure PASSED [ 11%]
+tests/integration/test_api.py::test_conflicts_and_structured_errors PASSED [ 11%]
+tests/integration/test_api.py::test_client_cannot_assert_authority_or_tenant PASSED [ 12%]
+tests/integration/test_api.py::test_authentication_and_tenant_selection PASSED [ 12%]
+tests/integration/test_api.py::test_cross_tenant_access_through_api_is_denied PASSED [ 12%]
+tests/integration/test_api.py::test_audit_read_requires_explicit_permission PASSED [ 13%]
+tests/integration/test_api.py::test_pagination PASSED                    [ 13%]
+tests/integration/test_api.py::test_ingestion_journey_through_api PASSED [ 13%]
+tests/integration/test_api.py::test_identity_candidate_review_through_api PASSED [ 13%]
+tests/integration/test_cases.py::test_full_lifecycle_to_verified_closure_and_reopen_preserves_history PASSED [ 14%]
+tests/integration/test_cases.py::test_stale_version_rejected_without_partial_state PASSED [ 14%]
+tests/integration/test_cases.py::test_concurrent_contradictory_decisions_one_commits PASSED [ 14%]
+tests/integration/test_cases.py::test_definite_assessment_requires_verified_evidence PASSED [ 15%]
+tests/integration/test_cases.py::test_wrong_deployment_digest_is_inconclusive PASSED [ 15%]
+tests/integration/test_cases.py::test_partial_coverage_cannot_pass_and_failure_returns_to_remediating PASSED [ 15%]
+tests/integration/test_cases.py::test_reporter_cannot_verify_own_change PASSED [ 16%]
+tests/integration/test_cases.py::test_no_closure_path_from_remediating PASSED [ 16%]
+tests/integration/test_cases.py::test_plan_requires_eligible_owner PASSED [ 16%]
+tests/integration/test_cases.py::test_dismissal_requires_evidence_backed_assessment_and_independent_approver PASSED [ 17%]
+tests/integration/test_cases.py::test_inconclusive_assessment_cannot_be_dismissed PASSED [ 17%]
+tests/integration/test_cases.py::test_risk_acceptance_limits_owner_and_expiry_reopens PASSED [ 17%]
+tests/integration/test_cases.py::test_case_owner_cannot_accept_own_risk PASSED [ 17%]
+tests/integration/test_cases.py::test_duplicate_requires_shared_vulnerability_on_same_asset PASSED [ 18%]
+tests/integration/test_cases.py::test_asset_retirement_closure_requires_retired_assets PASSED [ 18%]
+tests/integration/test_cases.py::test_audit_failure_prevents_transition PASSED [ 18%]
+tests/integration/test_cases.py::test_audit_failure_in_application_prevents_transition PASSED [ 19%]
+tests/integration/test_cases.py::test_permission_scope_and_revocation PASSED [ 19%]
+tests/integration/test_cases.py::test_expired_binding_denied PASSED      [ 19%]
+tests/integration/test_cases.py::test_tenant_admin_delegation_rules PASSED [ 20%]
+tests/integration/test_cases.py::test_cross_tenant_resource_references_are_invisible PASSED [ 20%]
+tests/integration/test_cases.py::test_list_respects_scope PASSED         [ 20%]
+tests/integration/test_cases.py::test_deferral_stays_open_with_review_date PASSED [ 21%]
+tests/integration/test_cases.py::test_remediation_target_must_be_affected_asset PASSED [ 21%]
+tests/integration/test_cases.py::test_decisions_record_authority PASSED  [ 21%]
+tests/integration/test_cases.py::test_citing_evidence_requires_read_permission_for_its_classification PASSED [ 21%]
+tests/integration/test_cases.py::test_audit_detail_redacts_secret_like_keys PASSED [ 22%]
+tests/integration/test_evidence_outbox.py::test_upload_finalise_and_audited_download PASSED [ 22%]
+tests/integration/test_evidence_outbox.py::test_digest_mismatch_is_rejected_and_cannot_be_served PASSED [ 22%]
+tests/integration/test_evidence_outbox.py::test_oversize_upload_aborts_and_stays_pending PASSED [ 23%]
+tests/integration/test_evidence_outbox.py::test_only_uploader_can_supply_and_finalise PASSED [ 23%]
+tests/integration/test_evidence_outbox.py::test_finalise_before_upload_rejected PASSED [ 23%]
+tests/integration/test_evidence_outbox.py::test_classification_permissions_and_denial_audit PASSED [ 24%]
+tests/integration/test_evidence_outbox.py::test_cross_tenant_evidence_is_not_found PASSED [ 24%]
+tests/integration/test_evidence_outbox.py::test_storage_tampering_after_verification_is_detected PASSED [ 24%]
+tests/integration/test_evidence_outbox.py::test_tenant_object_store_refuses_foreign_keys PASSED [ 25%]
+tests/integration/test_evidence_outbox.py::test_outbox_relay_delivers_at_least_once_and_inbox_dedupes PASSED [ 25%]
+tests/integration/test_evidence_outbox.py::test_concurrent_relays_do_not_double_claim PASSED [ 25%]
+tests/integration/test_ingestion.py::test_trivy_import_preserves_original_and_correlates PASSED [ 26%]
+tests/integration/test_ingestion.py::test_replayed_import_creates_no_duplicates PASSED [ 26%]
+tests/integration/test_ingestion.py::test_resume_after_in_process_crash_skips_committed_pages PASSED [ 26%]
+tests/integration/test_ingestion.py::test_stale_worker_is_fenced PASSED  [ 26%]
+tests/integration/test_ingestion.py::test_real_process_kill_then_resume PASSED [ 27%]
+tests/integration/test_ingestion.py::test_partial_scan_closes_nothing_and_complete_rescan_records_absence PASSED [ 27%]
+tests/integration/test_ingestion.py::test_tenable_identity_uncertainty_quarantine_and_source_fix PASSED [ 27%]
+tests/integration/test_ingestion.py::test_sarif_import_with_untrusted_text_changes_no_authority PASSED [ 28%]
+tests/integration/test_ingestion.py::test_sarif_without_subject_fails_until_declared PASSED [ 28%]
+tests/integration/test_ingestion.py::test_import_permissions_and_tenant_boundaries PASSED [ 28%]
+tests/integration/test_ingestion.py::test_tampered_original_fails_the_run PASSED [ 29%]
+tests/integration/test_ingestion.py::test_recurrence_after_verified_closure_reopens PASSED [ 29%]
+tests/integration/test_ingestion.py::test_strong_identifier_conflict_creates_conflict_asset_and_review PASSED [ 29%]
+tests/integration/test_ingestion_jobs.py::test_import_request_enqueues_exactly_one_job_in_the_same_transaction PASSED [ 30%]
+tests/integration/test_ingestion_jobs.py::test_run_finished_by_a_fenced_out_step_completes_the_job_without_rerunning PASSED [ 30%]
+tests/integration/test_ingestion_jobs.py::test_run_leased_elsewhere_makes_the_job_wait_not_fail PASSED [ 30%]
+tests/integration/test_ingestion_jobs.py::test_risk_expiry_sweep_is_scheduled_once_per_interval_per_tenant PASSED [ 30%]
+tests/integration/test_isolation.py::test_migration_ledger_is_idempotent_and_detects_edits PASSED [ 31%]
+tests/integration/test_isolation.py::test_runtime_role_self_check PASSED [ 31%]
+tests/integration/test_isolation.py::test_no_context_sees_nothing PASSED [ 31%]
+tests/integration/test_isolation.py::test_context_limits_rows_and_writes PASSED [ 32%]
+tests/integration/test_isolation.py::test_cross_tenant_foreign_key_rejected PASSED [ 32%]
+tests/integration/test_isolation.py::test_cannot_switch_tenant_inside_transaction PASSED [ 32%]
+tests/integration/test_isolation.py::test_session_level_context_does_not_leak_into_next_transaction PASSED [ 33%]
+tests/integration/test_isolation.py::test_pool_reuse_rollback_and_tenant_switching PASSED [ 33%]
+tests/integration/test_isolation.py::test_suspended_tenant_is_inaccessible PASSED [ 33%]
+tests/integration/test_isolation.py::test_runtime_cannot_read_identity_tables_directly PASSED [ 34%]
+tests/integration/test_isolation.py::test_provisioner_cannot_read_case_or_evidence_data PASSED [ 34%]
+tests/integration/test_isolation.py::test_relay_reads_only_outbox PASSED [ 34%]
+tests/integration/test_isolation.py::test_append_only_tables_reject_mutation_even_for_owner PASSED [ 34%]
+tests/integration/test_isolation.py::test_direct_sql_cannot_bypass_case_commands PASSED [ 35%]
+tests/integration/test_isolation.py::test_closure_without_valid_record_fails_at_commit PASSED [ 35%]
+tests/integration/test_isolation.py::test_tenant_selection_and_security_events PASSED [ 35%]
+tests/integration/test_jobs.py::test_runtime_can_read_fingerprint_and_it_is_acknowledged PASSED [ 36%]
+tests/integration/test_jobs.py::test_enqueue_dedupe_returns_existing_job PASSED [ 36%]
+tests/integration/test_jobs.py::test_payloads_carry_identifiers_only PASSED [ 36%]
+tests/integration/test_jobs.py::test_wait_then_done PASSED               [ 37%]
+tests/integration/test_jobs.py::test_retry_backs_off_then_dead_letters_at_max_attempts PASSED [ 37%]
+tests/integration/test_jobs.py::test_handler_exception_is_retried_not_lost PASSED [ 37%]
+tests/integration/test_jobs.py::test_finished_jobs_are_immutable PASSED  [ 38%]
+tests/integration/test_jobs.py::test_poison_job_dead_letters_after_max_claims_even_if_handler_never_runs PASSED [ 38%]
+tests/integration/test_jobs.py::test_hung_step_loses_lease_at_deadline_and_its_late_result_is_fenced_out PASSED [ 38%]
+tests/integration/test_jobs.py::test_stale_token_cannot_write_even_bypassing_python PASSED [ 39%]
+tests/integration/test_jobs.py::test_per_tenant_running_cap PASSED       [ 39%]
+tests/integration/test_jobs.py::test_jobs_are_tenant_isolated PASSED     [ 39%]
+tests/integration/test_jobs.py::test_version_pinning_drain_and_explicit_migration PASSED [ 39%]
+tests/integration/test_jobs.py::test_cancel_queued_and_running PASSED    [ 40%]
+tests/integration/test_jobs.py::test_effect_once_and_rerun_adopts_recorded_outcome PASSED [ 40%]
+tests/integration/test_jobs.py::test_lost_ack_with_lookup_is_adopted_not_repeated PASSED [ 40%]
+tests/integration/test_jobs.py::test_lost_ack_without_lookup_parks_and_operator_adopts PASSED [ 41%]
+tests/integration/test_jobs.py::test_operator_not_applied_lets_job_retry PASSED [ 41%]
+tests/integration/test_jobs.py::test_permanent_failure_fails_without_retry PASSED [ 41%]
+tests/integration/test_jobs.py::test_revoked_authority_is_rechecked_at_the_effect_boundary PASSED [ 42%]
+tests/integration/test_jobs.py::test_intent_rows_are_guarded PASSED      [ 42%]
+tests/integration/test_jobs.py::test_sigkill_after_effect_before_outcome_recorded[with-lookup] PASSED [ 42%]
+tests/integration/test_jobs.py::test_sigkill_after_effect_before_outcome_recorded[without-lookup] PASSED [ 43%]
+tests/integration/test_jobs.py::test_restore_is_detected_and_no_lookup_effects_park PASSED [ 43%]
+tests/integration/test_jobs.py::test_worker_metrics_endpoint_serves_prometheus_text PASSED [ 43%]
+tests/integration/test_journey_end_to_end.py::test_import_to_verified_closure_and_report PASSED [ 43%]
+tests/integration/test_policy_priority_ownership.py::test_publishing_needs_a_second_person_and_supersedes PASSED [ 44%]
+tests/integration/test_policy_priority_ownership.py::test_invalid_definitions_are_refused[priority-definition0] PASSED [ 44%]
+tests/integration/test_policy_priority_ownership.py::test_invalid_definitions_are_refused[ownership-definition1] PASSED [ 44%]
+tests/integration/test_policy_priority_ownership.py::test_invalid_definitions_are_refused[ownership-definition2] PASSED [ 45%]
+tests/integration/test_policy_priority_ownership.py::test_invalid_definitions_are_refused[sla-definition3] PASSED [ 45%]
+tests/integration/test_policy_priority_ownership.py::test_invalid_definitions_are_refused[freshness-definition4] PASSED [ 45%]
+tests/integration/test_policy_priority_ownership.py::test_priority_from_default_policy_records_its_limitations PASSED [ 46%]
+tests/integration/test_policy_priority_ownership.py::test_published_policy_and_context_drive_priority_and_old_decisions_keep_their_version PASSED [ 46%]
+tests/integration/test_policy_priority_ownership.py::test_override_is_a_recorded_decision_and_needs_permission PASSED [ 46%]
+tests/integration/test_policy_priority_ownership.py::test_routing_unresolved_queue_rules_and_overrides PASSED [ 47%]
+tests/integration/test_policy_priority_ownership.py::test_ownership_confers_no_authority PASSED [ 47%]
+tests/integration/test_policy_priority_ownership.py::test_sweep_reroutes_unresolved_cases_only_when_inputs_change PASSED [ 47%]
+tests/integration/test_r7_return_to_review.py::test_planned_returns_to_review_through_a_recorded_decision PASSED [ 47%]
+tests/integration/test_r7_return_to_review.py::test_remediating_returns_directly_only_with_verified_no_change_evidence PASSED [ 48%]
+tests/integration/test_r7_return_to_review.py::test_database_refuses_a_direct_return_without_evidence PASSED [ 48%]
+tests/integration/test_r7_return_to_review.py::test_deployed_partial_or_unknown_goes_through_verification[deployed] PASSED [ 48%]
+tests/integration/test_r7_return_to_review.py::test_deployed_partial_or_unknown_goes_through_verification[partial] PASSED [ 49%]
+tests/integration/test_r7_return_to_review.py::test_deployed_partial_or_unknown_goes_through_verification[unknown] PASSED [ 49%]
+tests/integration/test_r7_return_to_review.py::test_unresolved_external_effects_block_every_route PASSED [ 49%]
+tests/integration/test_r7_return_to_review.py::test_database_refuses_leaving_remediation_with_an_unresolved_effect PASSED [ 50%]
+tests/integration/test_r7_return_to_review.py::test_proposal_from_a_withdrawn_plan_cannot_execute_even_if_reopened PASSED [ 50%]
+tests/integration/test_r7_return_to_review.py::test_linked_work_and_evidence_are_kept PASSED [ 50%]
+tests/integration/test_report_depth.py::test_successful_sync_is_not_complete_coverage_and_freshness_is_per_source PASSED [ 51%]
+tests/integration/test_report_depth.py::test_snapshot_as_of_is_reproducible_after_later_changes PASSED [ 51%]
+tests/integration/test_report_depth.py::test_evidence_package_withholds_content_the_requester_cannot_read PASSED [ 51%]
+tests/integration/test_restore_witness.py::test_same_identity_restore_fools_the_fingerprint_but_not_the_witness PASSED [ 52%]
+tests/integration/test_restore_witness.py::test_witness_restored_together_with_the_database_is_blind PASSED [ 52%]
+tests/integration/test_restore_witness.py::test_lost_witness_is_detected_and_acknowledgement_reseeds_it PASSED [ 52%]
+tests/integration/test_restore_witness.py::test_acknowledging_a_rollback_moves_the_sequence_past_the_witness PASSED [ 52%]
+tests/integration/test_restore_witness.py::test_witness_write_failure_means_nothing_is_sent PASSED [ 53%]
+tests/integration/test_restore_witness.py::test_acknowledging_a_restore_does_not_authorise_replay PASSED [ 53%]
+tests/integration/test_restore_witness.py::test_unreadable_witness_retries_instead_of_sending PASSED [ 53%]
+tests/integration/test_risk_two_step.py::test_high_impact_needs_someone_other_than_the_requester PASSED [ 54%]
+tests/integration/test_risk_two_step.py::test_database_backstop_for_independence PASSED [ 54%]
+tests/integration/test_risk_two_step.py::test_low_impact_short_acceptance_can_be_self_authorised PASSED [ 54%]
+tests/integration/test_risk_two_step.py::test_request_goes_stale_when_the_case_changes PASSED [ 55%]
+tests/integration/test_risk_two_step.py::test_renewal_supersedes_and_expiry_follows_the_chain PASSED [ 55%]
+tests/integration/test_risk_two_step.py::test_reassessment_notice_once_and_requests_lapse PASSED [ 55%]
+tests/integration/test_risk_two_step.py::test_request_terms_are_immutable PASSED [ 56%]
+tests/integration/test_s3_store.py::test_s3_roundtrip_and_size_limit PASSED [ 56%]
+tests/integration/test_s3_store.py::test_s3_evidence_finalise_and_tamper_detection PASSED [ 56%]
+tests/integration/test_s3_witness.py::test_roundtrip_write_once_and_pruning PASSED [ 56%]
+tests/integration/test_s3_witness.py::test_concurrent_writers_and_duplicate_worker_ids_never_lower_the_mark PASSED [ 57%]
+tests/integration/test_s3_witness.py::test_unavailable_storage_fails_closed PASSED [ 57%]
+tests/integration/test_s3_witness.py::test_lost_acknowledgement_is_recorded_and_never_lowers_or_false_alarms PASSED [ 57%]
+tests/integration/test_s3_witness.py::test_insufficient_permissions_refuse PASSED [ 58%]
+tests/integration/test_s3_witness.py::test_pruning_follows_every_page_and_matches_exact_identity PASSED [ 58%]
+tests/integration/test_s3_witness.py::test_interrupted_prune_on_s3_never_lowers_the_mark PASSED [ 58%]
+tests/integration/test_sla_timers.py::test_triage_is_a_deadline_to_prioritise_not_to_remediate PASSED [ 59%]
+tests/integration/test_sla_timers.py::test_triage_missed_when_priority_comes_late_and_breach_is_recorded_once PASSED [ 59%]
+tests/integration/test_sla_timers.py::test_deferral_pauses_and_a_priority_change_revises_without_resetting PASSED [ 59%]
+tests/integration/test_sla_timers.py::test_accepted_risk_is_never_counted_as_met_and_reopen_starts_a_new_cycle PASSED [ 60%]
+tests/integration/test_sla_timers.py::test_published_sla_policy_is_recorded_on_the_timer PASSED [ 60%]
+tests/integration/test_sync.py::test_tenable_sync_end_to_end_and_checkpoint PASSED [ 60%]
+tests/integration/test_sync.py::test_tenable_sync_complete_advances_checkpoint_and_failed_chunks_do_not PASSED [ 60%]
+tests/integration/test_sync.py::test_interrupted_sync_keeps_committed_pages_as_partial PASSED [ 61%]
+tests/integration/test_sync.py::test_azure_resource_graph_sync_context_and_identity PASSED [ 61%]
+tests/integration/test_sync.py::test_tenable_host_and_azure_vm_with_same_hostname_stay_separate PASSED [ 61%]
+tests/integration/test_tracking_reports.py::test_external_ticket_closure_is_recorded_but_never_closes_the_case PASSED [ 62%]
+tests/integration/test_tracking_reports.py::test_deleted_ticket_and_unreachable_provider PASSED [ 62%]
+tests/integration/test_tracking_reports.py::test_sync_errors_do_not_stop_other_references PASSED [ 62%]
+tests/integration/test_tracking_reports.py::test_snapshot_is_immutable_digest_checked_and_separates_outcomes PASSED [ 63%]
+tests/integration/test_tracking_reports.py::test_exports_need_their_permission_and_are_verified_on_read PASSED [ 63%]
+tests/integration/test_tracking_reports.py::test_reports_are_scoped PASSED [ 63%]
+tests/integration/test_workflow_adapters.py::test_one_verified_ticket_with_provider_recorded[jira_style] PASSED [ 64%]
+tests/integration/test_workflow_adapters.py::test_one_verified_ticket_with_provider_recorded[servicenow] PASSED [ 64%]
+tests/integration/test_workflow_adapters.py::test_one_verified_ticket_with_provider_recorded[github_issues] PASSED [ 64%]
+tests/integration/test_workflow_adapters.py::test_lost_ack_unseen_by_lookup_parks_without_recreating[jira_style] PASSED [ 65%]
+tests/integration/test_workflow_adapters.py::test_lost_ack_unseen_by_lookup_parks_without_recreating[servicenow] PASSED [ 65%]
+tests/integration/test_workflow_adapters.py::test_lost_ack_unseen_by_lookup_parks_without_recreating[github_issues] PASSED [ 65%]
+tests/integration/test_workflow_adapters.py::test_lost_ack_seen_by_lookup_is_adopted[jira_style] PASSED [ 65%]
+tests/integration/test_workflow_adapters.py::test_lost_ack_seen_by_lookup_is_adopted[servicenow] PASSED [ 66%]
+tests/integration/test_workflow_adapters.py::test_lost_ack_seen_by_lookup_is_adopted[github_issues] PASSED [ 66%]
+tests/integration/test_workflow_adapters.py::test_stale_worker_past_the_boundary_new_worker_parks[jira_style] PASSED [ 66%]
+tests/integration/test_workflow_adapters.py::test_stale_worker_past_the_boundary_new_worker_parks[servicenow] PASSED [ 67%]
+tests/integration/test_workflow_adapters.py::test_stale_worker_past_the_boundary_new_worker_parks[github_issues] PASSED [ 67%]
+tests/integration/test_workflow_adapters.py::test_externally_closed_ticket_never_moves_the_case[jira_style] PASSED [ 67%]
+tests/integration/test_workflow_adapters.py::test_externally_closed_ticket_never_moves_the_case[servicenow] PASSED [ 68%]
+tests/integration/test_workflow_adapters.py::test_externally_closed_ticket_never_moves_the_case[github_issues] PASSED [ 68%]
+tests/integration/test_workflow_adapters.py::test_payload_must_fit_the_connection[jira_style] PASSED [ 68%]
+tests/integration/test_workflow_adapters.py::test_payload_must_fit_the_connection[servicenow] PASSED [ 69%]
+tests/integration/test_workflow_adapters.py::test_payload_must_fit_the_connection[github_issues] PASSED [ 69%]
+tests/unit/test_adapters.py::test_trivy_real_report PASSED               [ 69%]
+tests/unit/test_adapters.py::test_trivy_tarball_without_digest_cannot_support_absence PASSED [ 69%]
+tests/unit/test_adapters.py::test_trivy_invalid_records_are_quarantined_and_bad_documents_rejected PASSED [ 70%]
+tests/unit/test_adapters.py::test_sarif_real_trivy_output_requires_declared_subject_and_keeps_identities_distinct PASSED [ 70%]
+tests/unit/test_adapters.py::test_sarif_synthetic_features PASSED        [ 70%]
+tests/unit/test_adapters.py::test_sarif_duplicate_identity_is_quarantined_not_merged PASSED [ 71%]
+tests/unit/test_adapters.py::test_sarif_failed_invocation_is_not_complete PASSED [ 71%]
+tests/unit/test_adapters.py::test_tenable_chunk PASSED                   [ 71%]
+tests/unit/test_adapters.py::test_tenable_export_client_flow_with_rate_limit_and_duplicate_export PASSED [ 72%]
+tests/unit/test_adapters.py::test_tenable_client_bounded_retries_and_expired_chunk PASSED [ 72%]
+tests/unit/test_adapters.py::test_resource_graph_pages_and_parser PASSED [ 72%]
+tests/unit/test_adapters.py::test_identifier_strength_and_catalogue_honesty PASSED [ 73%]
+tests/unit/test_rules.py::test_transition_table_matches_specification PASSED [ 73%]
+tests/unit/test_rules.py::test_cannot_skip_states[received-closed] PASSED [ 73%]
+tests/unit/test_rules.py::test_cannot_skip_states[remediating-closed] PASSED [ 73%]
+tests/unit/test_rules.py::test_cannot_skip_states[investigating-closed] PASSED [ 74%]
+tests/unit/test_rules.py::test_cannot_skip_states[closed-review_required] PASSED [ 74%]
+tests/unit/test_rules.py::test_stale_writer_rejected PASSED              [ 74%]
+tests/unit/test_rules.py::test_closure_origin PASSED                     [ 75%]
+tests/unit/test_rules.py::test_ticket_closed_is_not_a_closure_reason PASSED [ 75%]
+tests/unit/test_rules.py::test_verification_outcome[passed-complete-True-True-passed] PASSED [ 75%]
+tests/unit/test_rules.py::test_verification_outcome[passed-complete-False-True-inconclusive] PASSED [ 76%]
+tests/unit/test_rules.py::test_verification_outcome[passed-complete-None-True-inconclusive] PASSED [ 76%]
+tests/unit/test_rules.py::test_verification_outcome[passed-partial-True-True-inconclusive] PASSED [ 76%]
+tests/unit/test_rules.py::test_verification_outcome[passed-none-True-True-inconclusive] PASSED [ 77%]
+tests/unit/test_rules.py::test_verification_outcome[passed-complete-True-False-inconclusive] PASSED [ 77%]
+tests/unit/test_rules.py::test_verification_outcome[failed-complete-True-True-failed] PASSED [ 77%]
+tests/unit/test_rules.py::test_verification_outcome[failed-complete-False-True-inconclusive] PASSED [ 78%]
+tests/unit/test_rules.py::test_verification_outcome[inconclusive-complete-True-True-inconclusive] PASSED [ 78%]
+tests/unit/test_rules.py::test_unknown_priority_is_conservative PASSED   [ 78%]
+tests/unit/test_rules.py::test_binding_covers_descendants_not_ancestors_or_siblings PASSED [ 78%]
+tests/unit/test_rules.py::test_permissions_cannot_cross_boundaries[override0] PASSED [ 79%]
+tests/unit/test_rules.py::test_permissions_cannot_cross_boundaries[override1] PASSED [ 79%]
+tests/unit/test_rules.py::test_permissions_cannot_cross_boundaries[override2] PASSED [ 79%]
+tests/unit/test_rules.py::test_expired_revoked_future_and_wrong_role_denied[kw0] PASSED [ 80%]
+tests/unit/test_rules.py::test_expired_revoked_future_and_wrong_role_denied[kw1] PASSED [ 80%]
+tests/unit/test_rules.py::test_expired_revoked_future_and_wrong_role_denied[kw2] PASSED [ 80%]
+tests/unit/test_rules.py::test_expired_revoked_future_and_wrong_role_denied[kw3] PASSED [ 81%]
+tests/unit/test_rules.py::test_naive_time_rejected PASSED                [ 81%]
+tests/unit/test_rules.py::test_authority_records_matching_bindings PASSED [ 81%]
+tests/unit/test_rules.py::test_token_verification PASSED                 [ 82%]
+tests/unit/test_rules.py::test_production_refuses_development_shortcuts PASSED [ 82%]
+tests/unit/test_rules.py::test_empty_inline_jwks_rejected PASSED         [ 82%]
+tests/unit/test_witness_config.py::test_production_without_witness_refuses PASSED [ 82%]
+tests/unit/test_witness_config.py::test_development_without_witness_is_allowed_and_explicit PASSED [ 83%]
+tests/unit/test_witness_config.py::test_malformed_witness_refuses[ftp:/tmp/x] PASSED [ 83%]
+tests/unit/test_witness_config.py::test_malformed_witness_refuses[dir:] PASSED [ 83%]
+tests/unit/test_witness_config.py::test_malformed_witness_refuses[dir:   ] PASSED [ 84%]
+tests/unit/test_witness_config.py::test_malformed_witness_refuses[s3:] PASSED [ 84%]
+tests/unit/test_witness_config.py::test_malformed_witness_refuses[s3:/leading-slash] PASSED [ 84%]
+tests/unit/test_witness_config.py::test_malformed_witness_refuses[witness] PASSED [ 85%]
+tests/unit/test_witness_config.py::test_malformed_witness_refuses[:] PASSED [ 85%]
+tests/unit/test_witness_config.py::test_unusable_directory_refuses PASSED [ 85%]
+tests/unit/test_witness_config.py::test_s3_witness_that_cannot_write_refuses PASSED [ 86%]
+tests/unit/test_witness_config.py::test_usable_directory_is_accepted PASSED [ 86%]
+tests/unit/test_witness_pruning.py::test_exact_worker_identity_with_suffix_and_prefix_lookalikes PASSED [ 86%]
+tests/unit/test_witness_pruning.py::test_candidates_are_only_own_records_below_the_newest_keep PASSED [ 86%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[0] PASSED [ 87%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[1] PASSED [ 87%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[2] PASSED [ 87%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[3] PASSED [ 88%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[4] PASSED [ 88%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[5] PASSED [ 88%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[6] PASSED [ 89%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[7] PASSED [ 89%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[8] PASSED [ 89%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[9] PASSED [ 90%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[10] PASSED [ 90%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[11] PASSED [ 90%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[12] PASSED [ 91%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[13] PASSED [ 91%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[14] PASSED [ 91%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[15] PASSED [ 91%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[16] PASSED [ 92%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[17] PASSED [ 92%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[18] PASSED [ 92%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[19] PASSED [ 93%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[20] PASSED [ 93%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[21] PASSED [ 93%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[22] PASSED [ 94%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[23] PASSED [ 94%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[24] PASSED [ 94%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[25] PASSED [ 95%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[26] PASSED [ 95%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[27] PASSED [ 95%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[28] PASSED [ 95%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[29] PASSED [ 96%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[30] PASSED [ 96%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[31] PASSED [ 96%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[32] PASSED [ 97%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[33] PASSED [ 97%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[34] PASSED [ 97%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[35] PASSED [ 98%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[36] PASSED [ 98%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[37] PASSED [ 98%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[38] PASSED [ 99%]
+tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[39] PASSED [ 99%]
+tests/unit/test_witness_pruning.py::test_concurrent_writers_and_pruners_on_one_directory PASSED [ 99%]
+tests/unit/test_witness_pruning.py::test_interrupted_prune_leaves_extra_records_and_a_correct_mark PASSED [100%]
+
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastapi/testclient.py:1
+  /home/dev/ci-4a3069a/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+==================================== PASSES ====================================
+____________ test_storage_tampering_after_verification_is_detected _____________
+------------------------------ Captured log call -------------------------------
+ERROR    axiom.domains.evidence.service:service.py:191 evidence integrity mismatch on read
+__________________ test_handler_exception_is_retried_not_lost __________________
+------------------------------ Captured log call -------------------------------
+ERROR    axiom.jobs.worker:worker.py:211 job step raised
+Traceback (most recent call last):
+  File "/home/dev/ci-4a3069a/backend/axiom/jobs/worker.py", line 206, in execute
+    outcome = handler.step(jc)
+  File "/home/dev/ci-4a3069a/tests/integration/jobs_support.py", line 96, in step
+    return item(jc) if callable(item) else item
+           ~~~~^^^^
+  File "/home/dev/ci-4a3069a/tests/integration/test_jobs.py", line 133, in explode
+    raise RuntimeError("bug")
+RuntimeError: bug
+_______________ test_witness_write_failure_means_nothing_is_sent _______________
+------------------------------ Captured log call -------------------------------
+ERROR    axiom.jobs.worker:worker.py:211 job step raised
+Traceback (most recent call last):
+  File "/home/dev/ci-4a3069a/backend/axiom/jobs/worker.py", line 206, in execute
+    outcome = handler.step(jc)
+  File "/home/dev/ci-4a3069a/tests/integration/jobs_support.py", line 79, in step
+    outcome = EffectGate(jc).run(self.adapter, {"title": jc.job["payload"]["title"]}, self.revalidate)
+  File "/home/dev/ci-4a3069a/backend/axiom/jobs/effects.py", line 231, in run
+    self.witness.advance(watermark)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/home/dev/ci-4a3069a/tests/integration/test_restore_witness.py", line 216, in advance
+    raise OSError("witness volume unavailable")
+OSError: witness volume unavailable
+________________ test_s3_evidence_finalise_and_tamper_detection ________________
+------------------------------ Captured log call -------------------------------
+ERROR    axiom.domains.evidence.service:service.py:191 evidence integrity mismatch on read
+=========================== short test summary info ============================
+PASSED tests/integration/test_actions.py::test_digest_is_computed_by_the_database_and_versions_are_immutable
+PASSED tests/integration/test_actions.py::test_payload_validation_and_disabled_effect_classes
+PASSED tests/integration/test_actions.py::test_proposer_cannot_approve_in_service_or_database
+PASSED tests/integration/test_actions.py::test_approval_cannot_point_at_a_different_digest
+PASSED tests/integration/test_actions.py::test_revision_after_approval_requires_new_approval
+PASSED tests/integration/test_actions.py::test_approval_limits
+PASSED tests/integration/test_actions.py::test_concurrent_reservations_never_exceed_max_uses
+PASSED tests/integration/test_actions.py::test_reservation_accounting_is_guarded_in_the_database
+PASSED tests/integration/test_actions.py::test_execution_creates_one_verified_ticket_and_does_not_touch_the_case
+PASSED tests/integration/test_actions.py::test_revocation_before_execution_denies_and_returns_the_unused_use
+PASSED tests/integration/test_actions.py::test_approver_losing_membership_before_execution_denies
+PASSED tests/integration/test_actions.py::test_material_change_after_approval_denies
+PASSED tests/integration/test_actions.py::test_cancel_before_any_attempt_returns_the_use
+PASSED tests/integration/test_actions.py::test_a_use_is_never_returned_once_the_effect_may_have_been_attempted
+PASSED tests/integration/test_actions.py::test_lost_ack_with_lagging_search_parks_instead_of_creating_again
+PASSED tests/integration/test_actions.py::test_lost_ack_adopted_when_the_index_has_caught_up
+PASSED tests/integration/test_actions.py::test_lost_ack_with_provider_idempotency_retries_safely
+PASSED tests/integration/test_actions.py::test_misdeclared_capability_is_the_failure_mode
+PASSED tests/integration/test_actions.py::test_unprocessed_and_connect_failures_retry_without_duplicates
+PASSED tests/integration/test_actions.py::test_stale_worker_already_past_the_boundary[jira-style]
+PASSED tests/integration/test_actions.py::test_stale_worker_already_past_the_boundary[provider-idempotency]
+PASSED tests/integration/test_actions.py::test_stale_worker_already_past_the_boundary[provider-unique-id]
+PASSED tests/integration/test_actions.py::test_stale_worker_already_past_the_boundary[provider-fencing]
+PASSED tests/integration/test_actions.py::test_two_jobs_racing_on_one_operation_key_send_one_first_attempt
+PASSED tests/integration/test_actions.py::test_concurrent_workers_many_executions_no_duplicates
+PASSED tests/integration/test_actions.py::test_idempotency_key_replays_and_rejects_reuse_with_different_arguments
+PASSED tests/integration/test_actions.py::test_idempotency_keys_are_scoped_per_principal
+PASSED tests/integration/test_actions.py::test_operator_actions_are_audited_and_need_their_permission
+PASSED tests/integration/test_actions.py::test_weaker_class_permissions_never_authorise_a_stronger_effect
+PASSED tests/integration/test_actions.py::test_generic_action_permissions_no_longer_grant_anything
+PASSED tests/integration/test_actions_api.py::test_action_journey_with_idempotent_execution
+PASSED tests/integration/test_actions_api.py::test_parked_execution_reconciled_through_the_api
+PASSED tests/integration/test_actions_api.py::test_risk_request_and_authorise_over_http
+PASSED tests/integration/test_actions_api.py::test_job_retry_requires_operate_permission_and_is_audited
+PASSED tests/integration/test_actions_api.py::test_reports_sla_and_ticket_state_over_http
+PASSED tests/integration/test_api.py::test_analyst_journey_to_verified_closure
+PASSED tests/integration/test_api.py::test_conflicts_and_structured_errors
+PASSED tests/integration/test_api.py::test_client_cannot_assert_authority_or_tenant
+PASSED tests/integration/test_api.py::test_authentication_and_tenant_selection
+PASSED tests/integration/test_api.py::test_cross_tenant_access_through_api_is_denied
+PASSED tests/integration/test_api.py::test_audit_read_requires_explicit_permission
+PASSED tests/integration/test_api.py::test_pagination
+PASSED tests/integration/test_api.py::test_ingestion_journey_through_api
+PASSED tests/integration/test_api.py::test_identity_candidate_review_through_api
+PASSED tests/integration/test_cases.py::test_full_lifecycle_to_verified_closure_and_reopen_preserves_history
+PASSED tests/integration/test_cases.py::test_stale_version_rejected_without_partial_state
+PASSED tests/integration/test_cases.py::test_concurrent_contradictory_decisions_one_commits
+PASSED tests/integration/test_cases.py::test_definite_assessment_requires_verified_evidence
+PASSED tests/integration/test_cases.py::test_wrong_deployment_digest_is_inconclusive
+PASSED tests/integration/test_cases.py::test_partial_coverage_cannot_pass_and_failure_returns_to_remediating
+PASSED tests/integration/test_cases.py::test_reporter_cannot_verify_own_change
+PASSED tests/integration/test_cases.py::test_no_closure_path_from_remediating
+PASSED tests/integration/test_cases.py::test_plan_requires_eligible_owner
+PASSED tests/integration/test_cases.py::test_dismissal_requires_evidence_backed_assessment_and_independent_approver
+PASSED tests/integration/test_cases.py::test_inconclusive_assessment_cannot_be_dismissed
+PASSED tests/integration/test_cases.py::test_risk_acceptance_limits_owner_and_expiry_reopens
+PASSED tests/integration/test_cases.py::test_case_owner_cannot_accept_own_risk
+PASSED tests/integration/test_cases.py::test_duplicate_requires_shared_vulnerability_on_same_asset
+PASSED tests/integration/test_cases.py::test_asset_retirement_closure_requires_retired_assets
+PASSED tests/integration/test_cases.py::test_audit_failure_prevents_transition
+PASSED tests/integration/test_cases.py::test_audit_failure_in_application_prevents_transition
+PASSED tests/integration/test_cases.py::test_permission_scope_and_revocation
+PASSED tests/integration/test_cases.py::test_expired_binding_denied
+PASSED tests/integration/test_cases.py::test_tenant_admin_delegation_rules
+PASSED tests/integration/test_cases.py::test_cross_tenant_resource_references_are_invisible
+PASSED tests/integration/test_cases.py::test_list_respects_scope
+PASSED tests/integration/test_cases.py::test_deferral_stays_open_with_review_date
+PASSED tests/integration/test_cases.py::test_remediation_target_must_be_affected_asset
+PASSED tests/integration/test_cases.py::test_decisions_record_authority
+PASSED tests/integration/test_cases.py::test_citing_evidence_requires_read_permission_for_its_classification
+PASSED tests/integration/test_cases.py::test_audit_detail_redacts_secret_like_keys
+PASSED tests/integration/test_evidence_outbox.py::test_upload_finalise_and_audited_download
+PASSED tests/integration/test_evidence_outbox.py::test_digest_mismatch_is_rejected_and_cannot_be_served
+PASSED tests/integration/test_evidence_outbox.py::test_oversize_upload_aborts_and_stays_pending
+PASSED tests/integration/test_evidence_outbox.py::test_only_uploader_can_supply_and_finalise
+PASSED tests/integration/test_evidence_outbox.py::test_finalise_before_upload_rejected
+PASSED tests/integration/test_evidence_outbox.py::test_classification_permissions_and_denial_audit
+PASSED tests/integration/test_evidence_outbox.py::test_cross_tenant_evidence_is_not_found
+PASSED tests/integration/test_evidence_outbox.py::test_storage_tampering_after_verification_is_detected
+PASSED tests/integration/test_evidence_outbox.py::test_tenant_object_store_refuses_foreign_keys
+PASSED tests/integration/test_evidence_outbox.py::test_outbox_relay_delivers_at_least_once_and_inbox_dedupes
+PASSED tests/integration/test_evidence_outbox.py::test_concurrent_relays_do_not_double_claim
+PASSED tests/integration/test_ingestion.py::test_trivy_import_preserves_original_and_correlates
+PASSED tests/integration/test_ingestion.py::test_replayed_import_creates_no_duplicates
+PASSED tests/integration/test_ingestion.py::test_resume_after_in_process_crash_skips_committed_pages
+PASSED tests/integration/test_ingestion.py::test_stale_worker_is_fenced
+PASSED tests/integration/test_ingestion.py::test_real_process_kill_then_resume
+PASSED tests/integration/test_ingestion.py::test_partial_scan_closes_nothing_and_complete_rescan_records_absence
+PASSED tests/integration/test_ingestion.py::test_tenable_identity_uncertainty_quarantine_and_source_fix
+PASSED tests/integration/test_ingestion.py::test_sarif_import_with_untrusted_text_changes_no_authority
+PASSED tests/integration/test_ingestion.py::test_sarif_without_subject_fails_until_declared
+PASSED tests/integration/test_ingestion.py::test_import_permissions_and_tenant_boundaries
+PASSED tests/integration/test_ingestion.py::test_tampered_original_fails_the_run
+PASSED tests/integration/test_ingestion.py::test_recurrence_after_verified_closure_reopens
+PASSED tests/integration/test_ingestion.py::test_strong_identifier_conflict_creates_conflict_asset_and_review
+PASSED tests/integration/test_ingestion_jobs.py::test_import_request_enqueues_exactly_one_job_in_the_same_transaction
+PASSED tests/integration/test_ingestion_jobs.py::test_run_finished_by_a_fenced_out_step_completes_the_job_without_rerunning
+PASSED tests/integration/test_ingestion_jobs.py::test_run_leased_elsewhere_makes_the_job_wait_not_fail
+PASSED tests/integration/test_ingestion_jobs.py::test_risk_expiry_sweep_is_scheduled_once_per_interval_per_tenant
+PASSED tests/integration/test_isolation.py::test_migration_ledger_is_idempotent_and_detects_edits
+PASSED tests/integration/test_isolation.py::test_runtime_role_self_check
+PASSED tests/integration/test_isolation.py::test_no_context_sees_nothing
+PASSED tests/integration/test_isolation.py::test_context_limits_rows_and_writes
+PASSED tests/integration/test_isolation.py::test_cross_tenant_foreign_key_rejected
+PASSED tests/integration/test_isolation.py::test_cannot_switch_tenant_inside_transaction
+PASSED tests/integration/test_isolation.py::test_session_level_context_does_not_leak_into_next_transaction
+PASSED tests/integration/test_isolation.py::test_pool_reuse_rollback_and_tenant_switching
+PASSED tests/integration/test_isolation.py::test_suspended_tenant_is_inaccessible
+PASSED tests/integration/test_isolation.py::test_runtime_cannot_read_identity_tables_directly
+PASSED tests/integration/test_isolation.py::test_provisioner_cannot_read_case_or_evidence_data
+PASSED tests/integration/test_isolation.py::test_relay_reads_only_outbox
+PASSED tests/integration/test_isolation.py::test_append_only_tables_reject_mutation_even_for_owner
+PASSED tests/integration/test_isolation.py::test_direct_sql_cannot_bypass_case_commands
+PASSED tests/integration/test_isolation.py::test_closure_without_valid_record_fails_at_commit
+PASSED tests/integration/test_isolation.py::test_tenant_selection_and_security_events
+PASSED tests/integration/test_jobs.py::test_runtime_can_read_fingerprint_and_it_is_acknowledged
+PASSED tests/integration/test_jobs.py::test_enqueue_dedupe_returns_existing_job
+PASSED tests/integration/test_jobs.py::test_payloads_carry_identifiers_only
+PASSED tests/integration/test_jobs.py::test_wait_then_done
+PASSED tests/integration/test_jobs.py::test_retry_backs_off_then_dead_letters_at_max_attempts
+PASSED tests/integration/test_jobs.py::test_handler_exception_is_retried_not_lost
+PASSED tests/integration/test_jobs.py::test_finished_jobs_are_immutable
+PASSED tests/integration/test_jobs.py::test_poison_job_dead_letters_after_max_claims_even_if_handler_never_runs
+PASSED tests/integration/test_jobs.py::test_hung_step_loses_lease_at_deadline_and_its_late_result_is_fenced_out
+PASSED tests/integration/test_jobs.py::test_stale_token_cannot_write_even_bypassing_python
+PASSED tests/integration/test_jobs.py::test_per_tenant_running_cap
+PASSED tests/integration/test_jobs.py::test_jobs_are_tenant_isolated
+PASSED tests/integration/test_jobs.py::test_version_pinning_drain_and_explicit_migration
+PASSED tests/integration/test_jobs.py::test_cancel_queued_and_running
+PASSED tests/integration/test_jobs.py::test_effect_once_and_rerun_adopts_recorded_outcome
+PASSED tests/integration/test_jobs.py::test_lost_ack_with_lookup_is_adopted_not_repeated
+PASSED tests/integration/test_jobs.py::test_lost_ack_without_lookup_parks_and_operator_adopts
+PASSED tests/integration/test_jobs.py::test_operator_not_applied_lets_job_retry
+PASSED tests/integration/test_jobs.py::test_permanent_failure_fails_without_retry
+PASSED tests/integration/test_jobs.py::test_revoked_authority_is_rechecked_at_the_effect_boundary
+PASSED tests/integration/test_jobs.py::test_intent_rows_are_guarded
+PASSED tests/integration/test_jobs.py::test_sigkill_after_effect_before_outcome_recorded[with-lookup]
+PASSED tests/integration/test_jobs.py::test_sigkill_after_effect_before_outcome_recorded[without-lookup]
+PASSED tests/integration/test_jobs.py::test_restore_is_detected_and_no_lookup_effects_park
+PASSED tests/integration/test_jobs.py::test_worker_metrics_endpoint_serves_prometheus_text
+PASSED tests/integration/test_journey_end_to_end.py::test_import_to_verified_closure_and_report
+PASSED tests/integration/test_policy_priority_ownership.py::test_publishing_needs_a_second_person_and_supersedes
+PASSED tests/integration/test_policy_priority_ownership.py::test_invalid_definitions_are_refused[priority-definition0]
+PASSED tests/integration/test_policy_priority_ownership.py::test_invalid_definitions_are_refused[ownership-definition1]
+PASSED tests/integration/test_policy_priority_ownership.py::test_invalid_definitions_are_refused[ownership-definition2]
+PASSED tests/integration/test_policy_priority_ownership.py::test_invalid_definitions_are_refused[sla-definition3]
+PASSED tests/integration/test_policy_priority_ownership.py::test_invalid_definitions_are_refused[freshness-definition4]
+PASSED tests/integration/test_policy_priority_ownership.py::test_priority_from_default_policy_records_its_limitations
+PASSED tests/integration/test_policy_priority_ownership.py::test_published_policy_and_context_drive_priority_and_old_decisions_keep_their_version
+PASSED tests/integration/test_policy_priority_ownership.py::test_override_is_a_recorded_decision_and_needs_permission
+PASSED tests/integration/test_policy_priority_ownership.py::test_routing_unresolved_queue_rules_and_overrides
+PASSED tests/integration/test_policy_priority_ownership.py::test_ownership_confers_no_authority
+PASSED tests/integration/test_policy_priority_ownership.py::test_sweep_reroutes_unresolved_cases_only_when_inputs_change
+PASSED tests/integration/test_r7_return_to_review.py::test_planned_returns_to_review_through_a_recorded_decision
+PASSED tests/integration/test_r7_return_to_review.py::test_remediating_returns_directly_only_with_verified_no_change_evidence
+PASSED tests/integration/test_r7_return_to_review.py::test_database_refuses_a_direct_return_without_evidence
+PASSED tests/integration/test_r7_return_to_review.py::test_deployed_partial_or_unknown_goes_through_verification[deployed]
+PASSED tests/integration/test_r7_return_to_review.py::test_deployed_partial_or_unknown_goes_through_verification[partial]
+PASSED tests/integration/test_r7_return_to_review.py::test_deployed_partial_or_unknown_goes_through_verification[unknown]
+PASSED tests/integration/test_r7_return_to_review.py::test_unresolved_external_effects_block_every_route
+PASSED tests/integration/test_r7_return_to_review.py::test_database_refuses_leaving_remediation_with_an_unresolved_effect
+PASSED tests/integration/test_r7_return_to_review.py::test_proposal_from_a_withdrawn_plan_cannot_execute_even_if_reopened
+PASSED tests/integration/test_r7_return_to_review.py::test_linked_work_and_evidence_are_kept
+PASSED tests/integration/test_report_depth.py::test_successful_sync_is_not_complete_coverage_and_freshness_is_per_source
+PASSED tests/integration/test_report_depth.py::test_snapshot_as_of_is_reproducible_after_later_changes
+PASSED tests/integration/test_report_depth.py::test_evidence_package_withholds_content_the_requester_cannot_read
+PASSED tests/integration/test_restore_witness.py::test_same_identity_restore_fools_the_fingerprint_but_not_the_witness
+PASSED tests/integration/test_restore_witness.py::test_witness_restored_together_with_the_database_is_blind
+PASSED tests/integration/test_restore_witness.py::test_lost_witness_is_detected_and_acknowledgement_reseeds_it
+PASSED tests/integration/test_restore_witness.py::test_acknowledging_a_rollback_moves_the_sequence_past_the_witness
+PASSED tests/integration/test_restore_witness.py::test_witness_write_failure_means_nothing_is_sent
+PASSED tests/integration/test_restore_witness.py::test_acknowledging_a_restore_does_not_authorise_replay
+PASSED tests/integration/test_restore_witness.py::test_unreadable_witness_retries_instead_of_sending
+PASSED tests/integration/test_risk_two_step.py::test_high_impact_needs_someone_other_than_the_requester
+PASSED tests/integration/test_risk_two_step.py::test_database_backstop_for_independence
+PASSED tests/integration/test_risk_two_step.py::test_low_impact_short_acceptance_can_be_self_authorised
+PASSED tests/integration/test_risk_two_step.py::test_request_goes_stale_when_the_case_changes
+PASSED tests/integration/test_risk_two_step.py::test_renewal_supersedes_and_expiry_follows_the_chain
+PASSED tests/integration/test_risk_two_step.py::test_reassessment_notice_once_and_requests_lapse
+PASSED tests/integration/test_risk_two_step.py::test_request_terms_are_immutable
+PASSED tests/integration/test_s3_store.py::test_s3_roundtrip_and_size_limit
+PASSED tests/integration/test_s3_store.py::test_s3_evidence_finalise_and_tamper_detection
+PASSED tests/integration/test_s3_witness.py::test_roundtrip_write_once_and_pruning
+PASSED tests/integration/test_s3_witness.py::test_concurrent_writers_and_duplicate_worker_ids_never_lower_the_mark
+PASSED tests/integration/test_s3_witness.py::test_unavailable_storage_fails_closed
+PASSED tests/integration/test_s3_witness.py::test_lost_acknowledgement_is_recorded_and_never_lowers_or_false_alarms
+PASSED tests/integration/test_s3_witness.py::test_insufficient_permissions_refuse
+PASSED tests/integration/test_s3_witness.py::test_pruning_follows_every_page_and_matches_exact_identity
+PASSED tests/integration/test_s3_witness.py::test_interrupted_prune_on_s3_never_lowers_the_mark
+PASSED tests/integration/test_sla_timers.py::test_triage_is_a_deadline_to_prioritise_not_to_remediate
+PASSED tests/integration/test_sla_timers.py::test_triage_missed_when_priority_comes_late_and_breach_is_recorded_once
+PASSED tests/integration/test_sla_timers.py::test_deferral_pauses_and_a_priority_change_revises_without_resetting
+PASSED tests/integration/test_sla_timers.py::test_accepted_risk_is_never_counted_as_met_and_reopen_starts_a_new_cycle
+PASSED tests/integration/test_sla_timers.py::test_published_sla_policy_is_recorded_on_the_timer
+PASSED tests/integration/test_sync.py::test_tenable_sync_end_to_end_and_checkpoint
+PASSED tests/integration/test_sync.py::test_tenable_sync_complete_advances_checkpoint_and_failed_chunks_do_not
+PASSED tests/integration/test_sync.py::test_interrupted_sync_keeps_committed_pages_as_partial
+PASSED tests/integration/test_sync.py::test_azure_resource_graph_sync_context_and_identity
+PASSED tests/integration/test_sync.py::test_tenable_host_and_azure_vm_with_same_hostname_stay_separate
+PASSED tests/integration/test_tracking_reports.py::test_external_ticket_closure_is_recorded_but_never_closes_the_case
+PASSED tests/integration/test_tracking_reports.py::test_deleted_ticket_and_unreachable_provider
+PASSED tests/integration/test_tracking_reports.py::test_sync_errors_do_not_stop_other_references
+PASSED tests/integration/test_tracking_reports.py::test_snapshot_is_immutable_digest_checked_and_separates_outcomes
+PASSED tests/integration/test_tracking_reports.py::test_exports_need_their_permission_and_are_verified_on_read
+PASSED tests/integration/test_tracking_reports.py::test_reports_are_scoped
+PASSED tests/integration/test_workflow_adapters.py::test_one_verified_ticket_with_provider_recorded[jira_style]
+PASSED tests/integration/test_workflow_adapters.py::test_one_verified_ticket_with_provider_recorded[servicenow]
+PASSED tests/integration/test_workflow_adapters.py::test_one_verified_ticket_with_provider_recorded[github_issues]
+PASSED tests/integration/test_workflow_adapters.py::test_lost_ack_unseen_by_lookup_parks_without_recreating[jira_style]
+PASSED tests/integration/test_workflow_adapters.py::test_lost_ack_unseen_by_lookup_parks_without_recreating[servicenow]
+PASSED tests/integration/test_workflow_adapters.py::test_lost_ack_unseen_by_lookup_parks_without_recreating[github_issues]
+PASSED tests/integration/test_workflow_adapters.py::test_lost_ack_seen_by_lookup_is_adopted[jira_style]
+PASSED tests/integration/test_workflow_adapters.py::test_lost_ack_seen_by_lookup_is_adopted[servicenow]
+PASSED tests/integration/test_workflow_adapters.py::test_lost_ack_seen_by_lookup_is_adopted[github_issues]
+PASSED tests/integration/test_workflow_adapters.py::test_stale_worker_past_the_boundary_new_worker_parks[jira_style]
+PASSED tests/integration/test_workflow_adapters.py::test_stale_worker_past_the_boundary_new_worker_parks[servicenow]
+PASSED tests/integration/test_workflow_adapters.py::test_stale_worker_past_the_boundary_new_worker_parks[github_issues]
+PASSED tests/integration/test_workflow_adapters.py::test_externally_closed_ticket_never_moves_the_case[jira_style]
+PASSED tests/integration/test_workflow_adapters.py::test_externally_closed_ticket_never_moves_the_case[servicenow]
+PASSED tests/integration/test_workflow_adapters.py::test_externally_closed_ticket_never_moves_the_case[github_issues]
+PASSED tests/integration/test_workflow_adapters.py::test_payload_must_fit_the_connection[jira_style]
+PASSED tests/integration/test_workflow_adapters.py::test_payload_must_fit_the_connection[servicenow]
+PASSED tests/integration/test_workflow_adapters.py::test_payload_must_fit_the_connection[github_issues]
+PASSED tests/unit/test_adapters.py::test_trivy_real_report
+PASSED tests/unit/test_adapters.py::test_trivy_tarball_without_digest_cannot_support_absence
+PASSED tests/unit/test_adapters.py::test_trivy_invalid_records_are_quarantined_and_bad_documents_rejected
+PASSED tests/unit/test_adapters.py::test_sarif_real_trivy_output_requires_declared_subject_and_keeps_identities_distinct
+PASSED tests/unit/test_adapters.py::test_sarif_synthetic_features
+PASSED tests/unit/test_adapters.py::test_sarif_duplicate_identity_is_quarantined_not_merged
+PASSED tests/unit/test_adapters.py::test_sarif_failed_invocation_is_not_complete
+PASSED tests/unit/test_adapters.py::test_tenable_chunk
+PASSED tests/unit/test_adapters.py::test_tenable_export_client_flow_with_rate_limit_and_duplicate_export
+PASSED tests/unit/test_adapters.py::test_tenable_client_bounded_retries_and_expired_chunk
+PASSED tests/unit/test_adapters.py::test_resource_graph_pages_and_parser
+PASSED tests/unit/test_adapters.py::test_identifier_strength_and_catalogue_honesty
+PASSED tests/unit/test_rules.py::test_transition_table_matches_specification
+PASSED tests/unit/test_rules.py::test_cannot_skip_states[received-closed]
+PASSED tests/unit/test_rules.py::test_cannot_skip_states[remediating-closed]
+PASSED tests/unit/test_rules.py::test_cannot_skip_states[investigating-closed]
+PASSED tests/unit/test_rules.py::test_cannot_skip_states[closed-review_required]
+PASSED tests/unit/test_rules.py::test_stale_writer_rejected
+PASSED tests/unit/test_rules.py::test_closure_origin
+PASSED tests/unit/test_rules.py::test_ticket_closed_is_not_a_closure_reason
+PASSED tests/unit/test_rules.py::test_verification_outcome[passed-complete-True-True-passed]
+PASSED tests/unit/test_rules.py::test_verification_outcome[passed-complete-False-True-inconclusive]
+PASSED tests/unit/test_rules.py::test_verification_outcome[passed-complete-None-True-inconclusive]
+PASSED tests/unit/test_rules.py::test_verification_outcome[passed-partial-True-True-inconclusive]
+PASSED tests/unit/test_rules.py::test_verification_outcome[passed-none-True-True-inconclusive]
+PASSED tests/unit/test_rules.py::test_verification_outcome[passed-complete-True-False-inconclusive]
+PASSED tests/unit/test_rules.py::test_verification_outcome[failed-complete-True-True-failed]
+PASSED tests/unit/test_rules.py::test_verification_outcome[failed-complete-False-True-inconclusive]
+PASSED tests/unit/test_rules.py::test_verification_outcome[inconclusive-complete-True-True-inconclusive]
+PASSED tests/unit/test_rules.py::test_unknown_priority_is_conservative
+PASSED tests/unit/test_rules.py::test_binding_covers_descendants_not_ancestors_or_siblings
+PASSED tests/unit/test_rules.py::test_permissions_cannot_cross_boundaries[override0]
+PASSED tests/unit/test_rules.py::test_permissions_cannot_cross_boundaries[override1]
+PASSED tests/unit/test_rules.py::test_permissions_cannot_cross_boundaries[override2]
+PASSED tests/unit/test_rules.py::test_expired_revoked_future_and_wrong_role_denied[kw0]
+PASSED tests/unit/test_rules.py::test_expired_revoked_future_and_wrong_role_denied[kw1]
+PASSED tests/unit/test_rules.py::test_expired_revoked_future_and_wrong_role_denied[kw2]
+PASSED tests/unit/test_rules.py::test_expired_revoked_future_and_wrong_role_denied[kw3]
+PASSED tests/unit/test_rules.py::test_naive_time_rejected
+PASSED tests/unit/test_rules.py::test_authority_records_matching_bindings
+PASSED tests/unit/test_rules.py::test_token_verification
+PASSED tests/unit/test_rules.py::test_production_refuses_development_shortcuts
+PASSED tests/unit/test_rules.py::test_empty_inline_jwks_rejected
+PASSED tests/unit/test_witness_config.py::test_production_without_witness_refuses
+PASSED tests/unit/test_witness_config.py::test_development_without_witness_is_allowed_and_explicit
+PASSED tests/unit/test_witness_config.py::test_malformed_witness_refuses[ftp:/tmp/x]
+PASSED tests/unit/test_witness_config.py::test_malformed_witness_refuses[dir:]
+PASSED tests/unit/test_witness_config.py::test_malformed_witness_refuses[dir:   ]
+PASSED tests/unit/test_witness_config.py::test_malformed_witness_refuses[s3:]
+PASSED tests/unit/test_witness_config.py::test_malformed_witness_refuses[s3:/leading-slash]
+PASSED tests/unit/test_witness_config.py::test_malformed_witness_refuses[witness]
+PASSED tests/unit/test_witness_config.py::test_malformed_witness_refuses[:]
+PASSED tests/unit/test_witness_config.py::test_unusable_directory_refuses
+PASSED tests/unit/test_witness_config.py::test_s3_witness_that_cannot_write_refuses
+PASSED tests/unit/test_witness_config.py::test_usable_directory_is_accepted
+PASSED tests/unit/test_witness_pruning.py::test_exact_worker_identity_with_suffix_and_prefix_lookalikes
+PASSED tests/unit/test_witness_pruning.py::test_candidates_are_only_own_records_below_the_newest_keep
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[0]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[1]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[2]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[3]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[4]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[5]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[6]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[7]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[8]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[9]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[10]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[11]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[12]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[13]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[14]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[15]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[16]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[17]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[18]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[19]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[20]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[21]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[22]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[23]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[24]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[25]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[26]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[27]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[28]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[29]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[30]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[31]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[32]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[33]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[34]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[35]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[36]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[37]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[38]
+PASSED tests/unit/test_witness_pruning.py::test_no_listing_defect_or_interruption_can_remove_the_maximum[39]
+PASSED tests/unit/test_witness_pruning.py::test_concurrent_writers_and_pruners_on_one_directory
+PASSED tests/unit/test_witness_pruning.py::test_interrupted_prune_leaves_extra_records_and_a_correct_mark
+SKIPPED [1] tests/drills/test_physical_snapshot.py:49: set AXIOM_RUN_DRILLS=1
+============ 322 passed, 1 skipped, 1 warning in 151.46s (0:02:31) =============
+pytest exit=0
+
+=== teardown (09:01:07Z)
+seaweedfs removed
+cluster destroyed
