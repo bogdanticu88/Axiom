@@ -218,8 +218,17 @@ export function Verification({ c, onChange }: { c: any; onChange: () => void }) 
                 <table data-testid="verifications">
                   <thead><tr><th>Recorded</th><th>Outcome</th><th>Coverage</th><th>Observed deployment</th><th>Reason</th><th /></tr></thead>
                   <tbody>{d.verifications.map((r: any) => (
-                    <tr key={r.id} data-outcome={r.outcome}><td>{fmt(r.recorded_at)}<div className="small">
-                      <Badge kind="manual">recorded by a person</Badge> {short(r.recorded_by)}</div></td>
+                    <tr key={r.id} data-outcome={r.outcome} data-recorder={r.recorder_kind}><td>{fmt(r.recorded_at)}
+                      <div className="small">{r.recorder_kind === "workload"
+                        ? <><Badge kind="info" title="Recorded by the tenant's verification identity from a check
+                            endpoint response; not a person's judgement">automated check (worker)</Badge>{" "}
+                            {supportLabel("fixture-tested")}</>
+                        : <Badge kind="manual">recorded by a person</Badge>} {short(r.recorded_by)}</div>
+                      {r.observation && <dl className="small" data-testid="observation">
+                        <dt>Source</dt><dd>{r.observation.source_origin}</dd>
+                        <dt>Examined by the endpoint</dt><dd>{r.observation.target_observed_at
+                          ? fmt(r.observation.target_observed_at) : "unknown"}</dd>
+                        <dt>Rule</dt><dd>{r.observation.rule}</dd></dl>}</td>
                       <td><Badge kind={r.outcome === "passed" ? "ok" : r.outcome === "failed" ? "bad" : "warn"}>{r.outcome}</Badge></td>
                       <td>{r.coverage}</td><td>{short(r.observed_asset_version_id)}</td><td className="small">{r.outcome_reason}</td>
                       <td>{r.outcome === "passed" && c.workflow === "awaiting_verification" &&
@@ -229,9 +238,11 @@ export function Verification({ c, onChange }: { c: any; onChange: () => void }) 
                 </table>)}
               {d.closures.length > 0 && <ul data-testid="closures">{d.closures.map((x: any) =>
                 <li key={x.id ?? x.case_event_sequence}>Closed: {x.disposition ?? x.kind} {fmt(x.closed_at ?? x.created_at)}</li>)}</ul>}
-              <p className="muted small">Verification results are entered by a person after a check (no verification
-                worker exists). The platform recomputes the outcome: a pass needs complete coverage of the reported
-                deployment and verified evidence, and the person who reported the change cannot verify it.</p>
+              <p className="muted small">Results come from a person after a check, or from the verification worker
+                when a check endpoint is configured for this project (tested only against a local fixture endpoint).
+                The platform recomputes every outcome: a pass needs complete coverage of the reported deployment and
+                verified evidence, and the person who reported the change cannot verify it. Closing is always a
+                person's decision.</p>
             </>)}
         </Loaded>
       </Section>
