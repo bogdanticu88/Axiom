@@ -15,7 +15,8 @@ Checks, in order, on the callback:
 4. The ID token:
    * signature, with an algorithm from the allow-list, against the issuer's JWKS from discovery;
    * ``iss`` equals the configured issuer exactly;
-   * ``aud`` contains the client id (``azp`` must equal it when there are several audiences);
+   * ``aud`` contains the client id; ``azp`` must equal it when present, and must be present when there are
+     several audiences;
    * ``exp`` and ``iat`` within leeway, and ``iat`` not older than the maximum login age;
    * ``nonce`` equals the nonce stored with the state;
    * ``sub`` present.
@@ -144,7 +145,9 @@ class OidcClient:
             raise Unauthenticated(f"ID token rejected: {exc.error}") from exc
         claims = tok.claims
         aud = claims["aud"] if isinstance(claims["aud"], list) else [claims["aud"]]
-        if len(aud) > 1 and claims.get("azp") != self.client_id:
+        # OIDC Core 3.1.3.7: azp is required to name this client when there are several audiences, and must name
+        # it whenever it is present
+        if (len(aud) > 1 or "azp" in claims) and claims.get("azp") != self.client_id:
             raise Unauthenticated("ID token rejected: azp does not name this client")
         if claims["iat"] < time.time() - MAX_LOGIN_AGE - self.leeway:
             raise Unauthenticated("ID token rejected: issued too long ago")

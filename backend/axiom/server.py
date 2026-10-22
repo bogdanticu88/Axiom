@@ -25,13 +25,20 @@ class RedactSignInQuery(logging.Filter):
         return True
 
 
-def main() -> None:
-    logging.basicConfig(level=os.environ.get("AXIOM_LOG_LEVEL", "INFO"))
-    app = create_app(Settings())
+def build(app) -> uvicorn.Server:
+    """The server as deployed: forwarding headers ignored (TLS ends at the operator's proxy; see
+    docs/DEPLOYMENT-TRUST-BOUNDARY.md) and sign-in query strings redacted from the access log."""
     config = uvicorn.Config(app, host=os.environ.get("AXIOM_BIND_HOST", "0.0.0.0"),
                             port=int(os.environ.get("AXIOM_PORT", "8000")), proxy_headers=False, server_header=False)
-    logging.getLogger("uvicorn.access").addFilter(RedactSignInQuery())   # after uvicorn configured its loggers
-    uvicorn.Server(config).run()
+    access = logging.getLogger("uvicorn.access")       # after uvicorn configured its loggers
+    if not any(isinstance(f, RedactSignInQuery) for f in access.filters):
+        access.addFilter(RedactSignInQuery())
+    return uvicorn.Server(config)
+
+
+def main() -> None:
+    logging.basicConfig(level=os.environ.get("AXIOM_LOG_LEVEL", "INFO"))
+    build(create_app(Settings())).run()
 
 
 if __name__ == "__main__":

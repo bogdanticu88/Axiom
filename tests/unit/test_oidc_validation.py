@@ -49,6 +49,7 @@ def test_valid_token():
     {"exp": int(time.time()) - 600}, {"sub": None}, {"iat": int(time.time()) - 3600},
     {"aud": ["ui", "other"]},                                  # several audiences without azp
     {"aud": ["ui", "other"], "azp": "other"},
+    {"azp": "other"},                                          # single audience, azp naming another client
 ])
 def test_rejected_claims(claims):
     with pytest.raises(Unauthenticated):
@@ -230,3 +231,23 @@ def test_access_log_redacts_the_sign_in_query_string():
                               ("1.2.3.4:5", "GET", "/api/v1/cases?limit=5", "1.1", 200), None)
     RedactSignInQuery().filter(other)
     assert "/api/v1/cases?limit=5" in other.getMessage()
+
+
+def test_the_deployed_server_installs_the_redaction_and_ignores_forwarding_headers():
+    import logging
+    from axiom import server
+    srv = server.build(lambda scope, receive, send: None)
+    assert srv.config.proxy_headers is False
+    seen = []
+
+    class Capture(logging.Handler):
+        def emit(self, record):
+            seen.append(self.format(record))
+    access = logging.getLogger("uvicorn.access")
+    handler = Capture()
+    access.addHandler(handler)
+    try:
+        access.info('%s - "%s %s HTTP/%s" %d', "1.2.3.4:5", "GET", "/auth/callback?code=SECRETCODE&state=S", "1.1", 303)
+    finally:
+        access.removeHandler(handler)
+    assert seen and "SECRETCODE" not in seen[-1] and "?[redacted]" in seen[-1]
