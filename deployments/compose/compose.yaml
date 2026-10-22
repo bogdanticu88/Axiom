@@ -7,7 +7,8 @@
 # Not a production profile: a local Keycloak in development mode (H2 storage, HTTP, synthetic users), development
 # bearer tokens (inline JWKS from a generated key), a single PostgreSQL instance, single-node object storage, no TLS
 # termination. The API refuses inline JWKS, plain-HTTP identity URLs, insecure cookies, the environment secret
-# resolver and filesystem storage when AXIOM_ENV=production. See docs/INSTALL-COMPOSE.md.
+# resolver (production needs secretref:file/ mounted secrets) and filesystem storage when AXIOM_ENV=production.
+# See docs/INSTALL-COMPOSE.md and docs/DEPLOYMENT-TRUST-BOUNDARY.md.
 name: axiom
 
 x-backend: &backend

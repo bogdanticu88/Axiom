@@ -1,0 +1,54 @@
+A1 decision guard accepts an actor other than the bound principal: CAUGHT (2 failed, 1 warning in 1.94s)
+     FAILED tests/integration/test_authority_review_cp7.py::test_d1_bound_transaction_cannot_record_a_decision_as_someone_else
+     FAILED tests/integration/test_authority_review_cp7.py::test_d1_approvals_must_be_recorded_by_the_bound_principal
+A2 bind_context allows re-binding another principal: CAUGHT (1 failed, 1 warning in 1.57s)
+     FAILED tests/integration/test_authority_review_cp7.py::test_d2_a_bound_transaction_cannot_switch_principal
+A3 bindings not share-locked until commit: CAUGHT (3 failed, 1 warning in 3.30s)
+     FAILED tests/integration/test_authority_review_cp7.py::test_d3_revocation_waits_for_a_command_that_already_checked_the_permission[role]
+     FAILED tests/integration/test_authority_review_cp7.py::test_d3_revocation_waits_for_a_command_that_already_checked_the_permission[membership]
+     FAILED tests/integration/test_verification_worker.py::test_a_revocation_racing_the_commit_waits_for_it
+A4 principal kind may change: CAUGHT (1 failed, 1 warning in 1.57s)
+     FAILED tests/integration/test_authority_review_cp7.py::test_h2_principal_kind_cannot_change
+A5 review of pre-0016 bindings revokes nothing: CAUGHT (1 failed, 1 warning in 1.62s)
+     FAILED tests/integration/test_authority_review_cp7.py::test_h1_bindings_that_predate_the_kind_rule_are_revoked_on_review
+U1 azp ignored with a single audience: CAUGHT (1 failed, 9 passed in 0.26s)
+     FAILED tests/unit/test_oidc_validation.py::test_rejected_claims[claims9] - Fa...
+U2 login keeps the previous session: CAUGHT (1 failed in 25.21s)
+     FAILED tests/integration/test_oidc_sso.py::test_login_rotates_the_session_and_keeps_codes_out_of_the_url_trail
+U3 access-log redaction not installed on the server: CAUGHT (1 failed in 0.45s)
+     FAILED tests/unit/test_oidc_validation.py::test_the_deployed_server_installs_the_redaction_and_ignores_forwarding_headers
+U4 secret files outside the allowed directories accepted: CAUGHT (1 failed, 8 passed in 0.23s)
+     FAILED tests/unit/test_secretrefs.py::test_files_outside_the_allowed_directories_and_escaping_links_are_refused
+U5 production accepts environment secret references: CAUGHT (1 failed in 0.35s)
+     FAILED tests/integration/test_oidc_sso.py::test_production_sso_settings_are_checked
+U6 no JWKS refresh on an unknown key: CAUGHT (2 failed in 26.42s)
+     FAILED tests/unit/test_oidc_validation.py::test_unknown_key_id_refreshes_the_key_set_once
+     FAILED tests/integration/test_oidc_sso.py::test_signing_key_rotation_at_the_local_idp_is_followed
+W1 no permission check before calling the endpoint: CAUGHT (2 failed in 3.02s)
+     FAILED tests/integration/test_verification_worker.py::test_authority_is_evaluated_when_the_job_runs_not_when_it_was_queued
+     FAILED tests/integration/test_verification_worker.py::test_project_boundary_binding_elsewhere_gives_no_authority
+W2 lease not re-checked at commit: CAUGHT (1 failed in 2.15s)
+     FAILED tests/integration/test_verification_worker.py::test_a_worker_that_lost_its_lease_while_checking_records_nothing
+W3 commit uses the current case version instead of the one read: CAUGHT (1 failed in 2.11s)
+     FAILED tests/integration/test_verification_worker.py::test_a_case_changed_during_the_check_is_not_silently_overwritten
+W4 already-recorded check not recognised (first idempotency layer): CAUGHT (1 failed in 2.26s)
+     FAILED tests/integration/test_verification_worker.py::test_a_crash_after_commit_does_not_record_twice
+W5 unavailable endpoint not retried: CAUGHT (2 failed in 3.22s)
+     FAILED tests/integration/test_verification_worker.py::test_an_unavailable_endpoint_is_retried_then_recorded_inconclusive
+     FAILED tests/integration/test_verification_worker.py::test_a_stopped_endpoint_is_unavailable_not_passed
+W6 stale observations accepted: CAUGHT (2 failed, 34 passed in 11.16s)
+     FAILED tests/unit/test_verification_checks.py::test_rules[stale] - AssertionE...
+     FAILED tests/integration/test_verification_worker.py::test_missing_stale_contradictory_or_refused_evidence_is_inconclusive[observation_stale]
+W7 contradictory results not detected: CAUGHT (2 failed, 34 passed in 10.71s)
+     FAILED tests/unit/test_verification_checks.py::test_rules[contradiction] - As...
+     FAILED tests/integration/test_verification_worker.py::test_missing_stale_contradictory_or_refused_evidence_is_inconclusive[contradictory_results]
+W8 different deployment not detected: CAUGHT (3 failed, 33 passed in 11.18s)
+     FAILED tests/unit/test_verification_checks.py::test_rules[other deployment]
+     FAILED tests/unit/test_verification_checks.py::test_rules[other deployment present]
+     FAILED tests/integration/test_verification_worker.py::test_missing_stale_contradictory_or_refused_evidence_is_inconclusive[different_deployment]
+W9 observation guard accepts another recorder: CAUGHT (1 failed in 2.07s)
+     FAILED tests/integration/test_verification_worker.py::test_observations_cannot_be_forged_or_changed
+W10 verification role also gets case.reopen: CAUGHT (2 failed in 2.91s)
+     FAILED tests/integration/test_verification_worker.py::test_the_verification_identity_holds_only_its_workload_permissions
+     FAILED tests/integration/test_verification_worker.py::test_the_verification_identity_cannot_reopen_close_or_decide
+sanity: all targeted tests on the restored tree: rc=0 (78 passed, 1 warning in 55.97s)

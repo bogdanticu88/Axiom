@@ -265,3 +265,65 @@ system; forged authority; human roles on workloads; principal type in requests a
 project; revoked system binding; role and membership revocation with the same bearer token); the session variant in
 `test_oidc_sso.py`; override expiry under a newly published policy in `test_authority_and_overrides.py`.
 Limitation: `axiom.holds_permission` duplicates `access.evaluate` in SQL; both must change together.
+
+## Amendment 3 (2026-10-22, checkpoint 7): adversarial review of the authority fixes
+
+The checkpoint-6 fixes (migration 0016, service checks, the audit kind) were reviewed as one boundary. Each finding
+below was reproduced on the checkpoint-6 revision (1eed24c) before the fix; the test body is the reproducer.
+
+### Entry points reviewed
+| What | Where | Identity and kind from | Permission checked against |
+|---|---|---|---|
+| Case decisions (assess, plan, defer, report, verify, close, dismiss, accept risk, override, prioritise) | `CaseService._apply` | the transaction's bound principal; kind from `axiom.principals` | `Authorizer.require` at the case scope; database guard on `axiom.decisions` |
+| Risk request decisions | `domains/cases/risk.py` | same | same |
+| Approvals | `ActionService` | same | per-class `action.approve:<class>` at the proposal scope; guard on `axiom.approvals` |
+| Claim reviews | `InvestigationService` | same | `claim.review`; guard on `axiom.claim_reviews` |
+| Reopen by a person | `CaseService.reopen` | same | `case.reopen`; human reasons only for people |
+| Reopen by the system | ingestion recurrence, risk expiry sweep (`reopen(system=True)`) | tenant system principal | `case.reopen`; guard allows workload reopen only for `recurrence` and `acceptance_expiry` |
+| Verification by the worker (new, ADR 0014) | `verification/worker.py` | tenant verification principal | `verification.record`; guard checks it at the case scope |
+| Role assignment and revocation | `TenancyService` (API), `Provisioner.bootstrap_role` (CLI) | bound principal / provisioning identity | `role.assign`; `role_binding_kind_guard` (kind compatibility) |
+| Membership suspension | `TenancyService` | bound principal | `membership.manage` |
+| Principal records | `Provisioner.create_principal`, `create_tenant`, `create_verification_identity` | provisioning identity (`axiom_admin_cli`) | database grants; no application role can update `kind` |
+
+Principal type is never taken from a request, token claim or session (unchanged from amendment 2, retested over the
+API with a workload bearer token: workload results accepted, discretionary commands refused, audit kind `workload`).
+
+### Demonstrated defects (fixed in migration 0017)
+| | Preconditions | Reproducer | Observed on checkpoint 6 | Regression test |
+|---|---|---|---|---|
+| D1 | Code holding the runtime role in a transaction bound to principal X | insert into `axiom.decisions` (or `axiom.approvals`) naming principal Y as actor | the row committed: an assessment attributed to a person, written by the system context; an approval attributed to a risk owner, written by an approver | `test_d1_bound_transaction_cannot_record_a_decision_as_someone_else`, `test_d1_approvals_must_be_recorded_by_the_bound_principal` |
+| D2 | Same | `SELECT axiom.bind_context(tenant, other_principal)` inside a bound transaction | re-binding succeeded | `test_d2_a_bound_transaction_cannot_switch_principal` |
+| D3 | A command that has passed its permission check, and a concurrent revocation of that role binding or membership | revoke in another transaction while the command's transaction is open | the revocation committed first; the command then committed a decision whose authority was already revoked | `test_d3_revocation_waits_for_a_command_that_already_checked_the_permission[role, membership]` |
+
+D1 and D2 need code running with the runtime database role; no API request reproduced them (the API binds the
+authenticated principal). They mattered because the database guards were documented as enforcing who decides, and
+did not when the row named another actor. The guards now require the recorded actor to be the bound principal, and a
+transaction can bind only one principal.
+
+### Hardening without an application-level exploit
+* **H1 bindings created before 0016.** 0016 checked kind compatibility only on new bindings; an incompatible binding
+  that already existed stayed live. `axiom_auth.revoke_incompatible_bindings()` (run once by 0017, re-runnable by the
+  provisioning identity, idempotent) revokes them and records a security event for each
+  (`role_binding.incompatible_revoked`, reason `<role>:<holder kind>`). Test injects one with triggers disabled.
+* **H2 principal kind changes.** No application or provisioning role can update `axiom.principals.kind`; only the owner
+  could. A trigger now refuses any change of kind, so a kind change can never leave incompatible bindings behind.
+
+### The revocation guarantee, stated at a transaction boundary
+`Authorizer.bindings_for` reads the actor's bindings and membership `FOR SHARE`. Therefore:
+* a revocation or suspension that **commits before** a command's permission check is seen by that check, and the
+  command is refused;
+* a revocation that **starts after** the check waits until the command's transaction commits or rolls back; the
+  command's decision is therefore one its authority covered at commit time;
+* nothing stronger is claimed. A command already committed stays committed (decisions are append-only), a browser
+  showing a stale page learns of the revocation on its next request, and a job's earlier transactions are not
+  re-evaluated (ADR 0014 describes the worker's boundary). The share lock adds blocking: a revocation can wait for
+  the longest open command of that principal.
+
+### Trust boundary that remains
+The runtime database role is trusted to bind the principal the API authenticated. A compromised runtime credential
+can bind any principal of its tenant and act as it; the database guards do not defend against that.
+`axiom.holds_permission` still duplicates `access.evaluate` in SQL.
+
+### Tests
+`tests/integration/test_authority_review_cp7.py` (9 tests). Reproducer output against checkpoint 6 is in
+`docs/verification/2026-10-22-checkpoint7/reproducers-on-cp6.txt`.

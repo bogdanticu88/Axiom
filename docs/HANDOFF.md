@@ -7,7 +7,7 @@
 * The first commit imports the supplied foundation archive; its contents predate this repository.
 
 ## What works and what is missing
-The sections below are a history by checkpoint; the latest is "State after checkpoint 6". For the current position
+The sections below are a history by checkpoint; the latest is "State after checkpoint 7". For the current position
 against the complete register, read "Core product status" in IMPLEMENTATION_STATUS.md and "Core gaps" below.
 The foundation-era gap list has been superseded.
 
@@ -149,20 +149,45 @@ The foundation-era gap list has been superseded.
   `regression` split; a blind review procedure, worksheet, sealed author labels and a comparison tool exist;
   independent review is **pending**.
 
+## State after checkpoint 7 (assurance of the authority and sign-in changes; verification worker)
+* **Baseline** (docs/verification/2026-10-22-checkpoint7/baseline.md): tag, checksums and history verified; the
+  post-CI test-only commit 30044e9 only changed synchronisation but loosened four header checks to substring matches
+  (tightened again); clean-clone CI passed on the final checkpoint-6 revision 1eed24c before any change.
+* **Authority review** (ADR 0012 amendment 3, migration 0017): three demonstrated defects fixed — a bound
+  transaction could record a decision or approval as another principal (D1), re-bind another principal (D2), and a
+  revocation could commit between a command's permission check and its commit (D3). Hardening: pre-0016 bindings are
+  reviewed and incompatible ones revoked with a security event; a principal's kind is immutable. The revocation
+  guarantee is stated at the transaction boundary.
+* **Sign-in review** (ADR 0013 amendment 2): library versus application responsibilities listed; `azp` now checked
+  whenever present (gap found); login rotates the session; sign-in query strings are redacted from the access log;
+  live signing-key rotation at the local Keycloak is followed.
+* **Production configuration** (docs/DEPLOYMENT-TRUST-BOUNDARY.md): secrets as mounted files (`secretref:file/`),
+  the only form accepted in production; TLS ends at an operator proxy and forwarding headers are ignored. Still not
+  tested over TLS or behind a proxy.
+* **Verification worker** (ADR 0014, migration 0018): a per-tenant verification identity with three permissions,
+  authority re-read at execution and commit, explicit outcome rules, provenance rows, one job per reported change;
+  tested only against a local TLS fixture endpoint.
+* **UI**: change-report form browser tests (keyboard-only success, permission and stale refusals); focused
+  accessibility checks (not an audit); worker results labelled separately from people's.
+* **Evaluation**: unchanged labels and splits; review still pending (outstanding steps in
+  evaluation/REVIEW-PROCEDURE.md).
+
 ## Core gaps (do not let UI work hide these)
 * **No language model verified**; real-provider execution is not authorised.
 * **Entra ID (or any hosted IdP) not tested**; no back-channel logout, JIT/SCIM provisioning or workload identity;
-  production sign-in cannot be configured until a secret-manager resolver exists.
+  sign-in over TLS and behind a reverse proxy untested (secrets can now be mounted as files).
 * **No held-out evaluation set; label review pending.**
-* UI: no identity-candidate, integration-configuration or job-operations screens; Chromium only; no accessibility
-  audit; the change-report form has no browser test.
-* No verification worker (deliberately deferred); no connector sandbox-validated; trackers are fakes.
+* UI: no identity-candidate, integration-configuration or job-operations screens; Chromium only; focused
+  accessibility checks only, no audit.
+* Verification worker tested against a local fixture endpoint only; no real check service; no connector
+  sandbox-validated; trackers are fakes.
+* A compromised runtime database credential can act as any principal of its tenant (ADR 0012 amendment 3).
 
 ## Next tasks (in order)
 1. Independent label review with evaluation/REVIEW-PROCEDURE.md; a new held-out set written by someone else.
-2. With authorisation: an Entra ID test tenant; a secret-manager resolver for production sign-in.
-3. Verification worker design (VER-04) within the authority rules of ADR 0012 amendment 2.
-4. Identity-candidate screens; accessibility audit; a second browser.
+2. With authorisation: an Entra ID test tenant; sign-in over TLS behind a reverse proxy in a staging deployment.
+3. A real check service behind the verification worker (adapter or shim for `axiom-check/1`), validated in a sandbox.
+4. Identity-candidate screens; an accessibility audit; a second browser.
 5. With authorisation: the real-provider test and real-model evaluation arm.
 6. Hosted CI and sandbox validation once a remote and accounts are authorised.
 
@@ -204,3 +229,4 @@ virtual environments or uploaded evidence; generate new credentials (`deployment
 | 2026-10-22 | (this documentation commit; see `git log`) | checkpoint-4 | Phase C investigation, evaluation harness, SLA and metadata reviews; run 16 CI PASS on a clean clone of dae1051776cd4e4cc56821ce531bfc037f12a970 (tree 5e20261d...) after a recorded secret-scan failure on c96cf14; only docs/verification files changed afterwards |
 | 2026-10-22 | (this documentation commit; see `git log`) | checkpoint-5 | Analyst UI, OIDC sign-in (local Keycloak only), override expiry and preview, claim-check precision, system authority, evaluation review package; run 17 CI PASS on a clean clone of 3e95d461c7cc4f59686d4b07f33835b723c29b79 (tree 4c2384cb...) after a recorded secret-scan failure on 3d093ea; only docs/verification files changed afterwards |
 | 2026-10-22 | (this documentation commit; see `git log`) | checkpoint-6 | Authority boundary review and fixes (migration 0016), workflow browser tests, risk-acceptance screen, UI and local Keycloak in Compose, deprecated OIDC client replaced, held-out exposure disclosed; run 18 CI PASS on a clean clone of 9c7303ca47c89e24d94dad4b4c8447b0a3c7ffbf (tree 95e0a9b5...); afterwards one test-only commit (30044e9, browser tests rerun) and documentation |
+| 2026-10-22 | (this documentation commit; see `git log`) | checkpoint-7 | Authority review fixes (migration 0017), sign-in review fixes, mounted-file secrets, verification worker (migration 0018, fixture endpoint only), change-report and focused accessibility browser tests; baseline CI PASS on 1eed24c; run 19 results and the revision each covers are in VERIFICATION.md |

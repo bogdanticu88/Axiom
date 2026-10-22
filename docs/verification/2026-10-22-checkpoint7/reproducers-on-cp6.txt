@@ -1,0 +1,11 @@
+E       Failed: DID NOT RAISE InsufficientPrivilege
+E       Failed: DID NOT RAISE InsufficientPrivilege
+E       Failed: DID NOT RAISE InsufficientPrivilege
+E           AssertionError: assert 'at' not in {'at': 32338.906991161}
+E           AssertionError: assert 'at' not in {'at': 32339.474828835}
+E       AssertionError: assert False
+E       Failed: DID NOT RAISE InsufficientPrivilege
+(H1 on checkpoint-6 code after correcting the permission name: the injected approver binding on the system principal was live
+ (authz.has('action.approve:ticket_create') True), and no review function existed: "permission denied for schema axiom_auth" /
+ function absent.)
+Order of the lines above: D1 decisions, D1 approvals, D2 rebind, D3 role, D3 membership, H1, H2.

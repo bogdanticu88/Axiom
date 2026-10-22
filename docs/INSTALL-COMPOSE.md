@@ -60,10 +60,24 @@ The API refuses to start, rather than starting insecurely, when:
   instead of a `secretref:`;
 * the client secret reference does not resolve (checked at start-up, not at the first login).
 
-In production the environment secret resolver itself is refused, so **production sign-in cannot be configured yet**:
-a secret-manager resolver (planned: Azure Key Vault with workload identity) does not exist. The Compose smoke test
-starts the API with `AXIOM_ENV=production` and checks the refusal, and starts it without the client secret and checks
-that it stops.
+In production the environment secret resolver is refused; the client secret must be a mounted file
+(`secretref:file/run/secrets/<name>`, inside `AXIOM_SECRET_FILE_DIRS`, default `/run/secrets`). This Compose profile
+still uses `secretref:env/` because it runs in development mode. The Compose smoke test starts the API with
+`AXIOM_ENV=production` and checks the refusal, and starts it without the client secret and checks that it stops. A
+production deployment's TLS and proxy arrangement is described in docs/DEPLOYMENT-TRUST-BOUNDARY.md (untested).
+
+## Optional: the verification worker
+Automated verification (ADR 0014) runs only when a tenant has a verification identity and a check endpoint is
+configured for the case's project:
+run the provisioning CLI with the provisioning login (`axiom_admin_cli`, as `app-init` does; the API container does not
+hold that login):
+```
+python -m axiom.provisioning --dsn "host=... dbname=axiom user=axiom_admin_cli password=..." \
+    create-verification-identity --tenant <tenant id> [--scope <project scope id>]
+```
+This step is not exercised by the Compose smoke test. Then create a connection with adapter `verification_check` (HTTPS base URL, optional `secretref:` bearer token) as a
+user with `connection.configure`. No check endpoint ships with this profile; the worker has been tested only against
+a local fixture endpoint.
 
 ## Verify an installation
 `BUILD=1 scripts/verify/compose-smoke.sh` creates a throwaway project with new secrets and volumes, runs the API
@@ -75,5 +89,5 @@ It removes everything afterwards.
 ## Not production
 Keycloak runs in development mode with in-container H2 storage, HTTP and an imported realm containing synthetic users
 and secrets; the API uses plain HTTP and non-Secure cookies; there is one PostgreSQL instance and single-node object
-storage; no TLS, backups, monitoring or secret manager. Sign-in has been tested only against this local Keycloak;
+storage; no TLS, backups or monitoring, and secrets come from environment variables. Sign-in has been tested only against this local Keycloak;
 Microsoft Entra ID and other hosted identity providers are not tested.

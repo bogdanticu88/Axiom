@@ -43,3 +43,21 @@ container-image vulnerability scanning. Each reviewer works alone; record each r
 Agreement between a reviewer and the author shows the labels are defensible. It does not measure any language model,
 does not turn the deterministic fake's agreement into evidence of model quality, and does not turn the
 security-boundary counts (misbehaving fakes rejected or downgraded) into reasoning quality.
+
+## Outstanding (checked at checkpoint 7, 2026-10-22)
+Nothing below has been done; no review was started, simulated or recorded. `cases.json` is unchanged since
+eval-cases@4 (D1 to D6 `dev`, H1 to H10 `regression`, `review_status` pending), and no prompt, validator or fake rule
+was changed for evaluation at checkpoint 7. No language model has been called.
+
+What a reviewer, and the person coordinating the review, still need to do:
+1. **Coordinator:** choose one or more reviewers who meet "Who" above; run the evaluation harness with
+   `AXIOM_EVAL_OUT=EVAL_OUT_DIR` (deterministic fake; no model call), then generate the package with
+   `python3 evaluation/export_review.py EVAL_OUT_DIR PACKAGE_DIR`; give each reviewer only `blind/` and
+   `worksheet.csv`; keep `sealed/`. (The checkpoint-6 delivery also contains a package built this way.)
+2. **Reviewer:** complete steps 1 and 2 (blind judgement of all 16 scenarios; send the worksheet digest).
+3. **Reviewer:** steps 3 to 5 (reveal, comment, run `compare_review.py`, store the record under `evaluation/reviews/`).
+4. **Coordinator:** for each disagreement, record a decision (keep or change) as described above; any change is a new
+   `eval-cases@N`.
+5. **For a real held-out measure** (separate from label review): someone other than the author writes and labels new
+   scenarios, keeps them out of this repository until a frozen model route is evaluated once, and records that run.
+   Until then, every reported evaluation number is a regression result against author-written cases.
