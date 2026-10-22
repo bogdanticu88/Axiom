@@ -90,7 +90,7 @@ def test_suspending_a_tenant_while_its_check_runs(world, run, ctx_for, scenario,
     """In-flight work: the endpoint has already been asked when the suspension commits. That request cannot be taken
     back, but nothing is recorded for the suspended tenant. The worker's pass stops at the job's bookkeeping (the
     tenant's rows are no longer visible or writable), the job stays leased, and no worker serves the tenant again
-    while it is suspended. Cancelling that job is the open part of TEN-16."""
+    while it is suspended. Cancelling that job is the open part of TEN-16; recovery is tested below."""
     from .test_verification_worker import clean
     cid = advance_to_verification(run, ctx_for, world, scenario)["id"]
     prov = Provisioner(dbinfo.admin_cli_dsn)
@@ -105,3 +105,54 @@ def test_suspending_a_tenant_while_its_check_runs(world, run, ctx_for, scenario,
     assert set(records(admin_conn, cid, setup.verifier).values()) == {0}
     assert job_for(admin_conn, cid)["state"] == "running"
     assert setup.worker.run_once(only_tenants={world.a.id}) == 0      # suspended tenants are not served
+
+
+def stuck_after_suspension(world, run, ctx_for, scenario, setup, target, admin_conn, dbinfo):  # noqa: F811
+    """A verification job left 'running' because its tenant was suspended mid-check, with its lease run out."""
+    from .test_verification_worker import clean
+    cid = advance_to_verification(run, ctx_for, world, scenario)["id"]
+    prov = Provisioner(dbinfo.admin_cli_dsn)
+
+    def suspended_meanwhile(req):
+        prov.set_tenant_status(world.a.id, "suspended")
+        return clean(req)
+    target.behaviour = suspended_meanwhile
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        setup.worker.run_once(only_tenants={world.a.id})
+    target.behaviour = clean
+    job = job_for(admin_conn, cid)
+    assert job["state"] == "running"
+    admin_conn.execute("""UPDATE axiom.jobs SET lease_expires_at = clock_timestamp() - interval '1 s',
+                          record_version = record_version + 1 WHERE id = %s""", (job["id"],))
+    return cid, job, prov
+
+
+def test_recovery_by_reactivation_runs_the_job_again_once(world, run, ctx_for, scenario, setup, target,  # noqa: F811
+                                                          admin_conn, dbinfo):
+    """Documented recovery (docs/INSTALL-COMPOSE.md, "Suspending a tenant"): reactivating the tenant lets the next
+    worker pass reclaim the expired lease and run the job from the start. The handler rechecks authority and case
+    state first."""
+    cid, job, prov = stuck_after_suspension(world, run, ctx_for, scenario, setup, target, admin_conn, dbinfo)
+    prov.set_tenant_status(world.a.id, "active")
+    setup.worker.run_once(only_tenants={world.a.id})
+    assert job_for(admin_conn, cid)["state"] == "succeeded"
+    assert len(target.requests) == 2                                  # the endpoint is asked again
+    rec = records(admin_conn, cid, setup.verifier)
+    assert (rec["runs"], rec["decisions"], rec["observations"], rec["audit"]) == (1, 1, 1, 1)
+
+
+def test_recovery_by_cancelling_before_workers_resume(world, run, ctx_for, scenario, setup, target,  # noqa: F811
+                                                      admin_conn, dbinfo, db):
+    """Documented recovery when the work must not run: with the job workers stopped, reactivate the tenant, request
+    cancellation as an operator, then restart the workers. The reclaiming worker cancels the job instead of running it."""
+    from axiom.access import Authorizer
+    from axiom.jobs import JobOperations
+    cid, job, prov = stuck_after_suspension(world, run, ctx_for, scenario, setup, target, admin_conn, dbinfo)
+    prov.set_tenant_status(world.a.id, "active")                       # workers are not running at this point
+    with db.tenant_tx(ctx_for("admin")) as conn:
+        JobOperations(conn, ctx_for("admin"), Authorizer(conn, ctx_for("admin"))).request_cancel(
+            job["id"], "tenant was suspended mid-check; the work is no longer wanted")
+    setup.worker.run_once(only_tenants={world.a.id})
+    assert job_for(admin_conn, cid)["state"] == "cancelled"
+    assert len(target.requests) == 1                                  # not asked again
+    assert set(records(admin_conn, cid, setup.verifier).values()) == {0}
