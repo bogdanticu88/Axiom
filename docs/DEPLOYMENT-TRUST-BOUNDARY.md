@@ -73,9 +73,32 @@ endpoint and tracker responses (validated, preserved as evidence, never followed
 
 ## Verified versus assumed
 
-* **Verified locally:** sign-in against a local Keycloak 26.4.2 over **plain HTTP**; the production configuration
-  checks above; reading a mounted secret file in a production-configured process (test fixture directory, not a
-  container mount); the verification worker over TLS against a local fixture endpoint with a throwaway CA.
-* **Not verified:** any TLS-terminating proxy; sign-in over HTTPS; a real IdP other than local Keycloak; Docker,
-  Kubernetes or systemd secret mounts; certificate trust for real check endpoints; behaviour under a hostile network.
-  Production authentication is **not** verified by the local tests.
+* **Verified locally, over TLS** (`tests/integration/test_tls_deployment.py`, checkpoint 8): an nginx reverse proxy
+  (pinned image) terminates TLS with a certificate from a throwaway local CA for `localhost`, in front of the API in
+  production mode and of a local Keycloak 26.4.2 that knows its public HTTPS address. The OIDC client secret comes
+  from a mounted file. Chromium signs in through Keycloak's page and the callback over HTTPS; the session cookie is
+  `Secure`, `HttpOnly` and `SameSite=Lax`, the CSRF cookie `Secure` and readable by the page; an unsafe request
+  without the CSRF header is refused; logout revokes the session and the old cookie is then refused. Spoofed
+  `Host`, `X-Forwarded-*` and `Forwarded` headers, through the proxy or sent straight to the API, do not change the
+  sign-in redirect, the callback target or the post-logout address. Missing, empty, oversized, out-of-directory and
+  symlink-escaping secret files stop start-up without the contents appearing in the error.
+* **Verified locally, plain HTTP:** the full sign-in test suite against local Keycloak; the production configuration
+  checks above.
+* **Not verified:** a public certificate authority; a hosted identity provider (Microsoft Entra ID, Okta, others);
+  provider interoperability beyond Keycloak; any proxy other than this nginx configuration; Docker, Kubernetes or
+  systemd secret mounts (the test uses a directory on the test host); a public or hostile network; load. Production
+  authentication is **not** verified by these local tests.
+
+### The proxy configuration that was tested
+```
+server {
+  listen 443 ssl;                                    # the test used a random port on 127.0.0.1
+  ssl_certificate /certs/leaf.pem; ssl_certificate_key /certs/leaf.key;
+  location / {
+    proxy_pass http://<api address>;
+    proxy_set_header Host $host:$server_port;
+    proxy_set_header X-Forwarded-For ""; proxy_set_header X-Forwarded-Host "";
+    proxy_set_header X-Forwarded-Proto ""; proxy_set_header Forwarded "";
+  }
+}
+```
