@@ -6,6 +6,7 @@ the job's status. The check endpoint is the local TLS fixture.
 from __future__ import annotations
 
 import threading
+import uuid
 from datetime import datetime, timezone
 
 import psycopg
@@ -135,8 +136,10 @@ def test_the_database_refuses_a_second_observation_for_a_job(world, run, ctx_for
     with pytest.raises(psycopg.errors.UniqueViolation):
         admin_conn.execute("SET session_replication_role = replica")      # skip the guard trigger: isolate the key
         try:
+            # same job, a different run: only UNIQUE (tenant_id, job_id) can refuse it (foreign keys are off here)
+            values = [row[c] if c != "verification_run_id" else uuid.uuid4() for c in cols]
             admin_conn.execute(f"INSERT INTO axiom.verification_observations(id, {', '.join(cols)}) "
-                               f"VALUES (gen_random_uuid(), {', '.join(['%s'] * len(cols))})", [row[c] for c in cols])
+                               f"VALUES (gen_random_uuid(), {', '.join(['%s'] * len(cols))})", values)
         finally:
             admin_conn.execute("SET session_replication_role = origin")
 

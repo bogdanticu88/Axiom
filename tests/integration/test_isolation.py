@@ -178,17 +178,19 @@ def test_relay_reads_only_outbox(world, run, ctx_for, dbinfo):
 
 
 def test_append_only_tables_reject_mutation_even_for_owner(world, run, ctx_for, dbinfo):
-    run(ctx_for("analyst"), lambda s: s.cases.create(scope_id=world.a.project, title="a"))
+    case = run(ctx_for("analyst"), lambda s: s.cases.create(scope_id=world.a.project, title="a"))
+    run(ctx_for("analyst"), lambda s: s.cases.start_investigation(case["id"], 0, "triage"))      # one decision row
     with psycopg.connect(dbinfo.app_dsn) as conn:
         with conn.transaction():
             bound(conn, world.a.id, world["analyst"])
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 conn.execute("UPDATE axiom.audit_events SET action = 'tampered'")
     with psycopg.connect(dbinfo.admin_dsn) as conn:   # superuser bypasses RLS but not triggers
-        for table in ("audit_events", "case_events"):
-            with pytest.raises(psycopg.errors.InsufficientPrivilege, match="append-only"):
-                with conn.transaction():
-                    conn.execute(f"DELETE FROM axiom.{table}")
+        for table in ("audit_events", "case_events", "decisions"):
+            for stmt in (f"UPDATE axiom.{table} SET tenant_id = tenant_id", f"DELETE FROM axiom.{table}"):
+                with pytest.raises(psycopg.errors.InsufficientPrivilege, match="append-only"):
+                    with conn.transaction():
+                        conn.execute(stmt)
 
 
 def test_direct_sql_cannot_bypass_case_commands(world, run, ctx_for, raw):

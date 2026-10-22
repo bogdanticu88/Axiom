@@ -177,18 +177,23 @@ def test_tls_failures_park_the_job_without_sending_the_request(world, run, ctx_f
 # --------------------------------------------------------------------------------------- responses
 def test_a_redirect_is_not_followed_and_its_target_receives_nothing(world, run, ctx_for, scenario, rig, targets,  # noqa: F811
                                                                      admin_conn):
+    """The redirect points at a URL the client could reach and would trust (same server, same CA, by IP address), so
+    only the no-follow rule stands between the redirect and a second request."""
     t = targets("t", ("check.test",))
-    elsewhere = targets("elsewhere", ("evil.test",))
-    t.behaviour = lambda req: (307, None, {"Location": f"https://evil.test:{port_of(elsewhere)}/v1/checks"})
+
+    def bounce(req):
+        if t.requests[-1]["path"] == "/v1/checks":
+            return 307, None, {"Location": f"https://127.0.0.1:{port_of(t)}/redirected"}
+        return clean(req)
+    t.behaviour = bounce
     url = f"https://check.test:{port_of(t)}"
     rig.connect(url)
     cid = advance_to_verification(run, ctx_for, world, scenario)["id"]
     rig.worker(policy=checks.DestinationPolicy.from_settings(url, "127.0.0.0/8"),
-               resolver=fixed({"check.test": ["127.0.0.1"], "evil.test": ["127.0.0.1"]}), ca=t.ca_path).run_once(
-        only_tenants={world.a.id})
+               resolver=fixed({"check.test": ["127.0.0.1"]}), ca=t.ca_path).run_once(only_tenants={world.a.id})
+    assert [r["path"] for r in t.requests] == ["/v1/checks"]
     [r] = runs(admin_conn, cid)
     assert (r["outcome"], r["rule"]) == ("inconclusive", "target_refused")
-    assert len(t.requests) == 1 and elsewhere.requests == []
 
 
 @pytest.mark.parametrize("answer,rule", [
