@@ -230,7 +230,10 @@ export function Verification({ c, onChange }: { c: any; onChange: () => void }) 
                           ? fmt(r.observation.target_observed_at) : "unknown"}</dd>
                         <dt>Rule</dt><dd>{r.observation.rule}</dd></dl>}</td>
                       <td><Badge kind={r.outcome === "passed" ? "ok" : r.outcome === "failed" ? "bad" : "warn"}>{r.outcome}</Badge></td>
-                      <td>{r.coverage}</td><td>{short(r.observed_asset_version_id)}</td><td className="small">{r.outcome_reason}</td>
+                      <td>{r.coverage}</td><td>{r.observation?.observed_deployment_digest
+                        ? <code title={r.observation.observed_deployment_digest} data-testid="observed-digest">
+                            {r.observation.observed_deployment_digest.slice(0, 19)}…</code>
+                        : short(r.observed_asset_version_id)}</td><td className="small">{r.outcome_reason}</td>
                       <td>{r.outcome === "passed" && c.workflow === "awaiting_verification" &&
                         <button data-testid="close-verified" disabled={cmd.busy || !rationale}
                           onClick={() => send("close-verified", { verification_run_id: r.id }, "Case closed.")}>Close as verified</button>}</td>
@@ -239,7 +242,8 @@ export function Verification({ c, onChange }: { c: any; onChange: () => void }) 
               {d.closures.length > 0 && <ul data-testid="closures">{d.closures.map((x: any) =>
                 <li key={x.id ?? x.case_event_sequence}>Closed: {x.disposition ?? x.kind} {fmt(x.closed_at ?? x.created_at)}</li>)}</ul>}
               <p className="muted small">Results come from a person after a check, or from the verification worker
-                when a check endpoint is configured for this project (tested only against a local fixture endpoint).
+                when a check endpoint is configured for this project (tested only against local endpoints: a test fixture and
+                the demonstration check service).
                 The platform recomputes every outcome: a pass needs complete coverage of the reported deployment and
                 verified evidence, and the person who reported the change cannot verify it. Closing is always a
                 person's decision.</p>
