@@ -124,14 +124,17 @@ class Authorizer:
         # Revocation boundary (ADR 0012 amendment 3): the bindings and membership an authority decision relies on are
         # share-locked until this transaction ends, so a concurrent revocation or suspension waits for it. A command
         # that checked a permission therefore commits only while that permission is still granted; a revocation that
-        # commits first is seen by every later check (READ COMMITTED re-reads at each statement).
+        # commits first is seen by every later check (READ COMMITTED re-reads at each statement). A disabled principal
+        # holds nothing. Its status is read but not locked: disabling is outside the boundary (amendment 5), so it
+        # takes effect at the next check, which matters for workload identities that never sign in.
         if principal_id not in self._bindings:
             rows = self._conn.execute(
                 """SELECT b.id, b.tenant_id, b.principal_id, b.role_id, b.scope_id, b.valid_from,
                           b.valid_until, b.revoked_at, b.emergency
                      FROM axiom.role_bindings b
                      JOIN axiom.memberships m ON m.tenant_id = b.tenant_id AND m.principal_id = b.principal_id
-                    WHERE b.principal_id = %s AND m.status = 'active'
+                     JOIN axiom.principals p ON p.id = b.principal_id
+                    WHERE b.principal_id = %s AND m.status = 'active' AND p.status = 'active'
                       AND (m.valid_until IS NULL OR m.valid_until > clock_timestamp())
                       FOR SHARE OF b, m""",
                 (principal_id,))

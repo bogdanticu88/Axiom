@@ -406,9 +406,8 @@ another scope or role, and scopes cannot be re-parented, by the runtime role, so
 lock that way.
 
 Not taking part, by design or limitation:
-* **Disabling a principal** (provisioning identity) is not blocked by an open command, and the authority check reads
-  bindings and memberships, not the principal's status. The open command may commit; the next request fails
-  authentication (tested).
+* **Disabling a principal** (provisioning identity) is not blocked by an open command. The open command may commit;
+  the next request fails authentication, and since amendment 5 the next authority check fails too (tested).
 * **Suspending a tenant** is not locked either. Row-level security checks the tenant's status on every statement, so
   statements after the suspension fail, but a commit already in progress completes.
 * **Time-based expiry** of a binding or membership is evaluated when the check runs.
@@ -420,3 +419,39 @@ Not taking part, by design or limitation:
   records the result. No lock is held during the network request. A revocation that commits during the request makes
   the commit-phase check fail, so nothing is recorded; a revocation that starts after that check waits for the commit
   (ADR 0014; tested).
+
+## Amendment 5 (2026-10-22, after checkpoint 8): disabled principals, suspension and expiry at the next request
+
+### Requirements compared
+Data design section 12 asks the authorisation algorithm to resolve an active principal (step 2), check tenant state
+and membership (step 3), and recheck expiry and revocation at the commit or effect boundary (step 6). Section 13 asks
+that suspension and revocation block new actions and cancel waiting work. AUTHZ-13 asks that revocation take effect
+on the next request. None of them asks for an in-flight command to be stopped, and amendment 3 already states the
+stronger transaction-level guarantee for revocation and membership changes only.
+
+### Violation found and fixed
+The authority check (`Authorizer.bindings_for` and its database copy `axiom.holds_permission`) read bindings and
+memberships but not the principal's status. People were still refused, because a disabled person cannot sign in or
+use an existing session. Workload identities never sign in, so a disabled verification identity kept recording
+verification results, and a disabled system identity would keep acting. An approval given by a since-disabled
+approver also passed the execution-time recheck, which is step 6. Both were reproduced
+(`tests/integration/test_principal_status.py`) and both checks now require `principals.status = 'active'`
+(migration 0020). The status is read, not locked; no new lock was added.
+
+### The boundary, per operation
+| Withdrawal | Next request, job step or effect | A command that already passed its check |
+|---|---|---|
+| Revoke binding, suspend or shorten membership | refused | waits for it; it commits (amendment 3) |
+| Disable principal | refused at sign-in and at the authority check | may commit; disabling does not wait |
+| Suspend tenant | refused: row-level security hides and blocks every row of the tenant, and workers stop serving it | statements after the suspension fail; a commit already under way completes |
+| Binding or membership reaches `valid_until` | refused | may commit; time does not wait for anyone |
+
+### Residual in-flight behaviour, observed in tests
+* An external request already sent cannot be taken back. In the tested case the check endpoint had been asked when
+  the tenant was suspended; nothing was recorded for the tenant.
+* A job in flight at suspension is left leased (`running`). The worker's pass for that tenant stops with a
+  row-level-security error at the bookkeeping step, the loop logs it and carries on with the next pass, and no worker
+  serves the tenant until it is reactivated. Cancelling such work, as section 13 asks, is still open (TEN-16).
+* An operator disabling a principal while one of its commands is between check and commit cannot prevent that commit.
+  Use binding revocation or membership suspension when that matters; those wait.
+

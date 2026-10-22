@@ -97,8 +97,9 @@ def test_the_runtime_role_cannot_move_a_binding_or_a_scope(world, dbinfo, admin_
 
 def test_disabling_a_principal_does_not_wait_for_its_open_command(db, run, ctx_for, world, dbinfo, issuer):
     """Not part of the boundary: principal records are changed by the provisioning identity, which cannot lock them
-    against the runtime role, and the authority check reads bindings and memberships, not the principal's status. An
-    open command may still commit after the principal is disabled; the next request is refused at authentication."""
+    against the runtime role, and the authority check reads the principal's status without locking it. An open command
+    may still commit after the principal is disabled; the next request is refused at authentication, and a context
+    that is already bound is refused at its next authority check (test_principal_status.py)."""
     case = run(ctx_for("analyst"), lambda s: s.cases.create(scope_id=world.a.project, title="t"))
     analyst = ctx_for("analyst")
     p = Provisioner(dbinfo.admin_cli_dsn)
