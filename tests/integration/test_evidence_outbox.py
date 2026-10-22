@@ -107,8 +107,13 @@ def test_tenant_object_store_refuses_foreign_keys(world, object_store):
 
 def test_outbox_relay_delivers_at_least_once_and_inbox_dedupes(world, run, ctx_for, relay_db, db):
     analyst = ctx_for("analyst")
-    case = run(analyst, lambda s: s.cases.create(scope_id=world.a.project, title="outbox"))
     relay = Relay(relay_db, worker_id="relay-1")
+    # The session database is shared by the whole suite; drain earlier tests' backlog first so this message is not
+    # beyond the claim limit (the suite produced more than 1000 undelivered messages once the browser tests ran first).
+    while backlog := relay.claim(limit=1000):
+        for m in backlog:
+            relay.mark_delivered(m)
+    case = run(analyst, lambda s: s.cases.create(scope_id=world.a.project, title="outbox"))
     seen = []
 
     def failing(message):
