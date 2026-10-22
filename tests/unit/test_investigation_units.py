@@ -123,7 +123,7 @@ def test_schema_accepts_a_fenced_object():
 
 @pytest.mark.parametrize("secret,kind", [
     ("AKIA" + "ABCDEFGHIJKLMNOP", "aws_access_key"),
-    ("-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----", "private_key"),
+    ("-----BEGIN RSA " + "PRIVATE KEY-----\nMIIEow\n-----END RSA " + "PRIVATE KEY-----", "private_key"),  # split: secret scan
     ("Authorization: Bearer abcdefghijklmnopqrstuvwx", "bearer"),
     ("postgres://app:hunter2secret@db.internal:5432/x", "url_credentials"),
     ("password=CorrectHorseBattery", "key_value_secret"),
