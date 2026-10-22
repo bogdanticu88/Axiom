@@ -63,6 +63,9 @@ class _Plan:
     policy_version_id: UUID | None = None
     evidence_snapshot_id: UUID | None = None
     investigation_run_id: UUID | None = None
+    # A deterministic result recorded by the tenant's system principal (recurrence, acceptance expiry). It still
+    # needs a real permission (``authority``); the flag only labels the decision for readers.
+    system_result: bool = False
 
 
 class CaseService:
@@ -560,16 +563,19 @@ class CaseService:
 
     def reopen(self, case_id: UUID, expected_version: int, *, reason: str, rationale: str,
                system: bool = False) -> dict:
-        case = self._load(case_id)
-        model.check_expected_version(case["record_version"], expected_version)
-        model.require_state(case["workflow"], Workflow.CLOSED)
         reopen_reason = ReopenReason(reason)
         if reopen_reason is ReopenReason.ACCEPTANCE_EXPIRY and not system:
             raise ValidationFailed("acceptance expiry reopening is performed by the expiry process")
-        authority = None if system else self.authz.require("case.reopen", case["scope_id"])
+        if system and reopen_reason not in (ReopenReason.RECURRENCE, ReopenReason.ACCEPTANCE_EXPIRY):
+            raise ValidationFailed("only recurrence and acceptance expiry are system reopen reasons")
+        case = self._load(case_id)
+        model.check_expected_version(case["record_version"], expected_version)
+        model.require_state(case["workflow"], Workflow.CLOSED)
+        # system results need the same permission as a person would: the system principal holds case.reopen
+        authority = self.authz.require("case.reopen", case["scope_id"])
         return self._apply(case, expected_version, _Plan(
             to_workflow=Workflow.INVESTIGATING, event_type="case.reopened", decision_kind="reopen",
-            decision_outcome=reopen_reason.value, rationale=rationale, authority=authority,
+            decision_outcome=reopen_reason.value, rationale=rationale, authority=authority, system_result=system,
             changes={"assessment": "unassessed", "disposition": "unset", "review_at": None},
             payload={"reason": reopen_reason.value}, topic="case.reopened"))
 
@@ -618,8 +624,11 @@ class CaseService:
         if plan.decision_kind:
             decision_id = uuid.uuid4()
             # system results record the actor's kind as held in the identity records, not as claimed by the context
-            authority_json = plan.authority.as_json() if plan.authority else {
-                "system": True, "principal_kind": self.conn.execute(
+            if plan.authority is None:
+                raise ValidationFailed("a decision needs the authority it relies on")
+            authority_json = plan.authority.as_json()
+            if plan.system_result:
+                authority_json |= {"system": True, "principal_kind": self.conn.execute(
                     "SELECT axiom_auth.principal_kind(%s) AS k", (self.ctx.principal_id,)).fetchone()["k"]}
             self.conn.execute(
                 """INSERT INTO axiom.decisions(tenant_id, id, case_id, kind, outcome, rationale, limitations,

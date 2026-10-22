@@ -101,7 +101,8 @@ def apply(svc: CaseService, case_id: UUID, expected_version: int, *, rationale: 
     return svc._apply(case, expected_version, _Plan(
         to_workflow=Workflow(case["workflow"]), event_type="case.prioritised", decision_kind="prioritisation",
         decision_outcome=priority, rationale=rationale, limitations="; ".join(limitations) or None,
-        authority=authority, changes={"priority": priority}, payload=payload, policy_version_id=policy_id))
+        authority=authority, changes={"priority": priority}, payload=payload, policy_version_id=policy_id,
+        system_result=provenance is not None))
 
 
 MAX_OVERRIDE = timedelta(days=365)

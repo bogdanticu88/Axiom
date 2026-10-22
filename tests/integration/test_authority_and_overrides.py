@@ -31,23 +31,27 @@ def insert_decision(db, ctx, case_id, kind, outcome, authority: dict):
 
 
 # ------------------------------------------------------------------------------------- system authority
-@pytest.mark.parametrize("kind,outcome,authority,allowed", [
-    ("prioritisation", "high", {"permission": "priority.apply"}, True),
-    ("prioritisation", "high", {"system": True}, False),                        # needs the policy permission
-    ("verification_review", "passed", {"permission": "verification.record"}, True),
-    ("verification_review", "passed", {"permission": "priority.apply"}, False),
-    ("reopen", "acceptance_expiry", {"system": True}, True),                     # expiry event
-    ("reopen", "recurrence", {"system": True}, True),
-    ("reopen", "authorised_reassessment", {"system": True}, False),              # a person's judgement
-    ("assessment", "supported", {"permission": "assessment.record"}, False),     # discretionary
-    ("closure", "dismissed", {"permission": "case.dismiss"}, False),
-    ("risk_acceptance", "accepted", {"permission": "risk.accept"}, False),
-    ("priority_override", "low", {"permission": "override.propose"}, False),
+# The tenant system principal holds only the workload role ingestion_worker (priority.apply, case.reopen, ...).
+# Since migration 0016 the database derives the permission a system result needs from the decision kind and checks
+# the actor's real role bindings; the authority JSON on the row is not trusted. Every row below writes JSON that
+# *names* the permission the decision would need, so a guard that trusted the JSON would accept all of them.
+@pytest.mark.parametrize("kind,outcome,named,allowed", [
+    ("prioritisation", "high", "priority.apply", True),                # policy result; system holds priority.apply
+    ("verification_review", "passed", "verification.record", False),  # policy result kind, but no binding grants it
+    ("reopen", "acceptance_expiry", "case.reopen", True),              # expiry event
+    ("reopen", "recurrence", "case.reopen", True),
+    ("reopen", "authorised_reassessment", "case.reopen", False),       # a person's judgement
+    ("reopen", "relevant_change", "case.reopen", False),
+    ("assessment", "supported", "assessment.record", False),           # discretionary
+    ("closure", "dismissed", "case.dismiss", False),
+    ("risk_acceptance", "accepted", "risk.accept", False),
+    ("priority_override", "low", "override.propose", False),
 ])
-def test_system_principal_records_only_policy_authorised_results(db, run, ctx_for, world, kind, outcome, authority,
+def test_system_principal_records_only_policy_authorised_results(db, run, ctx_for, world, kind, outcome, named,
                                                                    allowed):
     case = run(ctx_for("analyst"), lambda s: s.cases.create(scope_id=world.a.project, title="t"))
     system = ctx_for("system")
+    authority = {"permission": named, "system": True}
     if allowed:
         insert_decision(db, system, case["id"], kind, outcome, authority)
     else:
@@ -193,3 +197,36 @@ def PolicyService_call(inv, who, fn):
     ctx = inv.ctx_for(who)
     with inv.db.tenant_tx(ctx) as conn:
         return fn(PolicyService(conn, ctx, Authorizer(conn, ctx)))
+
+
+def test_expiry_reassesses_under_the_policy_current_at_expiry(inv):
+    """A policy published while the override is in force decides the reassessment; provenance names the override."""
+    case = first_case(inv)
+    analyst, system = inv.ctx_for("analyst"), inv.ctx_for("system")
+    c = inv.run(analyst, lambda s: prio.apply(s.cases, case["id"], case["record_version"], rationale="policy"))
+    before_override = c["priority"]
+    soon = datetime.now(timezone.utc) + timedelta(hours=1)
+    c = inv.run(analyst, lambda s: prio.override(s.cases, case["id"], c["record_version"], priority="urgent",
+                                                 rationale="incident", expires_at=soon))
+    everything_low = {**DEFAULTS["priority"], "matrix": {s: {k: "low" for k in ("critical", "high", "medium", "low")}
+                                                         for s in ("critical", "high", "medium", "low", "info")}}
+    draft = PolicyService_call(inv, "admin", lambda s: s.draft(kind="priority", definition=everything_low,
+                                                               rationale="new matrix"))
+    published = PolicyService_call(inv, "auditor", lambda s: s.publish(draft["id"], rationale="approved"))
+    with inv.db.tenant_tx(system) as conn:
+        out = prio.expire_overrides(conn, system, now=soon + timedelta(minutes=1))
+    assert out["reassessed"] == 1
+    after = inv.run(analyst, lambda s: s.cases.get(case["id"]))
+    assert after["priority"] == "low"                                   # the new policy, not urgent, not the old one
+    d = inv.run(analyst, lambda s: s.conn.execute(
+        """SELECT d.*, e.payload FROM axiom.decisions d JOIN axiom.case_events e ON e.decision_id = d.id
+            WHERE d.case_id = %s ORDER BY d.recorded_at DESC LIMIT 1""", (case["id"],)).fetchone())
+    assert d["kind"] == "prioritisation" and d["actor_principal_id"] == inv.world.a.system
+    assert d["policy_version_id"] == published["id"]
+    assert d["authority"]["permission"] == "priority.apply" and d["authority"]["system"] is True
+    prov = d["payload"]["provenance"]
+    assert prov["override_priority"] == "urgent" and prov["priority_before_override"] == before_override
+    assert "not restored" in d["limitations"]
+    ov = inv.run(analyst, lambda s: s.conn.execute("SELECT * FROM axiom.priority_overrides WHERE case_id = %s",
+                                                   (case["id"],)).fetchone())
+    assert ov["end_reason"] == "expired" and ov["ended_by_decision_id"] == d["id"]

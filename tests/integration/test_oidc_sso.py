@@ -121,6 +121,15 @@ def test_membership_and_role_revocation_take_effect_on_the_next_request(server, 
     ids = provision(dbinfo, world, keycloak, who={"bob": ("a", [("analyst", "project")])})
     c, _ = browserless_login(server.base, keycloak, "bob")
     assert api(c, server.base, "GET", "/cases", world.a).status_code == 200
+    body = {"scope_id": str(world.a.project), "title": "before revocation"}
+    assert api(c, server.base, "POST", "/cases", world.a, json=body).status_code == 201
+    # role revoked during the active session: the same session's next command is refused
+    for b in run(ctx_for("admin"), lambda s: s.conn.execute(
+            "SELECT id FROM axiom.role_bindings WHERE principal_id = %s AND revoked_at IS NULL", (ids["bob"],)).fetchall()):
+        run(ctx_for("admin"), lambda s: s.tenancy.revoke_role(binding_id=b["id"], reason="moved team"))
+    r = api(c, server.base, "POST", "/cases", world.a, json=body)
+    assert r.status_code == 403 and r.json()["error"]["code"] == "permission_denied"
+    assert c.get(f"{server.base}/auth/session").status_code == 200       # still signed in, with no authority
     run(ctx_for("admin"), lambda s: s.tenancy.suspend_membership(principal_id=ids["bob"], reason="left"))
     r = api(c, server.base, "GET", "/cases", world.a)
     assert r.status_code == 403 and r.json()["error"]["code"] == "tenant_not_available"

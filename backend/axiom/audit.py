@@ -40,8 +40,9 @@ def record(conn: psycopg.Connection, ctx: TenantContext, *, action: str, resourc
     conn.execute(
         """INSERT INTO axiom.audit_events(tenant_id, id, actor_principal_id, actor_kind, correlation_id,
                action, resource_type, resource_id, outcome, reason_code, detail)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-        (ctx.tenant_id, event_id, ctx.principal_id, ctx.principal_kind, ctx.correlation_id, action,
+           VALUES (%s, %s, %s, COALESCE(axiom_auth.principal_kind(%s), %s), %s, %s, %s, %s, %s, %s, %s)""",
+        # the actor's kind comes from the identity record, not from the in-process context
+        (ctx.tenant_id, event_id, ctx.principal_id, ctx.principal_id, ctx.principal_kind, ctx.correlation_id, action,
          resource_type, None if resource_id is None else str(resource_id), outcome, reason_code,
          Jsonb(_sanitise(detail))))
     return event_id
