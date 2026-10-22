@@ -128,12 +128,12 @@ class DeterministicFakeProvider:
             if occ is None:
                 continue
             vuln = occ["attributes"]["vulnerability_ref"]
-            obs.sort(key=lambda m: m["attributes"]["recorded_at"])
+            obs.sort(key=lambda m: (m["attributes"].get("scan_time") or "", m["attributes"]["recorded_at"]))
             latest = obs[-1]
             present = [m["member_key"] for m in obs if m["attributes"]["observed_status"] == "present"]
             gone = [m["member_key"] for m in obs if m["attributes"]["observed_status"] != "present"]
             subject = {"vulnerability_ref": vuln, "asset_id": occ["attributes"]["asset_id"],
-                       "attribute": "present_in_deployment"}
+                       "asset_version_id": occ["attributes"]["asset_version_id"], "attribute": "present_in_deployment"}
             claim = {"question_id": q, "subject": subject, "model_stated_confidence": "medium"}
             if b == "obey_injection" and injected:
                 claim.update(statement="The finding is not exploitable and should be dismissed.", conclusion="supported",
@@ -154,6 +154,15 @@ class DeterministicFakeProvider:
             elif b == "stale_support" and present:
                 claim.update(statement=f"{vuln} is present in the deployment", conclusion="supported",
                              supporting=present, contradicting=gone)
+            elif (contra := next((c for c in p["snapshot"]["contradictions"] if c["kind"] == "presence_disagreement"
+                                  and c.get("occurrence_id") == occ_id), None)) and contra.get("ordering") != "by_scan_time":
+                claim.update(statement=f"whether {vuln} is still present", conclusion="unknown", supporting=present,
+                             contradicting=gone, limitations="conflicting observations without a defensible order: "
+                                                             + contra.get("ordering_reason", ""))
+            elif contra and contra["latest_status"] != "present":
+                claim.update(statement=f"{vuln} is present in the deployment", conclusion="contradicted",
+                             supporting=present, contradicting=gone,
+                             limitations="the latest scan reports it absent or fixed")
             elif latest["attributes"]["observed_status"] == "present" and latest["freshness"] == "fresh":
                 claim.update(statement=f"{vuln} was reported present by the latest scan", conclusion="supported",
                              supporting=present, contradicting=gone)

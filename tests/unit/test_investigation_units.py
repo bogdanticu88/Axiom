@@ -16,50 +16,68 @@ from axiom.investigation.redaction import redact
 from axiom.investigation.schema import Claim, MalformedOutput, parse_round
 
 V, W, A = "CVE-2024-0001", "CVE-2024-0002", "11111111-1111-1111-1111-111111111111"
+D1, D2 = "d1000000-0000-0000-0000-000000000001", "d2000000-0000-0000-0000-000000000002"   # two deployments
+OCC_V, OCC_W, OCC_V2 = "occ-v-d1", "occ-w-d1", "occ-v-d2"
 
 
-def m(key, kind, *, vuln=V, asset=A, status=None, freshness="fresh", cls=None, available=True, **attrs):
-    a = {"vulnerability_ref": vuln, "asset_id": asset, **attrs}
+def m(key, kind, *, vuln=V, asset=A, dep=D1, status=None, freshness="fresh", cls=None, available=True, ref=None,
+      **attrs):
+    a = {"vulnerability_ref": vuln, "asset_id": asset, "asset_version_id": dep, **attrs}
     if kind == "occurrence_observation":
         a["observed_status"] = status
     if kind == "observation":
         a["observation_type"] = {"present": "finding_reported", "fixed_by_source": "finding_fixed_by_source"}[status]
-    ref = asset if kind == "asset" else f"ref-{key}"
+    ref = ref or (asset if kind == "asset" else f"ref-{key}")
     return {"member_key": key, "kind": kind, "ref_id": ref, "classification": cls, "freshness": freshness,
             "available": available, "attributes": a}
 
 
 MEMBERS = {x["member_key"]: x for x in [
-    m("M001", "occurrence", freshness="not_applicable", source_severity="HIGH"),
+    m("M001", "occurrence", freshness="not_applicable", source_severity="HIGH", ref=OCC_V),
     m("M002", "asset", freshness="not_applicable"),
-    m("M003", "occurrence_observation", status="present", recorded_at="2026-10-01T00:00:00+00:00"),
-    m("M004", "occurrence_observation", status="absent_in_complete_scan", recorded_at="2026-09-15T00:00:00+00:00"),
-    m("M005", "occurrence_observation", vuln=W, status="present"),
-    m("M006", "occurrence", vuln=W, freshness="not_applicable"),
-    m("M007", "occurrence_observation", status="present", freshness="stale", recorded_at="2026-09-01T00:00:00+00:00"),
+    m("M003", "occurrence_observation", status="present", occurrence_id=OCC_V, scan_time="2026-10-01T00:00:00+00:00"),
+    m("M004", "occurrence_observation", status="absent_in_complete_scan", occurrence_id=OCC_V,
+      scan_time="2026-09-15T00:00:00+00:00"),
+    m("M005", "occurrence_observation", vuln=W, status="present", occurrence_id=OCC_W),
+    m("M006", "occurrence", vuln=W, freshness="not_applicable", ref=OCC_W),
+    m("M007", "occurrence_observation", status="present", freshness="stale", occurrence_id=OCC_V),
     m("M008", "observation", status="present", cls="confidential"),
     m("M009", "observation", status="present", available=False, cls="internal"),
+    m("M010", "observation", status="present", cls="internal", normalised={"fixed_version": None}),
 ]}
 
 
-def claim(attr="present_in_deployment", conclusion="supported", sup=(), con=(), vuln=V, limitations=None):
-    return Claim.model_validate({"question_id": "q1", "statement": "s", "subject": {
-        "vulnerability_ref": vuln, "asset_id": A, "attribute": attr}, "conclusion": conclusion,
-        "supporting": list(sup), "contradicting": list(con), "limitations": limitations})
+def claim(attr="present_in_deployment", conclusion="supported", sup=(), con=(), vuln=V, limitations=None, dep=None,
+          statement="s"):
+    subject = {"vulnerability_ref": vuln, "asset_id": A, "attribute": attr}
+    if dep:
+        subject["asset_version_id"] = dep
+    return Claim.model_validate({"question_id": "q1", "statement": statement, "subject": subject,
+                                 "conclusion": conclusion, "supporting": list(sup), "contradicting": list(con),
+                                 "limitations": limitations})
 
 
-def check(c, contradictions=(), route="confidential", readable=True):
-    return validate_claim(c, MEMBERS, list(contradictions), route_max=route, can_read=lambda p: readable)
+def check(c, contradictions=(), route="confidential", readable=True, members=None):
+    return validate_claim(c, members or MEMBERS, list(contradictions), route_max=route, can_read=lambda p: readable)
+
+
+def contra(ordering="by_scan_time", latest="present", keys=("M001", "M003", "M004"), occ=OCC_V, reason="x"):
+    c = {"kind": "presence_disagreement", "occurrence_id": occ, "vulnerability_ref": V, "member_keys": list(keys),
+         "ordering": ordering, "ordering_reason": reason}
+    if ordering == "by_scan_time":
+        c.update(latest_status=latest, latest_scan_time="2026-10-01T00:00:00+00:00")
+    return c
 
 
 @pytest.mark.parametrize("c,code", [
     (claim(sup=["M999"]), "fabricated_reference"),
-    (claim(sup=["M005"]), "irrelevant_reference"),                    # valid member, other vulnerability
-    (claim(sup=["M004"]), "reference_contradicts_claim"),             # 'absent' cited as support for presence
-    (claim(conclusion="contradicted", con=["M003"]), "reference_contradicts_claim"),
+    (claim(sup=["M005"]), "subject_mismatch"),                        # valid member, other vulnerability identifier
+    (claim(sup=["M004"]), "status_conflicts_with_citation"),          # 'absent' cited as support for presence
+    (claim(conclusion="contradicted", con=["M003"]), "status_conflicts_with_citation"),
     (claim(sup=["M002"]), "conclusion_without_reference"),            # an asset record does not show presence
     (claim(sup=["M009"]), "reference_unavailable"),                   # unverified evidence
     (claim(vuln="CVE-2099-9", sup=["M003"]), "subject_not_in_snapshot"),
+    (claim(dep=D2, sup=["M003"]), "subject_not_in_snapshot"),         # deployment not affected in this snapshot
 ])
 def test_rejections(c, code):
     r = check(c)
@@ -73,27 +91,78 @@ def test_classification_and_permission_make_references_unavailable():
 
 
 def test_downgrades():
-    contra = [{"kind": "presence_disagreement", "vulnerability_ref": V, "member_keys": ["M001", "M003", "M004"]}]
-    r = check(claim(sup=["M003"]), contra)
+    c = [contra()]
+    r = check(claim(sup=["M003"]), c)
     assert (r.validation, r.accepted, r.reasons[0]["code"]) == ("downgraded", "unknown", "ignores_recorded_contradiction")
-    assert check(claim(sup=["M003"], con=["M004"]), contra).validation == "references_checked"
+    assert check(claim(sup=["M003"], con=["M004"]), c).validation == "references_checked"
     r = check(claim(sup=["M007"]))
     assert (r.accepted, r.reasons[0]["code"]) == ("unknown", "stale_evidence_only")
     r = check(claim(attr="exposure", sup=["M003"]))
     assert (r.accepted, r.reasons[0]["code"]) == ("unknown", "attribute_not_established")
 
 
-def test_a_conclusion_against_the_latest_observation_is_downgraded_even_when_both_sides_are_cited():
-    later = dict(MEMBERS)
-    later["M010"] = m("M010", "occurrence_observation", status="absent_in_complete_scan",
-                      recorded_at="2026-10-05T00:00:00+00:00")
-    contra = [{"kind": "presence_disagreement", "vulnerability_ref": V, "member_keys": ["M003", "M010"]}]
-    r = validate_claim(claim(sup=["M003"], con=["M010"]), later, contra, route_max="confidential",
-                       can_read=lambda p: True)
+def test_defensible_ordering_downgrades_a_conclusion_against_the_latest_scan():
+    c = [contra(latest="absent_in_complete_scan")]
+    r = check(claim(sup=["M003"], con=["M004"]), c)
     assert (r.validation, r.accepted, r.reasons[-1]["code"]) == ("downgraded", "unknown", "latest_observation_disagrees")
-    ok = validate_claim(claim(conclusion="contradicted", sup=["M003"], con=["M010"]), later, contra,
-                        route_max="confidential", can_read=lambda p: True)
+    ok = check(claim(conclusion="contradicted", sup=["M003"], con=["M004"]), c)
     assert (ok.validation, ok.accepted) == ("references_checked", "contradicted")
+
+
+# ---- the five required cases (record-level rules; statement text is never read)
+def test_a_valid_reference_that_does_not_support_the_claim():
+    # structured field shows no fix, cited for "fix available": rejected
+    r = check(claim(attr="fix_available", sup=["M010"]))
+    assert (r.validation, r.reasons[0]["code"]) == ("rejected", "conclusion_without_reference")
+    # the statement text is not checked: this passes the record checks although the statement does not follow;
+    # it is stored with entailment = not_verified and needs a person
+    r = check(claim(attr="severity_as_reported", sup=["M001"],
+                    statement="openssl 3.0 on every host is remotely exploitable"))
+    assert (r.validation, r.accepted) == ("references_checked", "supported")
+
+
+def test_newer_evidence_about_a_different_deployment_does_not_decide_this_one():
+    two = dict(MEMBERS)
+    two["M011"] = m("M011", "occurrence", dep=D2, freshness="not_applicable", ref=OCC_V2)
+    two["M012"] = m("M012", "occurrence_observation", dep=D2, status="absent_in_complete_scan", occurrence_id=OCC_V2,
+                    scan_time="2026-10-20T00:00:00+00:00")
+    # D2's newer absence cannot be cited against D1
+    r = check(claim(dep=D1, conclusion="contradicted", sup=["M003"], con=["M012"]), members=two)
+    assert (r.validation, r.reasons[0]["code"]) == ("rejected", "subject_mismatch")
+    ok = check(claim(dep=D1, sup=["M003"]), members=two)
+    assert (ok.validation, ok.accepted) == ("references_checked", "supported")
+    # without naming the deployment, a presence conclusion over two deployments is not accepted
+    r = check(claim(sup=["M003"]), members=two)
+    assert (r.accepted, r.reasons[0]["code"]) == ("unknown", "deployment_unspecified")
+
+
+def test_newer_but_incomplete_evidence_does_not_establish_absence():
+    part = dict(MEMBERS)
+    part["M013"] = m("M013", "ingestion_run", freshness="fresh", coverage="partial")
+    # a newer partial run records nothing about the finding; citing it cannot establish absence
+    r = check(claim(attr="absent_in_deployment", sup=["M013"]), members=part)
+    assert (r.validation, r.reasons[0]["code"]) == ("rejected", "conclusion_without_reference")
+
+
+def test_conflicting_observations_without_a_defensible_ordering_stay_open():
+    for reason in ("conflicting observations carry the same latest scan time",
+                   "observations come from different sources", "the source reported no scan time"):
+        c = [contra(ordering="undetermined", reason=reason)]
+        for cl in (claim(sup=["M003"], con=["M004"]), claim(conclusion="contradicted", sup=["M003"], con=["M004"])):
+            r = check(cl, c)
+            assert (r.accepted, r.validation) == ("unknown", "downgraded")
+            assert any(x["code"] == "unresolved_contradiction" and reason in x["message"] for x in r.reasons)
+        ok = check(claim(conclusion="unknown", sup=["M003"], con=["M004"], limitations="unresolved"), c)
+        assert (ok.validation, ok.accepted) == ("references_checked", "unknown")
+
+
+def test_multiple_claims_some_supported_some_unresolved():
+    c = [contra(ordering="undetermined", reason="same latest scan time")]
+    results = [check(claim(attr="severity_as_reported", sup=["M001"]), c),
+               check(claim(sup=["M003"], con=["M004"]), c),
+               check(claim(vuln=W, sup=["M005"]), c)]
+    assert [(r.validation, r.accepted) for r in results] == [
+        ("references_checked", "supported"), ("downgraded", "unknown"), ("references_checked", "supported")]
 
 
 def test_valid_references_still_carry_no_entailment_claim():

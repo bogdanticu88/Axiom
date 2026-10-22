@@ -32,6 +32,7 @@ class ToolRequest(Strict):
 class Subject(Strict):
     vulnerability_ref: str | None = Field(default=None, max_length=100)
     asset_id: str | None = Field(default=None, max_length=64)
+    asset_version_id: str | None = Field(default=None, max_length=64)   # the deployment, when it matters
     attribute: Literal[ATTRIBUTES]  # type: ignore[valid-type]
 
 

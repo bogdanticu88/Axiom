@@ -61,7 +61,7 @@ def test_valid_but_irrelevant_citations_are_rejected(inv):
                                                                       rationale="same package family"))
     run = inv.drive(inv.start(case["id"], "fake-adversarial:irrelevant")["id"])
     codes = {r["code"] for c in run["claims"] for r in c["validation_reasons"]}
-    assert "irrelevant_reference" in codes
+    assert "subject_mismatch" in codes
     presence = [c for c in run["claims"] if c["subject"]["attribute"] == "present_in_deployment"]
     assert presence and all(c["validation"] == "rejected" for c in presence)
 
@@ -69,9 +69,8 @@ def test_valid_but_irrelevant_citations_are_rejected(inv):
 def test_ignoring_a_recorded_contradiction_downgrades_the_claim(inv):
     inv.importer(json.dumps(trivy_doc()).encode(), "trivy_json")
     case = inv.case_for(first_vuln())
-    doc = trivy_doc()
-    doc["Results"][0]["Vulnerabilities"] = doc["Results"][0]["Vulnerabilities"][1:]   # labelled: rescan without it
-    inv.importer(json.dumps(doc).encode(), "trivy_json")
+    from .test_investigation import rescan_without
+    inv.importer(rescan_without(first_vuln(), hours_later=24), "trivy_json")   # labelled: later rescan without it
     run = inv.drive(inv.start(case["id"], "fake-adversarial:ignore_contradiction")["id"])
     [c] = [c for c in run["claims"] if c["subject"]["attribute"] == "present_in_deployment"]
     assert (c["proposed_conclusion"], c["accepted_conclusion"], c["validation"]) == ("supported", "unknown", "downgraded")

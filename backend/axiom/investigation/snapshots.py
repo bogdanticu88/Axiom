@@ -84,6 +84,17 @@ def build_snapshot(conn: psycopg.Connection, ctx: TenantContext, authz: Authoriz
             seen.add((kind, ref_id))
             raw.append((kind, ref_id, fields))
 
+    scan_times: dict[UUID, object] = {}
+
+    def run_scan_time(run_id):
+        """When the source says the scan ran (max source time it reported in that run); None if it never said.
+        Import or recording times are never used as a substitute."""
+        if run_id not in scan_times:
+            scan_times[run_id] = conn.execute(
+                "SELECT max(source_time) AS t FROM axiom.occurrence_observations WHERE run_id = %s",
+                (run_id,)).fetchone()["t"]
+        return scan_times[run_id]
+
     def run_fresh(run) -> str:
         if run is None or run["finished_at"] is None or run["status"] != "completed":
             return "unknown"
@@ -127,15 +138,17 @@ def build_snapshot(conn: psycopg.Connection, ctx: TenantContext, authz: Authoriz
                 "SELECT * FROM axiom.ingestion_runs WHERE id = %s", (oo["run_id"],)).fetchone()
             runs[run["id"]] = run
             fresh = run_fresh(run)
+            scan_time = oo["source_time"] or run_scan_time(run["id"])
             ref = (oo["run_id"], oo["occurrence_id"])
             add("occurrence_observation", uuid.uuid5(uuid.NAMESPACE_URL, f"oo:{ref[0]}:{ref[1]}"),
                 collected_at=oo["collected_at"] or oo["recorded_at"], freshness=fresh, available=True, attributes={
                     "occurrence_id": str(occ["id"]), "run_id": str(run["id"]),
                     "observation_id": str(oo["observation_id"]) if oo["observation_id"] else None,
                     "observed_status": oo["observed_status"], "vulnerability_ref": occ["vulnerability_ref"],
-                    "asset_id": str(asset["id"]), "run_coverage": run["coverage"],
+                    "asset_id": str(asset["id"]), "asset_version_id": str(av["id"]), "source": run["adapter"],
+                    "run_coverage": run["coverage"], "scan_time": _iso(scan_time),
                     "run_finished_at": _iso(run["finished_at"]), "recorded_at": _iso(oo["recorded_at"])})
-            statuses.append((oo["recorded_at"], oo["observed_status"], run))
+            statuses.append((scan_time, oo["observed_status"], run))
             if oo["observation_id"]:
                 ev = conn.execute("SELECT classification, status FROM axiom.evidence_objects WHERE id = %s",
                                   (oo["raw_evidence_id"],)).fetchone()
@@ -146,16 +159,16 @@ def build_snapshot(conn: psycopg.Connection, ctx: TenantContext, authz: Authoriz
                         "observation_type": oo["observation_type"], "run_id": str(run["id"]),
                         "raw_evidence_id": str(oo["raw_evidence_id"]), "raw_locator": oo["raw_locator"],
                         "vulnerability_ref": occ["vulnerability_ref"], "asset_id": str(asset["id"]),
-                        "normalised": oo["normalised"],
+                        "asset_version_id": str(av["id"]), "normalised": oo["normalised"],
                         # untrusted source text, bounded; it is data and never instructions
                         "source_text": {k: _bounded(sf.get(k)) for k in ("Title", "Description", "title",
                                                                           "description", "message") if sf.get(k)}})
-        _occurrence_contradictions(occ, statuses, contradictions)
+        _occurrence_contradictions(occ, av, statuses, contradictions)
         latest_complete = [s for s in statuses if s[2]["coverage"] == "complete" and s[2]["status"] == "completed"]
         if not latest_complete:
             gaps.append({"kind": "no_complete_scan", "occurrence_id": str(occ["id"]),
                          "description": "no run with complete coverage has observed this occurrence"})
-        elif run_fresh(latest_complete[-1][2]) != "fresh":
+        elif all(run_fresh(x[2]) != "fresh" for x in latest_complete):
             gaps.append({"kind": "stale_complete_scan", "occurrence_id": str(occ["id"]),
                          "description": "the latest complete scan is older than the freshness policy allows"})
     if not occurrences:
@@ -167,6 +180,7 @@ def build_snapshot(conn: psycopg.Connection, ctx: TenantContext, authz: Authoriz
     for run in runs.values():
         add("ingestion_run", run["id"], collected_at=run["finished_at"], freshness=run_fresh(run), available=True,
             attributes={"adapter": run["adapter"], "source_kind": run["source_kind"], "status": run["status"],
+                        "source_scan_time": _iso(run_scan_time(run["id"])),
                         "coverage": run["coverage"], "coverage_reason": _bounded(run["coverage_reason"], 500),
                         "declared_scope": run["declared_scope"], "declared_subject": run["declared_subject"],
                         "connection_id": str(run["connection_id"]) if run["connection_id"] else None,
@@ -259,16 +273,37 @@ def _add_evidence(conn, add, evidence_id, why):
                     "original_filename": ev["original_filename"], "why_included": why})
 
 
-def _occurrence_contradictions(occ, statuses, out):
-    """Present in one run and absent/fixed in another is recorded, with which came last; never resolved here."""
+def _occurrence_contradictions(occ, av, statuses, out):
+    """Present in one observation and absent or fixed in another, for one occurrence (one deployment).
+
+    The record keeps both sides. It states an ordering only when one is defensible: every observation has a scan time
+    reported by the source, all come from the same source, and the latest scan time is held by observations that
+    agree. Otherwise the ordering is ``undetermined`` and the contradiction stays open for a person; import or
+    recording time never decides it."""
     present = [s for s in statuses if s[1] == "present"]
-    gone = [s for s in statuses if s[1] in ("absent_in_complete_scan", "fixed_by_source")]
-    if present and gone:
-        last = max(statuses, key=lambda s: s[0])
-        out.append({"kind": "presence_disagreement", "occurrence_id": str(occ["id"]),
-                    "vulnerability_ref": occ["vulnerability_ref"],
-                    "latest_status": last[1], "description":
-                    "observed present in at least one run and absent or fixed in another"})
+    gone = [s for s in statuses if s[1] != "present"]
+    if not (present and gone):
+        return
+    entry = {"kind": "presence_disagreement", "occurrence_id": str(occ["id"]), "asset_version_id": str(av["id"]),
+             "vulnerability_ref": occ["vulnerability_ref"],
+             "description": "observed present in at least one run and absent or fixed in another"}
+    sources = {s[2]["adapter"] for s in statuses}
+    if any(s[0] is None for s in statuses):
+        entry.update(ordering="undetermined", ordering_reason="the source reported no scan time for at least one "
+                                                              "observation")
+    elif len(sources) > 1:
+        entry.update(ordering="undetermined", ordering_reason=f"observations come from different sources: {sorted(sources)}")
+    else:
+        latest = max(s[0] for s in statuses)
+        at_latest = {"present" if s[1] == "present" else "gone" for s in statuses if s[0] == latest}
+        if len(at_latest) > 1:
+            entry.update(ordering="undetermined",
+                         ordering_reason="conflicting observations carry the same latest scan time")
+        else:
+            last = next(s for s in statuses if s[0] == latest)
+            entry.update(ordering="by_scan_time", latest_status=last[1], latest_scan_time=_iso(latest),
+                         ordering_reason="single source; the latest scan time is unique to one side")
+    out.append(entry)
 
 
 def _attach_member_keys(contradictions, gaps, members, key_of):

@@ -28,11 +28,19 @@ def snapshot(inv, case_id, who="analyst"):
         return snaps.get_snapshot(conn, Authorizer(conn, ctx), row["id"])
 
 
-def rescan_without(vuln: str) -> bytes:
-    """Labelled modification of the real fixture: the same image scanned again with one vulnerability gone."""
+def rescan_without(vuln: str, *, hours_later: int = 24, digest: str | None = None) -> bytes:
+    """Labelled modification of the real fixture: the same image scanned again (``hours_later`` after the fixture's
+    CreatedAt; 0 = the same reported scan time) with one vulnerability gone. ``digest`` makes it a different
+    deployment of the same image repository."""
+    from datetime import datetime, timedelta
     doc = trivy_doc()
     doc["Results"][0]["Vulnerabilities"] = [v for v in doc["Results"][0]["Vulnerabilities"]
                                             if v["VulnerabilityID"] != vuln]
+    t = datetime.fromisoformat(doc["CreatedAt"].replace("Z", "+00:00")[:26] + "+00:00")
+    doc["CreatedAt"] = (t + timedelta(hours=hours_later)).isoformat().replace("+00:00", "Z")
+    if digest:
+        repo = doc["Metadata"]["RepoDigests"][0].split("@", 1)[0]
+        doc["Metadata"]["RepoDigests"] = [f"{repo}@sha256:{digest}"]
     return json.dumps(doc).encode()
 
 
@@ -68,7 +76,9 @@ def test_contradictions_are_recorded_and_later_evidence_makes_a_new_snapshot(inv
     second = snapshot(inv, case["id"])
     assert second["id"] != first["id"] and second["digest"] != first["digest"]
     [c] = [c for c in second["contradictions"] if c["kind"] == "presence_disagreement"]
-    assert c["latest_status"] == "absent_in_complete_scan" and c["member_keys"]
+    assert (c["ordering"], c["latest_status"]) == ("by_scan_time", "absent_in_complete_scan") and c["member_keys"]
+    assert c["latest_scan_time"] > [m for m in second["members"] if m["kind"] == "occurrence_observation"
+                                    and m["attributes"]["observed_status"] == "present"][0]["attributes"]["scan_time"]
     statuses = sorted(m["attributes"]["observed_status"] for m in second["members"]
                       if m["kind"] == "occurrence_observation")
     assert statuses == ["absent_in_complete_scan", "present"]
@@ -300,3 +310,63 @@ def test_snapshot_reads_disclose_content_and_metadata_only_with_permission(inv, 
     ev = [m for m in seen["members"] if m["kind"] == "evidence_object"][0]
     obs = [m for m in seen["members"] if m["kind"] == "observation"][0]
     assert ev["ref_digest"] and ev["attributes"]["original_filename"] and obs["attributes"]["source_text"] is None
+
+
+
+# --------------------------------------------------------------------- ordering is not decided by import time
+def test_same_reported_scan_time_leaves_the_contradiction_open_for_a_person(inv):
+    inv.importer(json.dumps(trivy_doc()).encode(), "trivy_json")
+    case = inv.case_for()
+    inv.importer(rescan_without(case["vulnerability_ref"], hours_later=0), "trivy_json")   # imported later, same scan time
+    run = inv.drive(inv.start(case["id"])["id"])
+    snap = snapshot(inv, case["id"])
+    [c] = [c for c in snap["contradictions"] if c["kind"] == "presence_disagreement"]
+    assert c["ordering"] == "undetermined" and "same latest scan time" in c["ordering_reason"] and "latest_status" not in c
+    [p] = [cl for cl in run["claims"] if cl["subject"]["attribute"] == "present_in_deployment"]
+    assert p["accepted_conclusion"] == "unknown" and "without a defensible order" in p["limitations"]
+    adv = inv.drive(inv.start(case["id"], "fake-adversarial:ignore_contradiction")["id"])
+    [a] = [cl for cl in adv["claims"] if cl["subject"]["attribute"] == "present_in_deployment"]
+    assert a["accepted_conclusion"] == "unknown" and {"ignores_recorded_contradiction", "unresolved_contradiction"} \
+        <= {r["code"] for r in a["validation_reasons"]}
+
+
+def test_newer_scan_of_a_different_deployment_does_not_change_this_one(inv):
+    inv.importer(json.dumps(trivy_doc()).encode(), "trivy_json")
+    case = inv.case_for()
+    inv.importer(rescan_without(case["vulnerability_ref"], hours_later=48, digest="ab" * 32), "trivy_json")
+    snap = snapshot(inv, case["id"])
+    assert [c for c in snap["contradictions"] if c["kind"] == "presence_disagreement"] == []
+    statuses = [m["attributes"]["observed_status"] for m in snap["members"] if m["kind"] == "occurrence_observation"]
+    assert statuses == ["present"]                 # the new deployment's scan says nothing about this deployment
+    run = inv.drive(inv.start(case["id"])["id"])
+    [p] = [cl for cl in run["claims"] if cl["subject"]["attribute"] == "present_in_deployment"]
+    assert (p["accepted_conclusion"], p["validation"]) == ("supported", "references_checked")
+
+
+def test_one_run_with_supported_and_unresolved_claims(inv):
+    inv.importer(json.dumps(trivy_doc()).encode(), "trivy_json")
+    vulns = [v["VulnerabilityID"] for v in trivy_doc()["Results"][0]["Vulnerabilities"]]
+    a, b = vulns[24], vulns[4]
+    inv.importer(rescan_without(b, hours_later=0), "trivy_json")       # b: conflicting, same reported scan time
+    ca, cb = inv.case_for(a), inv.case_for(b)
+    occ_b = inv.run(inv.ctx_for("analyst"), lambda s: s.conn.execute(
+        "SELECT occurrence_id FROM axiom.case_occurrence_links WHERE case_id = %s", (cb["id"],)).fetchone())
+    inv.run(inv.ctx_for("analyst"), lambda s: s.cases.link_occurrence(ca["id"], ca["record_version"],
+                                                                      occ_b["occurrence_id"], rationale="same package"))
+    run = inv.drive(inv.start(ca["id"])["id"])
+    pres = {cl["subject"]["vulnerability_ref"]: cl for cl in run["claims"]
+            if cl["subject"]["attribute"] == "present_in_deployment"}
+    assert pres[a]["accepted_conclusion"] == "supported" and pres[b]["accepted_conclusion"] == "unknown"
+    assert run["status"] == "completed"
+    # every surviving claim needs its own review before an assessment may cite the run
+    c = inv.investigate_case(inv.run(inv.ctx_for("analyst"), lambda s: s.cases.get(ca["id"])))
+    first = [cl for cl in run["claims"] if cl["validation"] != "rejected"][0]
+    inv.svc("analyst2", lambda s: s.review_claim(first["id"], verdict="confirmed", note="checked"))
+    from axiom.domains.cases.service import EvidenceRef
+    _, ev = None, inv.run(inv.ctx_for("analyst"), lambda s: s.conn.execute(
+        "SELECT raw_evidence_id AS id FROM axiom.ingestion_runs ORDER BY created_at LIMIT 1").fetchone())
+    with pytest.raises(Conflict) as err:
+        inv.run(inv.ctx_for("analyst"), lambda s: s.cases.record_assessment(
+            ca["id"], c["record_version"], assessment="supported", rationale="x", limitations="b unresolved",
+            evidence=[EvidenceRef(ev["id"])], investigation_run_id=run["id"]))
+    assert err.value.code == "claims_not_reviewed"
