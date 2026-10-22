@@ -5,8 +5,9 @@
 #   scripts/ci/run.sh                 # needs PostgreSQL 16 server binaries, Docker, uv
 #
 # Stages: input manifest of the exact committed tree (refuses a dirty tree unless CI_ALLOW_DIRTY=1); locked
-# dependency sync; byte-compilation; tracked-file secret scan; foundation verification on a fresh
-# separate cluster with S3 (full pytest suite, including the real-SIGKILL, restore and concurrency tests);
+# dependency sync; byte-compilation; tracked-file secret scan; analyst UI build; foundation verification on a fresh
+# separate cluster with S3 (full pytest suite, including the real-SIGKILL, restore and concurrency tests, and the
+# Chromium browser tests of the UI against a local Keycloak);
 # physical snapshot restore drill on its own cluster; Compose fresh-install smoke with a rebuilt image.
 # Exit status is non-zero if any stage fails. Logs go to .var/ci/<stamp>/.
 set -uo pipefail
@@ -46,6 +47,12 @@ python3 scripts/dev/register-counts.py | tail -4; record register "${PIPESTATUS[
 stage "GitHub Actions pins (full commit hashes, verified against the official repositories)"
 scripts/ci/check-action-pins.sh; record action-pins $?
 
+stage "analyst UI (locked npm install, typecheck, production build)"
+( cd frontend && npm ci --no-audit --no-fund && npm run build ) > "$OUT/ui-build.log" 2>&1; rc=$?
+tail -4 "$OUT/ui-build.log"; record ui-build $rc
+# The browser tests in the suite below use this build and must not skip (AXIOM_REQUIRE_UI=1 turns a skip into a failure).
+export AXIOM_UI_DIST="$ROOT/frontend/dist" AXIOM_REQUIRE_UI=1
+
 stage "foundation verification (fresh cluster + SeaweedFS + full suite, incl. evaluation harness)"
 rm -rf "$OUT/eval"
 AXIOM_EVAL_OUT="$OUT/eval" OUT="$OUT/foundation" scripts/verify/foundation.sh > "$OUT/foundation.stdout" 2>&1
@@ -55,6 +62,7 @@ grep -q "pytest exit=0" "$OUT/foundation/verify.log"; record foundation $?
 stage "evaluation report (from this run's harness results)"
 python3 evaluation/report.py "$OUT/eval/results.jsonl" "$OUT/eval/report.md" > /dev/null; rc=$?
 grep -E "^\| (Presence|Unsupported|Missed)" "$OUT/eval/report.md" | head -6; record evaluation-report $rc
+python3 evaluation/export_review.py "$OUT/eval" "$OUT/eval-review-package"; record evaluation-review-package $?
 
 stage "restore drill: physical snapshot rollback"
 AXIOM_RUN_DRILLS=1 uv run --frozen pytest -q tests/drills -p no:cacheprovider 2>&1 | grep -v UV_NATIVE \

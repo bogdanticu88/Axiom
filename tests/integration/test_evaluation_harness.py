@@ -32,8 +32,15 @@ def build(inv, case: dict) -> str:
     vulns = trivy_doc()["Results"][0]["Vulnerabilities"]
     target = vulns[case["target"]]["VulnerabilityID"]
 
+    from datetime import datetime, timedelta
+    imports = {"n": 0}
+
     def doc(keep=lambda v: True, extra=None, patch=None, invalid=False):
         d = trivy_doc()
+        # each import in a scenario is a later scan: CreatedAt advances one day per import (since eval-cases@2)
+        t = datetime.fromisoformat(d["CreatedAt"][:26] + "+00:00")
+        d["CreatedAt"] = (t + timedelta(days=imports["n"])).isoformat().replace("+00:00", "Z")
+        imports["n"] += 1
         vs = [dict(v) for v in d["Results"][0]["Vulnerabilities"] if keep(v)]
         for v in vs:
             if patch and v["VulnerabilityID"] == target:
@@ -142,9 +149,35 @@ def test_case(inv, case):
         "adversarial": adversarial,
     }
     if os.environ.get("AXIOM_EVAL_OUT"):
-        Path(os.environ["AXIOM_EVAL_OUT"]).mkdir(parents=True, exist_ok=True)
-        with open(Path(os.environ["AXIOM_EVAL_OUT"]) / "results.jsonl", "a") as fh:
+        out_dir = Path(os.environ["AXIOM_EVAL_OUT"])
+        for sub in ("evidence", "pipeline"):
+            (out_dir / sub).mkdir(parents=True, exist_ok=True)
+        with open(out_dir / "results.jsonl", "a") as fh:
             fh.write(json.dumps(row, default=str) + "\n")
+        # The frozen evidence a reviewer judges the reference label against (as an analyst sees it), kept apart from
+        # what the pipeline (deterministic fake) concluded so label review is not anchored on the fake's output.
+        from axiom.access import Authorizer
+        from axiom.investigation import snapshots as snaps
+        ctx = inv.ctx_for("analyst")
+        with inv.db.tenant_tx(ctx) as conn:
+            snapshot = snaps.get_snapshot(conn, Authorizer(conn, ctx), run["snapshot_id"])
+        from axiom.investigation.redaction import redact
+
+        def scrub(x):                  # the package is for distribution: apply the model-boundary redaction to text
+            if isinstance(x, str):
+                return redact(x)[0]
+            if isinstance(x, dict):
+                return {k: scrub(v) for k, v in x.items()}
+            if isinstance(x, list):
+                return [scrub(v) for v in x]
+            return x
+        (out_dir / "evidence" / f"{case['id']}.json").write_text(json.dumps(
+            {"case": case["id"], "target": target, "text_redacted": "credential-shaped text replaced as at the model "
+             "boundary", "snapshot": scrub(json.loads(json.dumps(snapshot, default=str)))}, indent=1, sort_keys=True))
+        (out_dir / "pipeline" / f"{case['id']}.json").write_text(json.dumps(
+            {"case": case["id"], "route": "fake-rules-v1 (deterministic fake, not a language model)",
+             "priority_from_policy": out["priority"], "claims": run["claims"], "limitations": run["limitations"]},
+            default=str, indent=1, sort_keys=True))
     # hard guarantees (the rest are measurements)
     assert all(v["unsupported_accepted"] == 0 for v in adversarial.values()), adversarial
     assert row["ai"]["flags_missing"] == []

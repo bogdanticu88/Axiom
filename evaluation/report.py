@@ -21,7 +21,7 @@ LIMITATIONS = """\
   reference labels were both written by the author from the same reading of the evidence rules. The useful
   results here are the guards: what the validator rejected or downgraded, and that no adversarial output was accepted
   as a wrong definite conclusion.
-* **The reference labels are author-drafted and not human-reviewed.** "Reviewer corrections" are simulated: they
+* **The reference labels and their rationales are author-generated and unreviewed.** "Reviewer corrections" are simulated: they
   count accepted AI conclusions that differ from the provisional reference.
 * **The dataset is small** (16 scenarios, all derived from one real Trivy report of one image with labelled
   modifications). It covers presence, absence, staleness, partial coverage, injected text, credential-shaped text and
@@ -41,7 +41,8 @@ def main() -> int:
     rows = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
     out = []
     w = out.append
-    w("# Evaluation report (eval-cases@1)\n")
+    version = json.loads((Path(__file__).resolve().parent / "cases.json").read_text())["version"]
+    w(f"# Evaluation report ({version})\n")
     w(f"Scenarios: {len(rows)} ({sum(r['split'] == 'dev' for r in rows)} dev, "
       f"{sum(r['split'] == 'heldout' for r in rows)} held-out).\n")
     w("## Limitations (read first)\n")
@@ -73,18 +74,6 @@ def main() -> int:
         w(f"| Tokens in / out (estimated) | 0 / 0 | {sum(a['input_tokens_estimated'] for a in ai)} / "
           f"{sum(a['output_tokens_estimated'] for a in ai)} |")
         w(f"| Cost (micro-units) | 0 | {sum(a['cost_micros'] for a in ai)} |")
-    adv = defaultdict(lambda: defaultdict(int))
-    for r in rows:
-        for b, v in r["adversarial"].items():
-            for k in ("claims", "rejected", "downgraded", "unsupported_accepted"):
-                adv[b][k] += v[k]
-            adv[b]["runs"] += 1
-    if adv:
-        w("\n## Adversarial arm (held-out scenarios, misbehaving fakes)\n")
-        w("| Behaviour | Runs | Claims | Rejected | Downgraded | Unsupported definite conclusions accepted |")
-        w("|---|---|---|---|---|---|")
-        for b, v in sorted(adv.items()):
-            w(f"| {b} | {v['runs']} | {v['claims']} | {v['rejected']} | {v['downgraded']} | {v['unsupported_accepted']} |")
     w("\n## Per scenario\n")
     w("| Case | Split | Reference presence | AI presence | Policy priority | Reference urgent | Notes |")
     w("|---|---|---|---|---|---|---|")
@@ -98,6 +87,21 @@ def main() -> int:
             notes.append(f"{r['ai']['redactions']} redaction(s)")
         w(f"| {r['case']} | {r['split']} | {r['reference']['presence']} | {r['ai']['presence']} | "
           f"{r['policy']['priority']} | {r['reference']['urgent']} | {'; '.join(notes)} |")
+    adv = defaultdict(lambda: defaultdict(int))
+    for r in rows:
+        for b, v in r["adversarial"].items():
+            for k in ("claims", "rejected", "downgraded", "unsupported_accepted"):
+                adv[b][k] += v[k]
+            adv[b]["runs"] += 1
+    if adv:
+        w("\n## Security-boundary tests (separate from reasoning quality)\n")
+        w("These runs use deliberately misbehaving fakes on the held-out scenarios. They test whether the platform's "
+          "guards stop a wrong definite conclusion from being accepted; they are not a measure of reasoning quality "
+          "and are not combined with the figures above.\n")
+        w("| Behaviour | Runs | Claims | Rejected | Downgraded | Unsupported definite conclusions accepted |")
+        w("|---|---|---|---|---|---|")
+        for b, v in sorted(adv.items()):
+            w(f"| {b} | {v['runs']} | {v['claims']} | {v['rejected']} | {v['downgraded']} | {v['unsupported_accepted']} |")
     text = "\n".join(out) + "\n"
     if len(sys.argv) > 2:
         Path(sys.argv[2]).write_text(text)
