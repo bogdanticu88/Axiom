@@ -517,3 +517,78 @@ disagreement). Security-boundary arm, reported separately: 50 adversarial runs, 
 Not covered: Microsoft Entra ID or any hosted IdP; any real model call; human review of the evaluation labels;
 browsers other than Chromium; browser tests of the approval, verification and report screens; accessibility; live
 scanners and trackers; hosted CI; load.
+
+### Run 18: checkpoint 6, finishing and verifying the existing workflow (2026-10-22 ~13:20Z to 14:40Z)
+
+**1. Starting point (checkpoint 5), checked rather than assumed.** `docs/verification/2026-10-22-checkpoint6/starting-point-check.md`:
+* the delivered checkpoint-5 files match `SHA256SUMS`; the bundle clones and `checkpoint-5` points at
+  `622f216b155b48fb70581af564dc44d011a46735`; the source archive is identical to the tag's tree;
+* clean-clone CI passed on `3e95d461c7cc4f59686d4b07f33835b723c29b79`; the 12 files changed afterwards are all under
+  `docs/` (documentation-only: confirmed);
+* **discrepancy 1:** the checkpoint-5 chat report listed two checksums against the wrong files (it gave the
+  screenshots' digest for the source archive and the reverse). The files and `SHA256SUMS` were correct;
+* **discrepancy 2 (workspace only):** the checkpoint-5 mutation harness left a stale, mutated bytecode file
+  (`claims.cpython-313.pyc` from mutation M8, same source length and whole-second timestamp after restore), which made
+  one test fail locally on unchanged code. The checkpoint-5 CI ran on a fresh clone and the 444-test local run predates
+  the mutation runs, so the recorded checkpoint-5 results stand; the harness was unsafe and has been replaced.
+
+**2. Tested object: the exact committed tree.** CI PASS on a fresh clone of commit
+`9c7303ca47c89e24d94dad4b4c8447b0a3c7ffbf`:
+* tree `95e0a9b5281639c0a26c96a1e348c896c1dbf26c`; executable-input digest
+  `sha256:f2a94c56bceff434f6d80aaf21b5191872338d63b90e4eba14535cb64fb06357` (now including `frontend/`);
+* every stage passed: input manifest, dependencies, byte-compile, secret scan, no `.env` files, requirements
+  register, action pins (3), analyst UI build, foundation, evaluation report, evaluation review package, physical
+  restore drill, Compose smoke;
+* foundation on a fresh separate cluster with SeaweedFS: migrations `0001 ... 0016`, `applied: none` on re-run;
+  RLS audit 68 forced, 3 global tables without, 0 not owned by `axiom_owner`; **489 passed, 2 skipped in 381.62s**.
+  Skips: the physical drill (run as its own stage: 1 passed) and the opt-in real-provider test (**never run**;
+  real-provider execution is not authorised). With `AXIOM_REQUIRE_UI=1` no browser or Keycloak test could skip: 6 + 5
+  browser tests, 9 sign-in tests and 16 authority-boundary tests all ran and passed;
+* Compose smoke with a rebuilt image (`sha256:bdb958aeec5f...`, UI built inside it): `SMOKE PASS`, including the new
+  steps (UI served with CSP; alice signs in on the Keycloak page and moves a case to investigating; the server records
+  it as alice's decision; audrey is refused `permission_denied`; the old session cookie is refused after sign-out;
+  `AXIOM_ENV=production` with the development identity and a start without the client secret both refuse to start).
+
+**3. After CI.** A local rerun of the browser tests then failed once, deterministically on that machine state:
+`test_complete_verification_and_closure_in_the_ui` read the case header immediately after the success message, while
+the header was still refetching (a race in the test, not a product defect). Commit `30044e9` changes that test file
+only, to wait for the refreshed value. Scope of the rerun: both browser test files, three times (11 passed, 5 passed,
+5 passed). The full suite and CI were not rerun for this test-only change.
+
+**4. Problems found while building, all fixed before the recorded CI run**
+* Authority boundary (ADR 0012 amendment 2): the 0014 database guard trusted the authority JSON; workload reopen for
+  any reason; system reopen without a permission check in the service; nothing stopped binding a human role to a
+  workload principal; the audit trail took the actor kind from the in-process context.
+* UI defects found by the new browser tests: the verification screen tested for a workflow name (`verifying`) the
+  server never returns, so the verification form never appeared; approvers were shown an empty payload (wrong field);
+  success messages vanished when the case reloaded; one status message rendered twice.
+* Compose: the API container cannot reach the public issuer URL; fixed with an internal discovery URL whose issuer
+  must still match.
+
+**5. Mutation checks** (`mutation-checks.log`, harness `mutation-harness.py`: no bytecode written, caches purged,
+restored files compared byte-for-byte, all targeted tests rerun after restore). **First round: 8 of 9 caught.**
+N6 (token-endpoint error status ignored) **survived**: every error response in the test also lacked an ID token or
+JSON, so the login was refused for another reason. A test case with an HTTP 400 that carries an ID token was added;
+**second round: N6 caught.** Caught: database trusting any workload permission; workload reopen for any reason;
+role-binding kind guard disabled; audit kind from the context; PKCE verifier not sent (caught by the unit test and by
+the Keycloak sign-in test); token errors accepted (round 2); client secret not resolved at start-up; production UI
+without sign-in; risk history shown without audit.read. Sanity run after restore: 31 passed.
+
+**6. Register**: 262 = 148 verified (**18 only against fakes or fixtures**) + 68 implementing + 2
+implemented_unverified + 43 planned + 1 blocked. Integration catalogue: 7 fixture-tested, 13 planned, none
+sandbox-validated or production-supported.
+
+**7. Evaluation** (eval-cases@4; deterministic fake; labels author-generated and unreviewed; **no held-out set**:
+H1 to H10 are now the regression split, evaluation/EXPOSURE.md). Presence agreement 16 of 16; 0 unsupported definite
+conclusions accepted; the policy missed 1 of 3 reference-urgent cases (H7). Security-boundary arm, separate: 50
+misbehaving-fake runs, 0 wrong definite conclusions accepted (20 rejected, 7 downgraded). **None of this measures a
+language model or reasoning quality.** Independent review: **pending**.
+
+**Verified, fixture-only, untested**
+* Verified here: the authority boundary and the negative cases above; the risk-acceptance, approval, verification and
+  report screens against the real API; sign-in against the local Keycloak, including in a fresh Compose install;
+  start-up refusals.
+* Fixture-only: ticket creation (local Jira-style fake); tracker states; Tenable and Azure Resource Graph sources.
+* Untested: Microsoft Entra ID or any hosted IdP; a production secret resolver (none exists); any language model;
+  browsers other than Chromium; accessibility; the change-report form in a browser; hosted CI; load.
+* A passing test here demonstrates the behaviour it exercises on these inputs; it is not a general security guarantee.

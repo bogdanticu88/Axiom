@@ -1,0 +1,28 @@
+N1 database trusts any workload permission (holds_permission ignored): CAUGHT (3 failed, 9 passed, 1 warning in 5.71s)
+     failed: tests/integration/test_system_authority_boundary.py::test_workload_bound_to_one_project_cannot_act_on_another
+     failed: tests/integration/test_system_authority_boundary.py::test_revoked_system_binding_stops_policy_results
+     failed: tests/integration/test_authority_and_overrides.py::test_system_principal_records_only_policy_authorised_results[verification_review-passed-verification.record-False]
+N2 workload may reopen for any reason: CAUGHT (3 failed, 12 passed, 1 warning in 6.87s)
+     failed: tests/integration/test_authority_and_overrides.py::test_system_principal_records_only_policy_authorised_results[reopen-authorised_reassessment-case.reopen-False]
+     failed: tests/integration/test_authority_and_overrides.py::test_system_principal_records_only_policy_authorised_results[reopen-relevant_change-case.reopen-False]
+     failed: tests/integration/test_system_authority_boundary.py::test_database_refuses_discretionary_decisions_by_the_system_even_with_forged_authority[reopen-authorised_reassessment]
+N3 role-binding kind guard disabled: CAUGHT (1 failed, 1 warning in 1.48s)
+     failed: tests/integration/test_system_authority_boundary.py::test_system_principal_cannot_be_given_a_human_role
+N4 audit records the in-process context's kind: CAUGHT (1 failed, 1 warning in 1.58s)
+     failed: tests/integration/test_system_authority_boundary.py::test_decisions_record_the_kind_from_identity_records
+N5 PKCE verifier not sent in the code exchange: CAUGHT (2 failed in 26.47s)
+     failed: tests/unit/test_oidc_validation.py::test_code_exchange_sends_pkce_verifier_and_basic_client_authentication
+     failed: tests/integration/test_oidc_sso.py::test_login_creates_a_session_and_tenant_access_is_checked_per_request
+N6 token endpoint errors accepted: SURVIVED (7 passed in 0.21s)
+N7 client secret not resolved at start-up: CAUGHT (1 failed in 1.33s)
+     failed: tests/integration/test_oidc_sso.py::test_unresolvable_client_secret_stops_start_up
+N8 production UI allowed without sign-in: CAUGHT (1 failed in 0.38s)
+     failed: tests/integration/test_oidc_sso.py::test_production_sso_settings_are_checked
+N9 risk history shows the audit trail without audit.read: CAUGHT (1 failed in 28.27s)
+     failed: tests/integration/test_analyst_ui_workflows.py::test_risk_acceptance_request_rules_expiry_and_history
+sanity: all targeted tests on the restored tree: rc=0 (31 passed, 1 warning in 65.49s (0:01:05))
+
+# Round 2 for N6 after adding a test (HTTP 400 carrying an id_token)
+N6 token endpoint errors accepted: CAUGHT (1 failed, 7 passed in 0.32s)
+     failed: tests/unit/test_oidc_validation.py::test_failed_code_exchanges_refuse_the_login[response1]
+sanity: all targeted tests on the restored tree: rc=0 (8 passed in 0.23s)

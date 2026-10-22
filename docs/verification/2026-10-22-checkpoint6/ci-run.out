@@ -1,0 +1,104 @@
+
+##### input manifest (exact committed tree) (14:17:52Z)
+commit:            9c7303ca47c89e24d94dad4b4c8447b0a3c7ffbf
+tree:              95e0a9b5281639c0a26c96a1e348c896c1dbf26c
+executable inputs: sha256:f2a94c56bceff434f6d80aaf21b5191872338d63b90e4eba14535cb64fb06357 over 'git ls-tree -r HEAD -- backend db scripts .github deployments tests evaluation frontend pyproject.toml uv.lock Dockerfile .dockerignore'
+tracked files:     338 total, 200 in executable-input paths
+migrations:        16 files
+pinned by the tree:
+  uv.lock sha256:  ee8ec144ad60f54b07584c79996f0f687d0e622954bc053d53e18eda9433d9dc
+  image:          mirror.gcr.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+  image:          mirror.gcr.io/library/node:22.20.0-slim@sha256:b21fe589dfbe5cc39365d0544b9be3f1f33f55f3c86c87a76ff65a02f8f5848e
+  image:          public.ecr.aws/docker/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+  image:          public.ecr.aws/docker/library/python:3.13-slim@sha256:cf50a4f6ac4f026458b08d5222023d700ac806410dff5e9ca8728fa44f2b850f
+  image:          quay.io/keycloak/keycloak:26.4.2@sha256:3617b09bb4b7510a8d8d9b9fc5707399e2d70688dbcc2f8fb013a144829be1b9
+  action:         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+  action:         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+  action:         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+NOT pinned by the tree (runner environment, recorded here for this run):
+  python:          Python 3.13.16
+  uv:              uv 0.11.32 (x86_64-unknown-linux-gnu)
+  postgres:        postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+  docker:          Docker version 29.9.1, build dfc520d
+  pip-installed uv inside the image build: uv==0.11.32 (version pinned, hash not pinned)
+excluded from reproducibility claims: .var/ (logs, clusters), uploaded evidence, object-store contents, .env files
+PASS input-manifest
+
+##### dependencies (locked) (14:17:52Z)
+ + urllib3==2.8.0
+ + uvicorn==0.54.0
+ + axiom==0.1.0.dev0 (from file:///var/tmp/axiom-ci-clone6)
+PASS dependencies
+
+##### byte-compile (14:17:53Z)
+PASS compile
+
+##### secret scan (tracked files) (14:17:53Z)
+PASS secret-scan
+PASS no-env-files
+
+##### requirements register (every row has a recognised status) (14:17:53Z)
+17. Evaluation (S 16, P 10, B)                             verified=0 implementing=5 implemented_unverified=0 planned=0 blocked=1 rows=6
+
+Requirements: verified 148 (of which 18 only against fakes or fixtures) + implementing 68 + implemented_unverified 2 + planned 43 + blocked 1 = 262 rows
+Integration catalogue: fixture-tested 7, planned 13 = 20 rows
+PASS register
+
+##### GitHub Actions pins (full commit hashes, verified against the official repositories) (14:17:53Z)
+ok   actions/checkout v7.0.1 3d3c42e5aac5ba805825da76410c181273ba90b1
+ok   actions/setup-python v7.0.0 5fda3b95a4ea91299a34e894583c3862153e4b97
+ok   actions/upload-artifact v7.0.2 cf430e030ddbb5b0abf93d22962f4752f3646cd9
+PASS action-pins
+
+##### analyst UI (locked npm install, typecheck, production build) (14:17:55Z)
+dist/index.html                   0.41 kB │ gzip:  0.27 kB
+dist/assets/index-D1i01POv.css    5.45 kB │ gzip:  1.78 kB
+dist/assets/index-DghexQ-D.js   234.84 kB │ gzip: 70.47 kB
+✓ built in 1.18s
+PASS ui-build
+
+##### foundation verification (fresh cluster + SeaweedFS + full suite, incl. evaluation harness) (14:17:59Z)
+PASSED tests/unit/test_rules.py::test_verification_outcome[failed-complete-True-True-failed]
+PASSED tests/unit/test_rules.py::test_verification_outcome[failed-complete-False-True-inconclusive]
+============ 489 passed, 2 skipped, 1 warning in 381.62s (0:06:21) =============
+PASS foundation
+
+##### evaluation report (from this run's harness results) (14:24:31Z)
+| Presence conclusion matches reference | not assessed | 6/6 (100%) |
+| Unsupported definite conclusions accepted | n/a | 0 |
+| Missed urgent cases (reference urgent, priority not urgent) | 0 of 1 | 0 of 1 (cannot change priority) |
+| Presence conclusion matches reference | not assessed | 10/10 (100%) |
+| Unsupported definite conclusions accepted | n/a | 0 |
+| Missed urgent cases (reference urgent, priority not urgent) | 1 of 2 | 1 of 2 (cannot change priority) |
+PASS evaluation-report
+wrote 56 files to /var/tmp/axiom-ci-out-6/eval-review-package; scenarios without evidence: none
+PASS evaluation-review-package
+
+##### restore drill: physical snapshot rollback (14:24:31Z)
+.                                                                        [100%]
+1 passed in 3.86s
+PASS restore-drill
+
+##### compose fresh-install smoke (image rebuilt) (14:24:35Z)
+ok   fresh install: migrations applied, api healthy
+ok   no token -> 401
+ok   evidence upload -> verified -> download via S3 (SeaweedFS)
+ok   digest mismatch -> rejected
+ok   case create, start-investigation, stale version -> 409
+ok   consultant in other tenant -> 404; non-member tenant selection -> 403
+ok   case events linked to audit rows: 2
+ok   Trivy import via API + job-worker: completed complete 30; cases visible: 30
+ok   re-running init: migrations 'applied: none', seed 'already seeded'
+ok   UI served by the API at /ui with a restrictive Content-Security-Policy
+ok   alice signed in through the local Keycloak login page
+ok   case queue lists imported cases (29 received)
+ok   alice moved a case to investigating through the UI; the page shows the new workflow
+ok   audrey (auditor) was refused by the server: permission_denied; the case did not change
+ok   sign-out revoked the platform session server-side (old cookie replayed: 401)
+ok   the server recorded that decision as alice's (human principal, resolved from the Keycloak subject)
+ok   AXIOM_ENV=production with the development identity refuses to start (inline JWKS not permitted)
+ok   a missing OIDC client secret stops start-up (fails closed)
+SMOKE PASS (axiom-smoke-142435)
+PASS compose-smoke
+
+CI PASS (/var/tmp/axiom-ci-out-6)
