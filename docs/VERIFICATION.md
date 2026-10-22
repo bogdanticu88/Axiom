@@ -592,3 +592,76 @@ language model or reasoning quality.** Independent review: **pending**.
 * Untested: Microsoft Entra ID or any hosted IdP; a production secret resolver (none exists); any language model;
   browsers other than Chromium; accessibility; the change-report form in a browser; hosted CI; load.
 * A passing test here demonstrates the behaviour it exercises on these inputs; it is not a general security guarantee.
+
+### Run 19: checkpoint 7, assurance of the authority and sign-in changes; verification worker (2026-10-22 ~15:48Z to 16:55Z)
+
+**1. Baseline (before any change)** — `docs/verification/2026-10-22-checkpoint7/baseline.md`, `baseline-ci.log`:
+* the checkpoint-6 tag points at `1eed24c28e3240eaf92a5efa29ca443f06fad02a`; the six delivered checkpoint-6 files
+  match `SHA256SUMS`; the checkpoint-5 files are unchanged;
+* the post-CI commit `30044e9` changed only `test_analyst_ui_workflows.py`. Its effect was synchronisation, but it
+  also replaced four exact-equality header assertions with `has_text` waits. Those are case-insensitive substring
+  matches, so the assertions became slightly weaker. No false pass is possible with today's workflow values. The
+  assertions are now tightened to anchored regular expressions (commit `d3a8694`);
+* **clean-clone CI PASS on `1eed24c`** (tree `d9b683b3…`, executable inputs `sha256:6ff56a8b…`): foundation 489
+  passed, 2 skipped; restore drill passed; Compose smoke passed. This is the first CI result that covers `30044e9`.
+
+**2. Tested object: the final code and tests.** CI PASS on a fresh clone of commit
+`b6170c68aa88d596f7348476a9bc643df38aca6f` (`docs/verification/2026-10-22-checkpoint7/ci-b6170c6.log`):
+* tree `b9291b77c25974a100355c42a27e607bc0c55dae`; executable-input digest
+  `sha256:42d037b96fad4285c22b1013ff096f7a64a496d812fb979b75cac1d3c54ee8cc`;
+* every stage passed: input manifest, dependencies, byte-compile, secret scan, no `.env` files, register, action
+  pins, UI build, foundation, evaluation report, evaluation review package, restore drill, Compose smoke;
+* foundation: migrations `0001 … 0018`, then `applied: none` on re-run, and an edited migration is rejected. RLS
+  audit: 69 tables forced, 3 global tables without RLS, 0 not owned by `axiom_owner`. Result: **583 passed, 2 skipped**
+  in 441 s. The 2 skips are the physical drill, which runs as its own stage (1 passed), and the opt-in real-provider
+  test (**never run**). Tests that ran include: 3 checkpoint-7 browser tests, 14 analyst-UI browser tests, 13
+  local-Keycloak sign-in tests, 9 authority-review tests and 31 worker tests;
+* Compose smoke used a rebuilt image (`sha256:cfd9ceaa42dd…`): `SMOKE PASS`;
+* the only commit after `b6170c6` (this record, the CI log and the tag) changes files under `docs/` only.
+
+**3. Reproducers on checkpoint-6 code** (`reproducers-on-cp6.txt`): with the checkpoint-7 fixes stashed, D1
+(decisions and approvals), D2 and D3 (role and membership) reproduced the unauthorised result. H1's stale binding
+was live and no remedy existed. H2's kind update succeeded for the owner. The `azp` gap was reproduced by the new
+unit case before its fix.
+
+**4. Mutation checks** (`mutation-checks.log`, `mutation-harness.py`, the checkpoint-6 safe harness). **21 of 21
+caught**:
+* authority: A1 to A5;
+* sign-in and secrets: U1 to U6, including live key rotation at the local Keycloak;
+* worker: W1 to W10.
+
+The log names each failing test. Each failure was in the test written for that control, but the assertion messages
+were not captured, so "the intended reason" was checked by test identity only. W4 needs a qualification. W4 removed
+the first idempotency layer (the check for an existing observation for the job). The crash test failed on the job's
+result status (`skipped` instead of `already_recorded`). No second verification was recorded, because the next layer
+(nothing to do once the report is verified) stopped it. Sanity run after the files were restored: 78 passed.
+
+**5. Not caught by any mutation here:** the UI label for worker results. It was not mutated because the harness does
+not rebuild the frontend. The browser test asserts the labels.
+
+**6. Register:** 262 rows = 149 verified (**19 only against fakes or fixtures**) + 68 implementing + 2
+implemented_unverified + 42 planned + 1 blocked. Integration catalogue: 8 fixture-tested (the verification check
+endpoint added), 13 planned.
+
+**7. Evaluation:** unchanged (eval-cases@4; labels and splits not touched; no model called; review pending).
+
+**Independently reproduced / fixture-only / untested**
+* Reproduced against real local services (PostgreSQL with the production role layout, local Keycloak 26.4.2,
+  Chromium, Compose):
+  * the authority fixes and the revocation boundary at commit time;
+  * the sign-in protections;
+  * session rotation;
+  * log redaction wiring;
+  * production start-up refusals and the mounted-file secret path (a test directory, not a container mount);
+  * the browser checks.
+* Fixture-only: the verification worker's check endpoint (a local TLS server in the test process with a throwaway CA);
+  tracker integrations.
+* Untested deployment assumptions:
+  * TLS termination at a reverse proxy;
+  * sign-in over HTTPS;
+  * Docker, Kubernetes or systemd secret mounts;
+  * any hosted IdP (Microsoft Entra ID);
+  * any real check service;
+  * other browsers, screen readers and a WCAG review;
+  * hosted CI.
+* A passing test shows the behaviour it exercises on these inputs. It is not a general security guarantee.
