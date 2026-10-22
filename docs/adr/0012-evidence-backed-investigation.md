@@ -145,3 +145,61 @@ Priority stays with the deterministic policy, and the AI has no command path. Da
 * Retention rules for step records.
 * Additional evidence types (reachability, runtime, threat intelligence).
 * Human-reviewed evaluation references (the current labels are author-drafted).
+
+## Amendment (2026-10-22, checkpoint 5): what the claim checks are, and system authority
+
+### What the claim checks are, and what they are not
+The checks in `investigation/claims.py` are **deterministic record checks**. They are not semantic relevance or
+entailment validation, and no check reads the claim's statement text. They are:
+
+1. **Existence and membership**: every cited key is a member of the run's own snapshot (same case, same tenant).
+2. **Availability**: the member is verified, within the route's classification limit and readable by the requester.
+3. **Subject matching by identifier equality**: the cited member's vulnerability, asset and (when the claim names
+   one) asset version equal the claim's subject. Two records about the same identifiers can still be irrelevant to
+   what the statement says; this check cannot tell.
+4. **Recorded-status consistency**: a member cited as supporting presence must record presence; one cited as
+   contradicting must record absence in a complete scan or a source fix.
+5. **Freshness**: if only stale members decide the conclusion, it is downgraded to unknown.
+6. **Structured contradiction rules**: the snapshot records presence disagreements per deployment with an
+   ordering result. Ordering is by the **source's reported scan time**, never import time. It is `by_scan_time`
+   only when every observation has a scan time and the latest time is held by one observation; otherwise it is
+   `undetermined` with a reason (missing time, tie, different sources). A definite conclusion over an
+   `undetermined` contradiction is downgraded to unknown (`unresolved_contradiction`) and the contradiction stays
+   open for a person. A conclusion against the `by_scan_time` result is downgraded (`latest_observation_disagrees`).
+7. **Deployment scoping**: when the vulnerability affects several deployments, a presence claim must name one
+   (`deployment_unspecified`); evidence about one deployment never decides another.
+8. **Attributes that cannot be established** from snapshot data (exposure, exploitability) are downgraded.
+
+Every claim is stored with `entailment = not_verified`, and the UI labels claims "references checked, reasoning not
+verified". A claim that passes every check is `references_checked`, which means only that.
+
+Tests for the five required cases:
+* a valid reference that does not support the claim: `adv::test_valid_but_irrelevant_citations_are_rejected` and
+  `invu::` cases (subject_mismatch, status_conflicts_with_citation). A reference with matching identifiers and a
+  consistent status whose content still does not support the statement's wording is **not detected**; that is what
+  human review is for;
+* newer evidence about a different deployment: `inv::test_newer_scan_of_a_different_deployment_does_not_change_this_one`;
+* newer but incomplete evidence: partial scans never count as absence (H3 and H10 in the evaluation set, ingestion
+  coverage tests) and stale evidence is downgraded (`adv::test_stale_evidence_alone_cannot_support_a_conclusion`);
+* conflicting observations without a defensible order:
+  `inv::test_same_reported_scan_time_leaves_the_contradiction_open_for_a_person`;
+* several claims, some supported and some unresolved: `inv::test_one_run_with_supported_and_unresolved_claims`.
+
+### Discretionary decisions versus policy-authorised system results (migration 0014)
+The first version of the database backstop ("workload principals may insert only reopen and prioritisation
+decisions") was replaced. The rule is now:
+* **Humans** make discretionary decisions: assessments, dismissals, claim reviews, approvals, risk acceptance,
+  overrides and every consequential action authorisation. Approvals and claim reviews must have a human actor.
+* **System identities** (workload principals, such as each tenant's system principal) may record a decision only
+  when it is a deterministic, policy-authorised result within the permission recorded in its authority:
+  `prioritisation` under `priority.apply` (including reassessment after an override expires),
+  `verification_review` under `verification.record` (a verification observation; none is produced yet), and
+  `reopen` on recurrence or acceptance expiry (or with `case.reopen`). Everything else is refused with SQLSTATE 42501.
+* The principal type is read by `axiom_auth.principal_kind`, a security-definer function owned by `axiom_authn` that reads
+  the identity tables. It never comes from the transaction context or request data
+  (`ovr::test_principal_kind_comes_from_identity_records_not_the_context`, `::test_api_cannot_assert_principal_kind`).
+* Limitation: the trigger checks the permission name in the recorded authority; the permission itself is evaluated
+  by the service layer (`Authorizer`). The trigger does not re-evaluate role bindings.
+
+Requirements changed by the earlier human-only trigger: it would have blocked a verification worker (VER-04) and
+override-expiry reassessment (PRI-05). Both are now possible within explicit authority; VER-04 remains unbuilt.

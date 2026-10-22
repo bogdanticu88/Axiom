@@ -142,3 +142,32 @@ restricted metadata is a privileged permission). Without either, only the refere
 with `metadata_withheld`. The auditor role has no metadata permission by default. Tests:
 * `rpt::test_evidence_package_withholds_content_the_requester_cannot_read`;
 * `inv::test_snapshot_reads_disclose_content_and_metadata_only_with_permission`.
+
+## Amendment (2026-10-22, checkpoint 5): override expiry and impact preview
+**Every priority override expires.** `override-priority` takes `expires_at` (default 90 days, at most 365; D-PRIO-2,
+provisional). Overrides are rows in `axiom.priority_overrides` (migration 0014) with the priority before the override,
+the deciding decision and an end reason (`expired`, `superseded`, `case_closed`); at most one is active per case.
+While one is active, `apply-priority-policy` refuses with `override_active`, so policy runs cannot silently undo a
+human decision.
+
+**Expiry reassesses; it never restores.** The `cases.priority_override_expiry` job (every 15 minutes per tenant, same
+interval as the SLA sweep) ends each expired override by re-applying the **current published policy to current
+inputs** as the tenant's system principal. The resulting `prioritisation` decision records provenance: the override
+ID, its priority, when it expired, and the priority before the override, with the limitation "not restored to the
+earlier X". The earlier priority is never reinstated just because it was there before
+(`ovr::test_override_holds_until_expiry_then_policy_reassesses_with_provenance`,
+`::test_expired_override_does_not_restore_a_stale_priority`). Overrides on closed cases end with `case_closed` and no
+decision.
+
+**Impact preview does not mutate.** `POST /policies/{id}/preview` (a draft or published priority version) and
+`POST /policies/preview` (an unsaved definition) evaluate the policy against every open case the requester can read
+(`policy.preview`, held by policy administrators and analysts) and return, per case: current and preview priority,
+whether it changes, effective inputs, missing inputs, the case's current policy version, and any active override
+that would hold the case. Totals count cases that would change, held by override, and with missing inputs. The only
+write is an audit record `policy.previewed`. A test compares events, decisions, case priorities and versions, and
+overrides before and after (`ovr::test_preview_shows_effects_without_changing_anything`,
+`ui::test_policy_preview_is_read_only_in_the_ui`). Preview is limited to 2000 cases per call and says when it is
+truncated.
+
+Not done: a second approver for overrides by policy; override review reminders before expiry; preview of ownership,
+SLA or freshness policies.

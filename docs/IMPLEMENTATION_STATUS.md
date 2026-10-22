@@ -1,6 +1,6 @@
 # Implementation status
 
-Last updated: 2026-10-22, checkpoint 4 (Phase C: evidence snapshots, model gateway, investigation runs, claims, evaluation).
+Last updated: 2026-10-22, checkpoint 5 (analyst UI, enterprise sign-in against a local Keycloak, priority impact preview and override expiry, claim-check precision, system authority, evaluation review package).
 Requirement-level detail is in REQUIREMENTS.md.
 
 Capability states used here:
@@ -20,25 +20,24 @@ product actually stands, so that work does not hide what is missing.
 |---|---|---|---|
 | Ingestion | **verified core, fixture-tested sources** | Fenced, resumable import and API-sync pipeline; coverage rules; quarantine; replay safety. Trivy and SARIF use real tool output; Tenable and Azure Resource Graph use synthetic data and fakes | Webhooks; Defender and AWS; 13 catalogue sources; no source validated against a live service |
 | Asset context | **verified (incomplete scope)** | Strong and weak identity; review candidates; immutable versions with digests; business context from source tags and user assertions with effective dates (0012) | Merge and split execution; asset relationships and exposure paths; CMDB import |
-| Investigation | **built and verified against a deterministic fake; no language model called** | Frozen evidence snapshots with contradictions and gaps; approved model routes with classification limits and no fallback; durable runs with budgets, deadlines, cancellation, revocation and crash recovery; read-only typed tools; claim validation; human claim review before an assessment may cite a run; adversarial tests; evaluation harness | Real provider verification (needs credentials and authorisation); human-reviewed evaluation references; investigation UI; per-tenant quotas; evidence types beyond scanner data (reachability, runtime) |
-| Prioritisation | **verified (deterministic part)** | Versioned priority policy with independent publishing; apply command; recorded override; AI output cannot carry priority | Impact preview; override expiry and second approver; reachability and threat-intelligence inputs |
+| Investigation | **built and verified against a deterministic fake; no language model called** | Frozen evidence snapshots with contradictions and gaps; approved model routes with classification limits and no fallback; durable runs with budgets, deadlines, cancellation, revocation and crash recovery; read-only typed tools; claim validation; human claim review before an assessment may cite a run; adversarial tests; evaluation harness | Real provider verification (real-provider execution not authorised); human-reviewed evaluation references; per-tenant quotas; evidence types beyond scanner data (reachability, runtime) |
+| Prioritisation | **verified (deterministic part)** | Versioned priority policy with independent publishing; apply command; overrides that expire and are then reassessed by policy with provenance (never restored); read-only impact preview; AI output cannot carry priority | Second approver for overrides; reachability and threat-intelligence inputs |
 | Ownership | **verified** | Versioned rules on explicit context; unresolved queue; append-only history with overrides; re-routing when inputs change; no authority conferred | CMDB-sourced ownership; owner notifications |
 | SLA | **verified (provisional targets)** | Separate triage and remediation clocks; pauses only for policy-authorised reasons with recorded intervals; gross, paused and adjusted time reported separately; revise-not-reset; breach once; accepted risk never met | Business-hours calendars; escalation delivery |
 | Reporting | **verified (exposure summary, evidence packages)** | As-of reproducible snapshots; separate denominators; coverage, completeness and freshness per source; explicit unknowns; auditor packages where content needs read permission and metadata needs read or explicit metadata permission | Case membership lists in snapshots; framework mappings; GRC attestations; portfolio views; performance at volume |
-| User interface | **not started** | None. Every journey is exercised over the HTTP API only | ARC-05 and all UI parts of J01 to J10 |
-| Enterprise authentication | **not started** | Development token authentication with a generated key; JWKS-URI support in code | OIDC SSO integration, IdP tests and a revocation strategy (AUTHZ-14) |
+| User interface | **verified for the covered screens (Chromium only)** | React/TypeScript analyst UI at /ui against the real API: coverage and freshness, case queue and unresolved ownership, asset/deployment context, evidence snapshots with withheld content and metadata, investigations with progress, limitations, claims and review, assessment, priority and overrides, proposals/approvals/reconciliation, verification and closure, reports and auditor exports, policy preview, model routes; honesty labels; loading, empty, denied, stale-version and dependency-failure states. ui::* (6 browser tests) | Risk acceptance, identity candidates, integration configuration and job operations screens; browser tests for the approval, verification and report screens; accessibility audit; other browsers; usability testing |
+| Enterprise authentication | **verified against a local Keycloak only** | OIDC code flow with PKCE (Authlib, joserfc); identity by issuer and subject; single-use browser-bound login state; hashed server-side sessions with CSRF; logout; membership revocation; development tokens refused in production (ADR 0013) | **Entra ID or any hosted IdP not tested**; back-channel logout; JIT/SCIM provisioning; workload identity federation |
 
 Register counts, generated by `scripts/dev/register-counts.py` (262 requirement rows; the 20-row integration catalogue
-is counted separately). The checkpoint-3 summary in chat said "133 verified, 56 partly built and 70 planned" (259):
-it left out 2 implemented_unverified and 1 blocked. The table always summed to 262. The strict counter also found one
-row (X05) whose status sat in the wrong column; it is fixed.
+is counted separately). The script now counts rows verified only against fakes or fixtures separately and fails if a
+row verified only against fakes lacks that qualifier; it found two such rows (B08, A02) and they are now qualified.
 
-| Status | Now | Checkpoint 3 |
+| Status | Now (checkpoint 5) | Checkpoint 4 |
 |---|---|---|
-| verified | 146 (6 of them "verified (fake)": against the deterministic fake model only) | 133 |
-| implementing | 67 | 56 |
+| verified | 147, **of which 18 only against fakes or fixtures** (the deterministic fake model, local tracker fakes or fixture trackers) | 146 (6 marked "verified (fake)"; the stricter rule now counts 18) |
+| implementing | 69 | 67 |
 | implemented_unverified | 2 | 2 |
-| planned | 46 | 70 |
+| planned | 43 | 46 |
 | blocked | 1 | 1 |
 | **total** | **262** | **262** |
 
@@ -52,12 +51,12 @@ Integration catalogue: 7 fixture-tested, 13 planned, none sandbox-validated or p
 | Cluster role provisioning, ledgered migrations | verified | Fresh cluster, two databases, re-migration, edited-checksum rejection (every verification run) |
 | Tenancy, scoped permissions, hierarchy, expiry, revocation, delegation, emergency access | verified | iso::, cases::, unit:: |
 | Transaction-bound tenant context, forced RLS, composite FKs | verified | ADR 0002; iso:: |
-| Authentication | **incomplete** | Development token authentication verified; **production enterprise OIDC/SSO not implemented** (ADR 0008) |
+| Authentication | **incomplete** | Development tokens (refused in production) and OIDC sign-in verified against a local Keycloak (ADR 0013); **Entra ID not tested** |
 | Case commands with optimistic concurrency and DB guards (incl. R7) | verified | cases::, r7::, iso::test_direct_sql... |
 | Atomic audit, events and outbox; leased relay; inbox dedupe | verified | B12/A19 tests, evo:: |
 | Evidence upload, finalisation, classified audited reads, tamper detection | verified | evo::, s3:: |
 | HTTP API (/api/v1) | verified for implemented endpoints | api::, act_api::, jrn::, Compose smoke |
-| Compose single-host install | **incomplete** | PostgreSQL, SeaweedFS, init, API and job worker; no UI and no real IdP |
+| Compose single-host install | **incomplete** | PostgreSQL, SeaweedFS, init, API and job worker; the UI build is not yet baked into the Compose image and Compose has no IdP |
 | Durable job runner (ADR 0006, accepted, provisional) | verified (single-effect jobs) | job::*, metrics, operations API; no operations UI, no multi-step workflows |
 | CI pipeline | **incomplete** | `scripts/ci/run.sh` run locally on a clean clone of the exact commit; GitHub workflow pinned to verified action commits; **never run on a hosted service** |
 
@@ -85,8 +84,10 @@ Integration catalogue: 7 fixture-tested, 13 planned, none sandbox-validated or p
 | Versioned policies (priority, ownership, SLA, freshness) with independent publishing | verified | ppo::test_publishing_needs_a_second_person_and_supersedes (service and DB) |
 | Deterministic prioritisation command and recorded override | verified | ppo::, jrn::; direct database priority injection removed from tests |
 | Evidence snapshots, model gateway, investigation runs, tools, claims, human review | verified against the fake | inv::, adv::, invu::, eval:: (ADR 0012); real provider unverified |
-| Evaluation harness (policy vs AI-assisted vs reference, held-out split, adversarial arm) | implementing | eval::, evaluation/report.py; references author-drafted, not human-reviewed |
-| Priority impact preview, override expiry | not started | PRI-05, PRI-06 |
+| Evaluation harness (policy vs AI-assisted vs reference, held-out split, security-boundary arm) | implementing | eval::, evaluation/report.py; review package from evaluation/export_review.py; labels author-generated and unreviewed |
+| Priority impact preview, override expiry | verified | ovr::, ui::test_policy_preview... (ADR 0011 amendment); second approver not built |
+| Claim checks described precisely; scan-time ordering; unresolved contradictions kept for people | verified (fake) | inv::, adv::, invu:: (ADR 0012 amendment) |
+| Authority-aware decision trigger (system identities record only policy-authorised results) | verified | ovr:: (migration 0014) |
 
 ## Phase D: Remediation and GRC lifecycle - incomplete (action, risk, ownership, SLA, reporting verified)
 

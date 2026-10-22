@@ -1,6 +1,7 @@
 # ADR 0008: Authentication and tenant selection
 
-Status: accepted for development; **production SSO not yet implemented** (2026-10-22)
+Status: accepted for development; **superseded for interactive sign-in by ADR 0013** (2026-10-22). Bearer-token
+validation below remains in force for API clients.
 
 ## What exists
 * The API accepts OIDC-style JWT bearer access tokens. Trusted issuers are installation configuration
@@ -17,8 +18,8 @@ Status: accepted for development; **production SSO not yet implemented** (2026-1
   issuer; Compose wires it as an inline JWKS. Production configuration refuses inline JWKS and non-HTTPS JWKS URIs.
 
 ## Gaps (tracked)
-* **No production-ready enterprise OIDC/SSO integration yet (AUTHZ-14).** Not done: interactive login (authorisation
-  code + PKCE) for the web UI, integration testing with a real IdP (Entra ID, Keycloak or Okta), JWKS rotation tests
-  against a live endpoint, token revocation strategy, session management, group/role claim mapping policy (deliberately
+* Interactive login (authorisation code + PKCE), server-side sessions, logout and revocation are in ADR 0013 and are
+  tested against a local Keycloak only. Still not done: integration testing with Entra ID or Okta, JWKS rotation tests
+  against a live endpoint, group/role claim mapping policy (deliberately
   not trusted for authority today), workload identity for workers, and SCIM or JIT provisioning.
 * Membership and identity provisioning happens through the provisioning CLI, not a self-service flow.

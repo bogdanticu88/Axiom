@@ -7,7 +7,7 @@
 * The first commit imports the supplied foundation archive; its contents predate this repository.
 
 ## What works and what is missing
-The sections below are a history by checkpoint; the latest is "State after checkpoint 3". For the current position
+The sections below are a history by checkpoint; the latest is "State after checkpoint 5". For the current position
 against the complete register, read "Core product status" in IMPLEMENTATION_STATUS.md and "Core gaps" below.
 The foundation-era gap list has been superseded.
 
@@ -92,28 +92,64 @@ The foundation-era gap list has been superseded.
 * The API journey replaces the manual assessment with snapshot, investigation, human claim review and an assessment
   that cites the run.
 
-## Core gaps (do not let runner work hide these)
-* **No user interface**; all journeys are API-only.
-* **No enterprise SSO**; development token authentication only. Required before any external pilot.
-* **No language model verified**; the real-provider path needs credentials and explicit authorisation.
+## State after checkpoint 5 (analyst UI, enterprise sign-in, preview and override expiry)
+* **Claim checks described precisely** (ADR 0012 amendment): deterministic record checks only (existence and
+  membership, availability, identifier equality, recorded status, freshness, scan-time-ordered contradiction rules,
+  deployment scoping), never semantic relevance or entailment. Import time never orders evidence; ties, missing scan
+  times and different sources leave a contradiction `undetermined` and open for a person. Tests cover the five cases
+  in the brief; a reference whose identifiers and status match but whose content does not support the statement's
+  wording is **not** detected and is left to human review.
+* **System authority** (migration 0014): humans make discretionary decisions; system identities may record only
+  policy-authorised results within the permission in their recorded authority (prioritisation, verification
+  observations, reopen on recurrence or acceptance expiry). Principal type comes from identity records via
+  `axiom_auth.principal_kind`. VER-04 and override-expiry reassessment were blocked by the earlier human-only trigger and
+  are now possible; VER-04 is still not built.
+* **Overrides expire** (default 90 days, max 365, D-PRIO-2) and expiry re-applies the current policy with provenance;
+  the earlier priority is never restored. **Impact preview** is read-only and verified by state comparison.
+* **Enterprise sign-in** (ADR 0013, migration 0015): OIDC code flow with PKCE (Authlib 1.8.0, joserfc 1.7.5),
+  single-use browser-bound login state, hashed server-side sessions with CSRF, logout, membership revocation,
+  production refusal of development tokens at startup and runtime. Verified against a **local Keycloak 26.4.2
+  container only. Entra ID is not tested.**
+* **Analyst UI** (`frontend/`, React/TypeScript/Vite, served at /ui under a strict CSP): coverage and freshness, case
+  queue and unresolved ownership, asset/deployment context with provenance, evidence snapshots with withheld content
+  and metadata, investigations (progress polling, limitations, claims, review), assessment, priority and overrides,
+  proposals/approvals/execution/reconciliation, verification and closure, reports and auditor packages, policy
+  preview, model routes. Labels for the fake model, unverified routes, fixture-tested integrations and manual
+  records; loading, empty, denied, not-found, stale-version and dependency-failure states. Six Chromium tests sign in
+  through Keycloak's real login page.
+* Found while building the UI: the case-context endpoint marked every scanner-imported deployment "manually
+  recorded" (ingestion never sets `source_evidence_id`); provenance is now derived from occurrence observations.
+  Analysts with project-level roles could not list model routes; any investigation reader in the tenant now can.
+* **Evaluation review package** (`evaluation/export_review.py`, eval-cases@3 with a rationale per label): dev and
+  held-out folders, frozen evidence per scenario (credential-shaped text redacted), reviewer CSV, fake output in a
+  separate folder, security-boundary results separate. Labels remain author-generated and unreviewed.
+* The register counter reports rows verified only against fakes or fixtures separately (18 of 147) and fails when
+  such a row lacks the qualifier.
+
+## Core gaps (do not let UI work hide these)
+* **No language model verified**; real-provider execution is not authorised.
+* **Entra ID (or any hosted IdP) not tested**; no back-channel logout, JIT/SCIM provisioning or workload identity.
+* UI: no risk-acceptance, identity-candidate, integration-configuration or job-operations screens; approval,
+  verification and report screens are built but not covered by browser tests; Chromium only; no accessibility audit.
+  The Compose image does not include the UI build yet.
 * Evaluation references need a human reviewer; no model quality claim can be made.
-* No connector is sandbox-validated; trackers are fakes; no deployment or rescan integration.
+* No connector is sandbox-validated; trackers are fakes; no deployment or rescan integration; no verification worker.
 
 ## Next tasks (in order)
-1. Analyst UI against the real APIs (ARC-05): case list and detail, snapshot members, investigation runs with claims
-   and validation reasons, claim review, assessment, priority and ownership, SLA (gross, paused, adjusted), reports.
-2. Enterprise OIDC/SSO (AUTHZ-14) with an IdP integration test, before any external pilot.
-3. Priority impact preview and override expiry (PRI-05, PRI-06).
-4. With authorisation and credentials: run the real-provider test and the evaluation's real-model arm; have a human
-   review the 16 reference labels and extend the dataset beyond one image and one scanner.
-5. Per-tenant investigation quotas (X09) and model usage metrics (OPS-04).
+1. Independent review of the 16 evaluation labels using the review package; record corrections in cases.json.
+2. Browser tests for the approval, verification and report screens; risk-acceptance and identity-candidate screens;
+   accessibility audit; UI build in the Compose image.
+3. With authorisation: an Entra ID test tenant for sign-in; the real-provider test and the evaluation's real-model arm.
+4. Verification worker (VER-04) now that system authority allows it; reassessment triggers (VER-03).
+5. Per-tenant investigation quotas (X09) and model usage metrics (OPS-04); move Authlib off its deprecated httpx client.
 6. Hosted CI and sandbox validation once a remote and accounts are authorised.
 
 ## Commands
 ```
 uv sync --frozen
 scripts/dev/test-db.sh start                 # disposable cluster 127.0.0.1:55432; writes .env.test (gitignored)
-uv run pytest tests -q
+uv run pytest tests -q                       # browser tests need: (cd frontend && npm ci && npm run build); Docker for Keycloak
+(cd frontend && npm ci && npm run build)     # analyst UI; serve with AXIOM_UI_DIST_DIR=frontend/dist
 scripts/verify/foundation.sh                 # separate fresh cluster + SeaweedFS; log in .var/verify/<stamp>/
 scripts/ci/run.sh                            # full CI pipeline: foundation + restore drill + Compose smoke (BUILD=1)
 AXIOM_RUN_DRILLS=1 uv run pytest tests/drills   # physical snapshot rollback drill on its own cluster (free port)
