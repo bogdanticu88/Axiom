@@ -121,6 +121,10 @@ class Authorizer:
         return self._role_permissions
 
     def bindings_for(self, principal_id: UUID) -> list[RoleBinding]:
+        # Revocation boundary (ADR 0012 amendment 3): the bindings and membership an authority decision relies on are
+        # share-locked until this transaction ends, so a concurrent revocation or suspension waits for it. A command
+        # that checked a permission therefore commits only while that permission is still granted; a revocation that
+        # commits first is seen by every later check (READ COMMITTED re-reads at each statement).
         if principal_id not in self._bindings:
             rows = self._conn.execute(
                 """SELECT b.id, b.tenant_id, b.principal_id, b.role_id, b.scope_id, b.valid_from,
@@ -128,7 +132,8 @@ class Authorizer:
                      FROM axiom.role_bindings b
                      JOIN axiom.memberships m ON m.tenant_id = b.tenant_id AND m.principal_id = b.principal_id
                     WHERE b.principal_id = %s AND m.status = 'active'
-                      AND (m.valid_until IS NULL OR m.valid_until > clock_timestamp())""",
+                      AND (m.valid_until IS NULL OR m.valid_until > clock_timestamp())
+                      FOR SHARE OF b, m""",
                 (principal_id,))
             self._bindings[principal_id] = [RoleBinding(**r) for r in rows]
         return self._bindings[principal_id]
