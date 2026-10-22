@@ -617,8 +617,10 @@ class CaseService:
         decision_id = None
         if plan.decision_kind:
             decision_id = uuid.uuid4()
+            # system results record the actor's kind as held in the identity records, not as claimed by the context
             authority_json = plan.authority.as_json() if plan.authority else {
-                "system": True, "principal_kind": self.ctx.principal_kind}
+                "system": True, "principal_kind": self.conn.execute(
+                    "SELECT axiom_auth.principal_kind(%s) AS k", (self.ctx.principal_id,)).fetchone()["k"]}
             self.conn.execute(
                 """INSERT INTO axiom.decisions(tenant_id, id, case_id, kind, outcome, rationale, limitations,
                        actor_principal_id, authority, policy_version_id, evidence_snapshot_id, investigation_run_id)

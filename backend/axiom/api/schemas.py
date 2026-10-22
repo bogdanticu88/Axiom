@@ -266,6 +266,11 @@ class ApplyPriority(Body):
 
 class OverridePriority(ApplyPriority):
     priority: Literal["urgent", "high", "medium", "low"]
+    expires_at: datetime | None = None
+
+
+class PreviewPolicy(Body):
+    definition: dict
 
 
 class AssertContext(Body):

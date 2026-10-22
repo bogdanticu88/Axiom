@@ -245,7 +245,33 @@ def register(api: APIRouter, database: Database, Ctx, store=None, settings=None)
     @api.post("/cases/{case_id}/commands/override-priority")
     def override_priority(ctx: Ctx, case_id: UUID, body: s.OverridePriority):
         return tx(ctx, lambda c, a: prio.override(CaseService(c, ctx, a), case_id, body.expected_version,
-                                                  priority=body.priority, rationale=body.rationale))
+                                                  priority=body.priority, rationale=body.rationale,
+                                                  expires_at=body.expires_at))
+
+    @api.post("/policies/{policy_id}/preview")
+    def preview_policy(ctx: Ctx, policy_id: UUID):
+        return tx(ctx, lambda c, a: PolicyService(c, ctx, a).preview(policy_id))
+
+    @api.post("/policies/preview")
+    def preview_definition(ctx: Ctx, body: s.PreviewPolicy):
+        return tx(ctx, lambda c, a: PolicyService(c, ctx, a).preview(definition=body.definition))
+
+    @api.get("/cases/{case_id}/priority")
+    def case_priority(ctx: Ctx, case_id: UUID):
+        def read(conn, authz):
+            case = conn.execute("SELECT * FROM axiom.finding_cases WHERE id = %s", (case_id,)).fetchone()
+            if case is None or not authz.has("case.read", case["scope_id"]):
+                raise NotFound("case not found", code="case_not_found")
+            decisions = conn.execute(
+                """SELECT d.id, d.kind, d.outcome, d.rationale, d.limitations, d.policy_version_id, d.actor_principal_id,
+                          d.recorded_at, e.payload FROM axiom.decisions d
+                     LEFT JOIN axiom.case_events e ON e.decision_id = d.id
+                    WHERE d.case_id = %s AND d.kind IN ('prioritisation', 'priority_override')
+                    ORDER BY d.recorded_at, d.id""", (case_id,)).fetchall()
+            overrides = conn.execute("SELECT * FROM axiom.priority_overrides WHERE case_id = %s ORDER BY created_at",
+                                     (case_id,)).fetchall()
+            return {"priority": case["priority"], "decisions": decisions, "overrides": overrides}
+        return tx(ctx, read)
 
     @api.post("/assets/{asset_id}/business-context", status_code=201)
     def business_context(ctx: Ctx, asset_id: UUID, body: s.AssertContext):

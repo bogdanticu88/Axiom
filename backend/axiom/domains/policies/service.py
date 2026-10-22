@@ -161,3 +161,30 @@ class PolicyService:
         return list(self.conn.execute(
             "SELECT * FROM axiom.policy_versions WHERE (%(k)s::text IS NULL OR kind = %(k)s) ORDER BY kind, version",
             {"k": kind}))
+
+    def preview(self, policy_id: UUID | None = None, *, definition: dict | None = None) -> dict:
+        """Impact preview of a priority policy version (draft or published) or of an unsaved definition. Writes no
+        case state; records an audit event of the preview."""
+        from ..cases.priority import preview as run_preview
+        scopes = self.authz.readable_scopes("policy.preview")
+        if not scopes:
+            self.authz.require("policy.preview", self._root())     # raises PermissionDenied with the usual audit
+        if policy_id is not None:
+            row = self.conn.execute("SELECT * FROM axiom.policy_versions WHERE id = %s", (policy_id,)).fetchone()
+            if row is None:
+                raise NotFound("policy not found", code="policy_not_found")
+            if row["kind"] != "priority":
+                raise ValidationFailed("impact preview is available for priority policies")
+            definition, provisional, label = row["definition"], row["provisional"], {"version": row["version"],
+                                                                                    "status": row["status"]}
+        else:
+            validate("priority", definition or {})
+            provisional, label = True, {"version": None, "status": "unsaved"}
+        result = run_preview(self.conn, self.authz, definition=definition, policy_id=policy_id, provisional=provisional,
+                             scopes=scopes)
+        cur_def, cur_id, _ = current(self.conn, "priority")
+        result.update(previewed=label, current_policy_version_id=cur_id, mutated=False)
+        audit.record(self.conn, self.ctx, action="policy.previewed", resource_type="policy_version",
+                     resource_id=policy_id, detail={"counts": result["counts"],
+                                                    "preview_scopes": [str(x) for x in scopes]})
+        return result

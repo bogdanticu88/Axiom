@@ -21,6 +21,7 @@ from ..domains.actions.jobs import ActionExecuteHandler
 from ..domains.actions.sync import KIND as TICKET_SYNC, TicketSyncHandler
 from ..domains.cases.jobs import KIND as RISK_SWEEP, RiskExpirySweepHandler
 from ..domains.cases.ownership import SWEEP_KIND as OWNERSHIP_SWEEP, OwnershipSweepHandler
+from ..domains.cases.priority import EXPIRY_KIND as OVERRIDE_EXPIRY, OverrideExpiryHandler
 from ..domains.cases.sla import KIND as SLA_SWEEP, SlaSweepHandler
 from ..errors import ConfigurationError
 from ..domains.evidence.service import EvidenceService
@@ -44,12 +45,14 @@ def build_worker(db: Database, ingestion: IngestionService, sync: SyncService, *
                  investigation: InvestigationHandler | None = None) -> Worker:
     return Worker(db, [IngestionRunHandler(ingestion, sync), RiskExpirySweepHandler(),
                        action_handler or ActionExecuteHandler(), ticket_sync or TicketSyncHandler(), SlaSweepHandler(),
-                       OwnershipSweepHandler(), investigation or InvestigationHandler(store=ingestion.store)],
+                       OwnershipSweepHandler(), OverrideExpiryHandler(),
+                       investigation or InvestigationHandler(store=ingestion.store)],
                   worker_id=worker_id, config=config,
                   schedules=[Schedule(RISK_SWEEP, 1, risk_sweep_interval),
                              Schedule(SLA_SWEEP, 1, SLA_SWEEP_INTERVAL_SECONDS),
                              Schedule(TICKET_SYNC, 1, TICKET_SYNC_INTERVAL_SECONDS),
-                             Schedule(OWNERSHIP_SWEEP, 1, SLA_SWEEP_INTERVAL_SECONDS)],
+                             Schedule(OWNERSHIP_SWEEP, 1, SLA_SWEEP_INTERVAL_SECONDS),
+                             Schedule(OVERRIDE_EXPIRY, 1, SLA_SWEEP_INTERVAL_SECONDS)],
                   witness=witness)
 
 
