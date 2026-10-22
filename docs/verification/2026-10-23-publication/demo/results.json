@@ -1,0 +1,211 @@
+{
+  "tested_commit": "b2d2ae15c7b6abf7f9057dfc44a5fd2dd3a8eca5",
+  "finished_at": "2026-10-22T23:07:56.091567+00:00",
+  "vulnerability": "CVE-2024-22195",
+  "deployed_before": {
+    "orders-api": "sha256:597bccaa6f7ca087531bf59ff20eaf7766add07b12905b806d9d4739dd27e3af",
+    "reports-api": "sha256:f6055e26037ea21f4d8e7bc8dbeb5105a2fffd6517a0cd6ce88a056f74bc6d1b"
+  },
+  "orders_fixed_digest": "sha256:4f341916e29ff84ee93e34d9997822ab47ae120eb65f752a8cdea9719225cf10",
+  "orders_case": {
+    "id": "0b7b577b-2370-471b-ba9c-ad44cfe9dd5e",
+    "verification": "passed",
+    "rule": "condition_absent",
+    "workflow": "closed"
+  },
+  "controls": {
+    "A": {
+      "case": "6540552e-c8d0-46a6-8712-b83145355281",
+      "outcome": "failed",
+      "workflow": "remediating",
+      "run": "17221219-7f23-4e0b-9837-93fe615f6d9f",
+      "rule": "condition_present",
+      "observed_digest": "sha256:f6055e26037ea21f4d8e7bc8dbeb5105a2fffd6517a0cd6ce88a056f74bc6d1b"
+    },
+    "B": {
+      "case": "012c293a-19da-4457-a968-9593de8472ca",
+      "outcome": "inconclusive",
+      "workflow": "review_required",
+      "run": "0f6a730d-9cc2-449f-90ad-f750cb53f3f1",
+      "rule": "different_deployment",
+      "observed_digest": "sha256:f6055e26037ea21f4d8e7bc8dbeb5105a2fffd6517a0cd6ce88a056f74bc6d1b"
+    }
+  },
+  "steps": [
+    {
+      "n": 1,
+      "label": "scanner",
+      "step": "Trivy scan of the running orders-api image",
+      "image": "localhost:5000/axiom-demo/orders-api@sha256:597bccaa6f7ca087531bf59ff20eaf7766add07b12905b806d9d4739dd27e3af",
+      "trivy": "0.76.1",
+      "vulnerabilities": 176
+    },
+    {
+      "n": 2,
+      "label": "scanner",
+      "step": "Trivy scan of the running reports-api image",
+      "image": "localhost:5000/axiom-demo/reports-api@sha256:f6055e26037ea21f4d8e7bc8dbeb5105a2fffd6517a0cd6ce88a056f74bc6d1b",
+      "trivy": "0.76.1",
+      "vulnerabilities": 176
+    },
+    {
+      "n": 3,
+      "label": "real",
+      "step": "import the orders-api scan through POST /imports and the job worker",
+      "run": "9e183fd4-f385-4e87-9492-fa4562614d5e",
+      "counts": {
+        "assets": 0,
+        "findings": 176,
+        "quarantined": 0,
+        "cases_linked": 93,
+        "non_findings": 0,
+        "cases_created": 83,
+        "pages_skipped": 0,
+        "cases_reopened": 0,
+        "occurrences_new": 176,
+        "pages_committed": 1,
+        "identity_candidates": 0,
+        "absent_in_complete_scan": 0
+      },
+      "evidence": "ab2eb059-d190-4147-9b64-17deaad0c6c7"
+    },
+    {
+      "n": 4,
+      "label": "real",
+      "step": "import the reports-api scan through POST /imports and the job worker",
+      "run": "0288abf7-2c08-4a7b-95ef-fe86988795b0",
+      "counts": {
+        "assets": 0,
+        "findings": 176,
+        "quarantined": 0,
+        "cases_linked": 93,
+        "non_findings": 0,
+        "cases_created": 83,
+        "pages_skipped": 0,
+        "cases_reopened": 0,
+        "occurrences_new": 176,
+        "pages_committed": 1,
+        "identity_candidates": 0,
+        "absent_in_complete_scan": 0
+      },
+      "evidence": "a3cce99d-a535-4aec-b03b-576fda357292"
+    },
+    {
+      "n": 5,
+      "label": "test-read",
+      "step": "each imported finding is bound to the asset version whose digest Docker reports for the running container",
+      "orders_case": "0b7b577b-2370-471b-ba9c-ad44cfe9dd5e",
+      "digest": "sha256:597bccaa6f7ca087531bf59ff20eaf7766add07b12905b806d9d4739dd27e3af",
+      "component": "pkg:pypi/jinja2@3.1.2"
+    },
+    {
+      "n": 6,
+      "label": "manual",
+      "step": "business context for orders-api (owner_ref, criticality high, production)"
+    },
+    {
+      "n": 7,
+      "label": "fake",
+      "step": "investigation through the model gateway with the DETERMINISTIC FAKE model; no language model was called",
+      "run": "c8bd8a46-9673-43ee-a75f-1df547013494",
+      "claims": 2,
+      "model_calls": 2
+    },
+    {
+      "n": 8,
+      "label": "manual",
+      "step": "a second analyst reviews every non-rejected claim"
+    },
+    {
+      "n": 9,
+      "label": "real",
+      "step": "human assessment citing the reviewed run; priority from the published policy",
+      "priority": "medium",
+      "policy": "3fb9dee6-ae9f-4aba-94a2-b2cdeb46e412"
+    },
+    {
+      "n": 10,
+      "label": "real",
+      "step": "approval recorded in the browser by a different person (bob, approver) than the proposer",
+      "approval": "f205ef2f-91ff-400b-a67a-1502def5304d"
+    },
+    {
+      "n": 11,
+      "label": "fake",
+      "step": "ticket created in the Jira-style FAKE tracker through the effect gate",
+      "ticket": "SEC-1"
+    },
+    {
+      "n": 12,
+      "label": "lab",
+      "step": "rebuild orders-api with Jinja2 3.1.6, push to the local registry and replace the running container",
+      "digest": "sha256:4f341916e29ff84ee93e34d9997822ab47ae120eb65f752a8cdea9719225cf10"
+    },
+    {
+      "n": 13,
+      "label": "manual",
+      "step": "analyst records the redeployed digest as a new asset version (no deployment integration)"
+    },
+    {
+      "n": 14,
+      "label": "real",
+      "step": "check endpoint connection (operator-configured, allow-listed origin) and a verification identity"
+    },
+    {
+      "n": 15,
+      "label": "real",
+      "step": "verification worker asked the check service, which rescanned the running container; recorded passed for the reported digest",
+      "run": "fc09ed59-6d1f-48e2-b8f5-c4d52169a3e4",
+      "outcome": "passed"
+    },
+    {
+      "n": 16,
+      "label": "manual",
+      "step": "control A: a change is reported against the unchanged vulnerable deployment",
+      "digest": "sha256:f6055e26037ea21f4d8e7bc8dbeb5105a2fffd6517a0cd6ce88a056f74bc6d1b"
+    },
+    {
+      "n": 17,
+      "label": "lab",
+      "step": "control B: a fixed reports-api image is built and pushed but NOT deployed",
+      "digest": "sha256:8cc03b50307c5e8d6653b689793ceffce2eb4d873625b2f12d4368744adfe45c"
+    },
+    {
+      "n": 18,
+      "label": "manual",
+      "step": "control B: a change is reported against the undeployed fixed image"
+    },
+    {
+      "n": 19,
+      "label": "real",
+      "step": "control A: verification FAILED (condition present on the unchanged deployment); case is not closable",
+      "case": "6540552e-c8d0-46a6-8712-b83145355281",
+      "outcome": "failed",
+      "workflow": "remediating",
+      "run": "17221219-7f23-4e0b-9837-93fe615f6d9f",
+      "rule": "condition_present"
+    },
+    {
+      "n": 20,
+      "label": "real",
+      "step": "control B: verification INCONCLUSIVE (the service examined the running digest, not the reported one); case is not closable",
+      "case": "012c293a-19da-4457-a968-9593de8472ca",
+      "outcome": "inconclusive",
+      "workflow": "review_required",
+      "run": "0f6a730d-9cc2-449f-90ad-f750cb53f3f1",
+      "rule": "different_deployment"
+    },
+    {
+      "n": 21,
+      "label": "real",
+      "step": "case closed as verified remediated in the browser by alice (analyst)"
+    },
+    {
+      "n": 22,
+      "label": "real",
+      "step": "case history and auditor evidence package exported",
+      "package": "069894d3-e2d3-4265-97dc-10c805934515",
+      "decisions": 8
+    }
+  ]
+}

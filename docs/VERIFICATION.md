@@ -745,3 +745,29 @@ demonstration, run separately as above); restore drill; Compose smoke `SMOKE PAS
 
 **6. Register:** counts unchanged (149 verified, 19 of them fixture or fake only). TEN-16 stays implementing; INT-21
 stays fixture-tested.
+
+### Run 22: publication preparation (2026-10-22 ~23:05Z to 23:17Z)
+
+Records: `docs/verification/2026-10-23-publication/`. Tested commit: `b2d2ae15c7b6abf7f9057dfc44a5fd2dd3a8eca5`
+(tree `2a336e26…`, executable inputs `sha256:e713895c…`). After it, only this record and that directory were added.
+
+**1. Changes since run 21's tested commit `185af5b`.** Records (run 21), two tests for the recovery of a job left
+running by tenant suspension (`41ac0a2`), and documentation (`b2d2ae1`: CA path moved into the run 2 environment
+note, explicit trust limits in the README and deployment document, the suspension recovery procedure, demonstration
+prerequisites and recorded scanner metadata). No application code, migration, deployment configuration or demo code
+changed.
+
+**2. Clean-clone CI** (`ci-b2d2ae1.log`): every stage passed; **666 passed, 3 skipped** (physical drill, run as its
+own stage: 1 passed; real-provider test, never run; demonstration, run separately); restore drill; Compose smoke
+`SMOKE PASS`. The two new recovery tests are among the 666.
+
+**3. Demonstration rerun** at the tested commit (`demo/results.json`): same Trivy 0.76.1 image and the same database
+(`UpdatedAt` 2026-10-22T19:14:47Z, downloaded 20:15:30Z, not refreshed); orders case passed (`condition_absent`) and
+closed; control A `failed` (`condition_present`); control B `inconclusive` (`different_deployment`).
+
+**4. Delivered screenshots from run 21** (`screenshot-provenance.md`): the file store that holds deliveries inserted a
+C2PA Content Credentials chunk into each loose PNG after delivery. Pixels unchanged; removing the chunk restores the
+original bytes. The original checksum list of that delivery was restored after having been overwritten. Later
+packages carry images inside archives only.
+
+**5. Register:** counts unchanged.
