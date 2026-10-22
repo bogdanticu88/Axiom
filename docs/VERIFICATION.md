@@ -363,3 +363,93 @@ Not covered:
 * report performance at volume;
 * business-hours SLA calendars;
 * any UI.
+
+### Run 16: Phase C evidence-backed investigation, evaluation harness, review fixes (2026-10-22 ~09:10Z to 10:10Z)
+**Tested object: the exact committed tree.** The first CI attempt ran on a clean clone of `c96cf14` and **failed** on
+the secret scan, which correctly flagged a literal private-key header in a redaction unit test (fake value). Every
+other stage passed in that attempt: 401 passed, 2 skipped. The log is
+`docs/verification/2026-10-22-phase-c/ci-run1-failed-secret-scan.out`. Commit `dae1051` builds that string at
+runtime instead; the scanner was not weakened.
+
+**CI PASS** on a fresh clone of commit `dae1051776cd4e4cc56821ce531bfc037f12a970`:
+* tree `5e20261da14b68bd3a90393af14d2dc30257920e`;
+* executable-input digest `sha256:e623e98438cf3c6dbc7b2c949a3302422d7c8839574e15039a9b1fcd7352228b`, now including
+  `evaluation/`;
+* clean after the run.
+
+Stages:
+* input manifest;
+* dependencies;
+* byte-compile;
+* secret scan;
+* no `.env` files;
+* **requirements register**: 262 rows, every status recognised (new stage);
+* action pins: 3 ok;
+* foundation on a fresh separate cluster with SeaweedFS:
+  * migrations `0001 ... 0013`, then `applied: none` on the re-run, and the same on a second database;
+  * an edited migration rejected;
+  * RLS audit: 65 tables forced, 3 global tables without, 0 not owned by `axiom_owner`;
+  * **401 passed, 2 skipped, 1 warning in 213.16s**. The skips are the opt-in physical drill (run separately below)
+    and the opt-in real-provider test (**never run**);
+* evaluation report generated from this run's harness results;
+* physical snapshot drill: 1 passed;
+* Compose smoke with a rebuilt image (`sha256:5a605cc188b6...`): `SMOKE PASS (axiom-smoke-...)`.
+
+Logs, input manifest, evaluation report and results are in `docs/verification/2026-10-22-phase-c/`.
+
+Register reconciliation: `scripts/dev/register-counts.py` reads the Status column of every row. It counts
+262 = 146 verified + 67 implementing + 2 implemented_unverified + 46 planned + 1 blocked (6 of the verified rows are
+"verified (fake)"). The checkpoint-3 chat summary of 259 omitted the 2 implemented_unverified and 1 blocked rows. The
+script found one row (X05) with its status in the wrong column; that row is fixed.
+
+Problems found while building (fixed before the recorded run):
+* **Metadata of above-classification evidence reached the model prompt.** Content was withheld, but digests and
+  filenames were not. Found by `adv::test_content_above_the_route_classification_never_reaches_the_model`; content
+  and metadata are now withheld together.
+* **The validator accepted a conclusion against the latest observation** when a claim cited both sides of a recorded
+  contradiction. Found by the evaluation harness (held-out H2, `stale_support` behaviour); there is now a
+  `latest_observation_disagrees` downgrade.
+* The migration needed `SET LOCAL ROLE axiom_authn` to add a function to `axiom_auth`.
+* A plpgsql trigger must not reference record fields absent on other tables (separate branches).
+* Test-side mistakes, all fixed:
+  * a fabricated-citation expectation that ignored the honest severity claim;
+  * a `public` classification that does not exist;
+  * several assertions that could not fail (`... if False else ...`), removed before the first run.
+
+Mutation checks (`docs/verification/2026-10-22-phase-c/mutation-checks.log`) caught 14 of 14:
+* fabricated-reference check removed;
+* relevance check removed;
+* latest-observation rule removed;
+* contradiction rule removed;
+* metadata withholding removed;
+* revocation check removed;
+* route-status check removed (fallback);
+* claim-review requirement removed;
+* human-only database trigger disabled;
+* tool grant check removed;
+* redaction removed;
+* SLA authorised-reason filter removed;
+* package metadata gate removed;
+* malformed-retry bound raised.
+
+Some of these were caught by a resulting error rather than an assertion; each mutated run failed.
+
+Evaluation (deterministic fake, 16 scenarios: 6 dev, 10 held-out):
+* the fake agreed with the provisional reference on presence in 16 of 16 scenarios;
+* 0 unsupported definite conclusions were accepted;
+* the deterministic policy missed 1 of 3 reference-urgent cases (H7: a deliberate disagreement between the reference
+  and the provisional matrix);
+* across 50 adversarial runs, 0 wrong definite conclusions were accepted (20 claims rejected, 7 downgraded).
+
+**These figures do not measure any language model.** The fake's rules and the reference labels were both written by
+the author, so agreement is expected, and the labels are not human-reviewed.
+
+Not covered:
+* any real model call;
+* human-reviewed references;
+* any UI;
+* enterprise SSO;
+* live scanners and trackers;
+* the witness on a production store;
+* hosted CI;
+* load.
