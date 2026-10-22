@@ -18,7 +18,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 OUT_FILE="${1:-/dev/stdout}"
-INPUTS=(backend db scripts .github deployments tests evaluation pyproject.toml uv.lock Dockerfile .dockerignore)
+INPUTS=(backend db scripts .github deployments tests evaluation frontend pyproject.toml uv.lock Dockerfile .dockerignore)
 
 dirty=$(git status --porcelain --untracked-files=normal)
 if [ -n "$dirty" ]; then
