@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Build a human-reviewable package of the evaluation scenarios and their reference labels.
+"""Build the independent-review package for the evaluation scenarios (procedure: evaluation/REVIEW-PROCEDURE.md).
 
     python3 evaluation/export_review.py EVAL_OUT_DIR PACKAGE_DIR
 
-EVAL_OUT_DIR is the directory the harness wrote with AXIOM_EVAL_OUT (results.jsonl, evidence/, pipeline/). The package
-separates dev and held-out scenarios. For each scenario it contains the scenario definition, the reference label and
-its rationale, and the frozen evidence snapshot the label should be judged against. The deterministic fake's output is
-kept in a separate folder so reviewers can judge labels without being anchored on it. Security-boundary results
-(adversarial fakes) are reported on their own and are not a measure of reasoning quality.
+EVAL_OUT_DIR is the directory the harness wrote with AXIOM_EVAL_OUT (results.jsonl, evidence/, pipeline/).
+
+Layout, designed so a reviewer can judge blind and the author's labels stay separately traceable:
+  blind/<case>/evidence.json     frozen evidence only (no label, rationale, note or pipeline output)
+  worksheet.csv                  one row per scenario; reviewer columns empty
+  sealed/author-labels.csv       the author's labels and rationales (open after the worksheet is complete)
+  sealed/scenarios/<case>.json   scenario definitions (operations and notes reveal the construction)
+  pipeline-output/<case>.json    the deterministic fake's output (not a reference)
+  security-boundary.md           misbehaving-fake results (not reasoning quality)
+  README.md, SHA256SUMS
 
 Nothing here is computed beyond copying and tabulating the inputs.
 """
@@ -22,41 +27,26 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 LABEL_STATUS = "author-generated, unreviewed"
+REVIEWER_COLUMNS = ["reviewer_presence", "reviewer_assessment", "reviewer_urgent", "reviewer_must_flag",
+                    "reviewer_reasoning", "reviewer_name", "reviewed_at", "post_reveal_comment"]
 
-README = """# Evaluation scenarios: independent review package ({version})
+README = """# Evaluation labels: independent review package ({version})
 
-**Status of the reference labels: {status}.** Nobody other than their author has reviewed them. Please treat them as a
-proposal to check, not as ground truth.
+**Review status: pending.** No independent reviewer has taken part. The labels are {status}.
+**Neither split is held out** (evaluation/EXPOSURE.md): `dev` and `regression` (formerly held-out) were both written
+and inspected by the author.
 
-## What to review
+Follow evaluation/REVIEW-PROCEDURE.md (copied here as REVIEW-PROCEDURE.md):
 
-For each scenario in `dev/` and `heldout/`:
+1. Judge each scenario from `blind/<case>/evidence.json` only, filling in `worksheet.csv`.
+2. Record `sha256sum worksheet.csv` and send it to the coordinator.
+3. Only then open `sealed/author-labels.csv` and add post-reveal comments.
+4. Run `python3 evaluation/compare_review.py sealed/author-labels.csv worksheet.csv OUT_DIR`.
 
-1. Read `scenario.json` (what was imported and changed) and `evidence.json` (the frozen evidence snapshot, exactly as
-   an analyst sees it: members, their freshness, contradictions with the platform's ordering result, and gaps).
-2. Decide, from the evidence alone, whether the reference label is right: presence (`supported`, `contradicted`,
-   `unknown`), assessment, urgency, and which gaps or contradictions must be flagged.
-3. Record your judgement in `review.csv` (one row per scenario). Leave the reference columns unchanged; fill the
-   `reviewer_*` columns. Disagreement is the useful outcome; please give a reason.
-
-`review.csv` columns: `reviewer_agrees` (yes/no/partly), `reviewer_presence`, `reviewer_urgent`,
-`reviewer_must_flag`, `reviewer_notes`, `reviewer_name`, `reviewed_at`.
-
-## Rules for using this package
-
-* **Dev and held-out are separate.** The held-out split must not be used to tune prompts, rules or thresholds. Labels
-  may be corrected after review, but a correction made after looking at pipeline results on held-out cases must be
-  recorded as such in `evaluation/cases.json`.
-* **`pipeline-output/` is not a reference.** It holds what the deterministic fake (`fake-rules-v1`, a rule-based
-  stand-in, not a language model) concluded. Its rules and the reference labels share an author, so agreement
-  between them says nothing about model quality. Review the labels before opening it.
-* **`security-boundary.md` is not reasoning quality.** It reports whether misbehaving fakes could get a wrong definite
-  conclusion accepted (fabricated references, ignored contradictions, obeyed injected text, stale support). Those are
-  tests of the platform's guards.
-
-## Provenance
-
-{provenance}
+`pipeline-output/` is the deterministic fake's output (`fake-rules-v1`, a rule-based stand-in, not a language model).
+It is not a reference; its agreement with the author's labels says nothing about model quality.
+`security-boundary.md` reports whether misbehaving fakes got a wrong definite conclusion accepted; that is a test of
+the platform's guards, not of reasoning quality.
 
 Scenario file: `evaluation/cases.json` ({version}), sha256 `{cases_sha}`.
 Harness results: `results.jsonl` from the run that produced this package, sha256 `{results_sha}`.
@@ -83,42 +73,39 @@ def main() -> int:
                 results[r["case"]] = r
     if dst.exists():
         shutil.rmtree(dst)
-    missing = []
-    rows = []
+    (dst / "sealed" / "scenarios").mkdir(parents=True)
+    (dst / "pipeline-output").mkdir()
+    missing, worksheet, author = [], [], []
     for c in cases["cases"]:
-        d = dst / c["split"] / c["id"]
-        d.mkdir(parents=True)
-        (d / "scenario.json").write_text(json.dumps({
-            "id": c["id"], "split": c["split"], "target_index": c["target"],
-            "target_vulnerability": results.get(c["id"], {}).get("target"), "operations": c["ops"],
-            "note": c["note"], "reference": c["reference"], "rationale": c["rationale"],
-            "label_status": LABEL_STATUS}, indent=1))
         ev = src / "evidence" / f"{c['id']}.json"
+        (dst / "blind" / c["id"]).mkdir(parents=True)
         if ev.is_file():
-            shutil.copy(ev, d / "evidence.json")
+            shutil.copy(ev, dst / "blind" / c["id"] / "evidence.json")
         else:
             missing.append(c["id"])
         pipe = src / "pipeline" / f"{c['id']}.json"
         if pipe.is_file():
-            (dst / "pipeline-output" / c["split"]).mkdir(parents=True, exist_ok=True)
-            shutil.copy(pipe, dst / "pipeline-output" / c["split"] / f"{c['id']}.json")
+            shutil.copy(pipe, dst / "pipeline-output" / f"{c['id']}.json")
+        target = results.get(c["id"], {}).get("target", "")
+        (dst / "sealed" / "scenarios" / f"{c['id']}.json").write_text(json.dumps({
+            "id": c["id"], "split": c["split"], "target_index": c["target"], "target_vulnerability": target,
+            "operations": c["ops"], "note": c["note"]}, indent=1))
+        worksheet.append({"case": c["id"], "split": c["split"], "target_vulnerability": target,
+                          "evidence": f"blind/{c['id']}/evidence.json", **{k: "" for k in REVIEWER_COLUMNS}})
         ref = c["reference"]
-        rows.append({"case": c["id"], "split": c["split"],
-                     "target_vulnerability": results.get(c["id"], {}).get("target", ""),
-                     "label_status": LABEL_STATUS, "reference_presence": ref["presence"],
-                     "reference_assessment": ref["assessment"], "reference_urgent": ref["urgent"],
-                     "reference_must_flag": " ".join(ref["must_flag"]), "rationale": c["rationale"],
-                     "reviewer_agrees": "", "reviewer_presence": "", "reviewer_urgent": "", "reviewer_must_flag": "",
-                     "reviewer_notes": "", "reviewer_name": "", "reviewed_at": ""})
-    with open(dst / "review.csv", "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
-        w.writeheader()
-        w.writerows(rows)
-    # security-boundary results, kept apart from label review
+        author.append({"case": c["id"], "split": c["split"], "label_status": LABEL_STATUS,
+                       "author_presence": ref["presence"], "author_assessment": ref["assessment"],
+                       "author_urgent": "yes" if ref["urgent"] else "no",
+                       "author_must_flag": " ".join(ref["must_flag"]), "author_rationale": c["rationale"]})
+    for name, rows in (("worksheet.csv", worksheet), ("sealed/author-labels.csv", author)):
+        with open(dst / name, "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+            w.writeheader()
+            w.writerows(rows)
     sb = ["# Security-boundary tests (not a measure of reasoning quality)\n",
-          "Each held-out scenario was also run with deliberately misbehaving deterministic fakes. The question is only "
-          "whether the platform accepted a wrong definite conclusion (`supported` or `contradicted` that differs from "
-          "the provisional reference). Because the reference is unreviewed, a corrected label could change a count.\n",
+          "Each regression scenario was also run with deliberately misbehaving deterministic fakes. The question is "
+          "only whether the platform accepted a wrong definite conclusion (`supported` or `contradicted` that "
+          "differs from the author's unreviewed label). A corrected label could change a count.\n",
           "| Scenario | Behaviour | Run status | Claims | Rejected | Downgraded | Wrong definite conclusions accepted |",
           "|---|---|---|---|---|---|---|"]
     for cid, r in results.items():
@@ -130,9 +117,11 @@ def main() -> int:
     (dst / "security-boundary.md").write_text("\n".join(sb) + "\n")
     if results_path.is_file():
         shutil.copy(results_path, dst / "results.jsonl")
-    shutil.copy(cases_path, dst / "cases.json")
+    shutil.copy(cases_path, dst / "sealed" / "cases.json")
+    for doc in ("REVIEW-PROCEDURE.md", "EXPOSURE.md"):
+        shutil.copy(ROOT / doc, dst / doc)
     (dst / "README.md").write_text(README.format(
-        version=cases["version"], status=LABEL_STATUS, provenance=cases["provenance"], cases_sha=sha256(cases_path),
+        version=cases["version"], status=LABEL_STATUS, cases_sha=sha256(cases_path),
         results_sha=sha256(results_path) if results_path.is_file() else "(not available)"))
     files = sorted(p for p in dst.rglob("*") if p.is_file())
     (dst / "SHA256SUMS").write_text("".join(f"{sha256(p)}  {p.relative_to(dst)}\n" for p in files))

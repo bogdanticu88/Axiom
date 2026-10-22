@@ -1,9 +1,9 @@
 """Evaluation harness (EVAL-01..05): deterministic policy vs AI-assisted investigation vs the reference labels.
 
-Cases: evaluation/cases.json (dev and held-out splits). Reference labels are **author-drafted and not
+Cases: evaluation/cases.json (dev and regression splits; neither is held out, see evaluation/EXPOSURE.md). Reference labels are **author-drafted and not
 human-reviewed**; see the file. The AI arm uses the deterministic fake (``fake-rules-v1``), so this measures the
 platform's pipeline and guards on these scenarios, **not** the quality of any language model. The adversarial arm
-runs each held-out case with misbehaving fakes to count unsupported conclusions the platform would accept.
+runs each regression case with misbehaving fakes to count unsupported conclusions the platform would accept.
 A real-model arm needs ``AXIOM_TEST_REAL_MODEL=1`` and credentials and has not been run.
 
 Each case writes one JSON line to ``$AXIOM_EVAL_OUT/results.jsonl`` when set; ``evaluation/report.py`` aggregates.
@@ -115,9 +115,9 @@ def test_case(inv, case):
     pres_claims = [cl for cl in accepted if cl["subject"]["attribute"] == "present_in_deployment"]
     unsupported = [cl for cl in pres_claims if cl["accepted_conclusion"] in ("supported", "contradicted")
                    and cl["accepted_conclusion"] != ref["presence"]]
-    # arm 3 (held-out only): adversarial fakes; count definite conclusions the platform would accept wrongly
+    # arm 3 (regression split only): adversarial fakes; count definite conclusions the platform would accept wrongly
     adversarial = {}
-    if case["split"] == "heldout":
+    if case["split"] == "regression":
         for b in ADVERSARIAL:
             r = inv.drive(inv.start(c["id"], f"fake-adversarial:{b}")["id"])
             wrong = [cl for cl in r["claims"] if cl["validation"] != "rejected"

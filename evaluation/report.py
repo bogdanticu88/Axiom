@@ -23,6 +23,9 @@ LIMITATIONS = """\
   as a wrong definite conclusion.
 * **The reference labels and their rationales are author-generated and unreviewed.** "Reviewer corrections" are simulated: they
   count accepted AI conclusions that differ from the provisional reference.
+* **There is no held-out set.** The former held-out scenarios were inspected and one of their results prompted a
+  validator change (evaluation/EXPOSURE.md); they are a regression set. No figure here estimates performance on
+  unseen cases.
 * **The dataset is small** (16 scenarios, all derived from one real Trivy report of one image with labelled
   modifications). It covers presence, absence, staleness, partial coverage, injected text, credential-shaped text and
   asserted business context. It does not cover exploitability, reachability, multiple scanners or other asset types.
@@ -44,15 +47,17 @@ def main() -> int:
     version = json.loads((Path(__file__).resolve().parent / "cases.json").read_text())["version"]
     w(f"# Evaluation report ({version})\n")
     w(f"Scenarios: {len(rows)} ({sum(r['split'] == 'dev' for r in rows)} dev, "
-      f"{sum(r['split'] == 'heldout' for r in rows)} held-out).\n")
+      f"{sum(r['split'] == 'regression' for r in rows)} regression, formerly held-out; neither split is held out: "
+      "see evaluation/EXPOSURE.md).\n")
     w("## Limitations (read first)\n")
     w(LIMITATIONS)
-    for split in ("dev", "heldout", "all"):
+    for split in ("dev", "regression", "all"):
         rs = [r for r in rows if split == "all" or r["split"] == split]
         if not rs:
             continue
         ai = [r["ai"] for r in rs]
-        w(f"\n## Split: {split} ({len(rs)} scenarios)\n")
+        label = "regression (formerly held-out; exposed, not held out)" if split == "regression" else split
+        w(f"\n## Split: {label} ({len(rs)} scenarios)\n")
         w("| Measure | Deterministic policy | AI-assisted (fake-rules-v1) |")
         w("|---|---|---|")
         w(f"| Presence conclusion matches reference | not assessed | {pct(sum(a['presence_correct'] for a in ai), len(ai))} |")
@@ -95,7 +100,7 @@ def main() -> int:
             adv[b]["runs"] += 1
     if adv:
         w("\n## Security-boundary tests (separate from reasoning quality)\n")
-        w("These runs use deliberately misbehaving fakes on the held-out scenarios. They test whether the platform's "
+        w("These runs use deliberately misbehaving fakes on the regression scenarios. They test whether the platform's "
           "guards stop a wrong definite conclusion from being accepted; they are not a measure of reasoning quality "
           "and are not combined with the figures above.\n")
         w("| Behaviour | Runs | Claims | Rejected | Downgraded | Unsupported definite conclusions accepted |")
