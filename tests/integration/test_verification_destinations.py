@@ -157,6 +157,43 @@ def test_an_address_change_between_attempts_is_checked_again(world, run, ctx_for
     assert len(t.requests) == 1 and runs(admin_conn, cid) == []
 
 
+def test_the_validated_address_is_the_address_contacted(world, run, ctx_for, scenario, rig, tmp_path,  # noqa: F811
+                                                       admin_conn):
+    """Two servers share a port and one certificate (for the name ``localhost`` only, no IP address in it): one on
+    127.0.0.2, the address the controlled resolver returns and the policy allows; one on 127.0.0.1, where the system
+    resolver sends ``localhost``. A correct client reaches 127.0.0.2, and TLS succeeds only because the hostname, not
+    the address, is verified. A client that re-resolves the name reaches 127.0.0.1 instead: that server answers
+    normally with valid TLS, so a weakened client fails on which server was contacted, not on DNS or TLS."""
+    validated = unvalidated = None
+    for _ in range(20):                       # find a port free on both loopback addresses
+        validated = check_target.start(tmp_path / "validated", ("localhost",), bind=("127.0.0.2", 0), ip_sans=())
+        try:
+            unvalidated = check_target.start(tmp_path / "unvalidated", bind=("127.0.0.1", port_of(validated)),
+                                             pki=validated.pki)
+            break
+        except OSError:
+            validated.stop()
+    try:
+        validated.behaviour = unvalidated.behaviour = clean
+        url = f"https://localhost:{port_of(validated)}"
+        rig.connect(url)
+        cid = advance_to_verification(run, ctx_for, world, scenario)["id"]
+        rig.worker(policy=checks.DestinationPolicy.from_settings(url, "127.0.0.2/32"),
+                   resolver=fixed({"localhost": ["127.0.0.2"]}), ca=validated.pki[0]).run_once(
+            only_tenants={world.a.id})
+        assert unvalidated.requests == [], "contacted an address the policy never checked"
+        assert len(validated.requests) == 1
+        assert validated.requests[0]["headers"]["Host"] == f"localhost:{port_of(validated)}"
+        [r] = runs(admin_conn, cid)
+        obs = admin_conn.execute("SELECT connected_address FROM axiom.verification_observations "
+                                 "WHERE verification_run_id = %s", (r["id"],)).fetchone()
+        assert (r["outcome"], str(obs["connected_address"])) == ("passed", "127.0.0.2")
+    finally:
+        for t in (validated, unvalidated):
+            if t:
+                t.stop()
+
+
 @pytest.mark.parametrize("problem", ["wrong_name", "untrusted_ca"])
 def test_tls_failures_park_the_job_without_sending_the_request(world, run, ctx_for, scenario, rig, targets,  # noqa: F811
                                                               admin_conn, problem):
