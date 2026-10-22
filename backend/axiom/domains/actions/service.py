@@ -38,6 +38,11 @@ def execution_operation_id(tenant_id: UUID, execution_id: UUID) -> str:
     return hashlib.sha256(f"axiom-action|{tenant_id}|{execution_id}".encode()).hexdigest()
 
 
+def perm(verb: str, effect: str) -> str:
+    """Exact per-class permission (ACT-08): no hierarchy, so weaker classes never authorise stronger ones."""
+    return f"action.{verb}:{effect.replace('.', '_')}"     # catalogue names allow no dot after the colon
+
+
 def precondition_failures(case: dict, version: dict) -> list[str]:
     pre = version["preconditions"]
     failures = []
@@ -47,6 +52,8 @@ def precondition_failures(case: dict, version: dict) -> list[str]:
         failures.append(f"case priority changed from {pre['case_priority']} to {case['priority']} (material change)")
     if str(case["scope_id"]) != str(version["scope_id"]):
         failures.append("case scope changed")
+    if "plan_epoch" in pre and case["plan_epoch"] != pre["plan_epoch"]:
+        failures.append("the remediation plan was withdrawn after this proposal (R7); the proposal is obsolete")
     return failures
 
 
@@ -75,10 +82,10 @@ def check_execution(conn: psycopg.Connection, ctx: TenantContext, execution_id: 
         return f"approval is {a['status']}"
     if a["valid_until"] <= now:
         return "approval expired"
-    if not authz.has("action.approve", v["scope_id"], principal_id=a["approver_principal_id"]):
-        return "approver no longer holds action.approve for this scope"
-    if not authz.has("action.execute", v["scope_id"], principal_id=e["requested_by"]):
-        return "requester no longer holds action.execute for this scope"
+    if not authz.has(perm("approve", v["effect_class"]), v["scope_id"], principal_id=a["approver_principal_id"]):
+        return f"approver no longer holds {perm('approve', v['effect_class'])} for this scope"
+    if not authz.has(perm("execute", v["effect_class"]), v["scope_id"], principal_id=e["requested_by"]):
+        return f"requester no longer holds {perm('execute', v['effect_class'])} for this scope"
     case = conn.execute("SELECT * FROM axiom.finding_cases WHERE id = %s", (v["case_id"],)).fetchone()
     failures = precondition_failures(case, v)
     if failures:
@@ -118,7 +125,7 @@ class ActionService:
         row = self.conn.execute("SELECT * FROM axiom.connections WHERE id = %s", (connection_id,)).fetchone()
         if row is None:
             raise NotFound("connection not found", code="connection_not_found")
-        if row["adapter"] != cls.adapter or row["adapter_kind"] != "workflow":
+        if row["adapter"] not in cls.adapters or row["adapter_kind"] != "workflow":
             raise ValidationFailed(f"connection adapter {row['adapter']} cannot execute {cls.name}")
         if row["status"] != "active":
             raise ValidationFailed("connection is disabled")
@@ -137,9 +144,11 @@ class ActionService:
                         rollback: str | None, verification: str, expires_at: datetime) -> dict:
         if not verification.strip():
             raise ValidationFailed("verification criteria are required")
+        target = payload.get("project_key") or connection["config"].get("repo") or connection["config"].get("table")
         resources = [{"type": "case", "id": str(case["id"])},
-                     {"type": "connection", "id": str(connection["id"]), "project_key": payload["project_key"]}]
-        preconditions = {"case_open": True, "case_priority": case["priority"]}
+                     {"type": "connection", "id": str(connection["id"]), "adapter": connection["adapter"],
+                      "target": target}]
+        preconditions = {"case_open": True, "case_priority": case["priority"], "plan_epoch": case["plan_epoch"]}
         return self.conn.execute(
             """INSERT INTO axiom.action_proposal_versions(tenant_id, id, proposal_id, version, effect_class, scope_id,
                    case_id, connection_id, resources, canonical_payload, preconditions, rollback_guidance,
@@ -154,11 +163,11 @@ class ActionService:
                 expires_at: datetime, rollback_guidance: str | None = None) -> dict:
         cls = effect_class(effect)
         case = self._case(case_id)
-        authority = self.authz.require("action.propose", case["scope_id"])
+        authority = self.authz.require(perm("propose", cls.name), case["scope_id"])
         if case["workflow"] == "closed":
             raise Conflict("cannot propose actions for a closed case", code="case_closed")
         connection = self._connection(connection_id, cls, case["scope_id"])
-        canonical = canonical_ticket_payload(payload)
+        canonical = canonical_ticket_payload(payload, connection["adapter"])
         expires_at = self._expiry(cls, expires_at, self.authz.now())
         proposal = self.conn.execute(
             """INSERT INTO axiom.action_proposals(tenant_id, id, case_id, effect_class, scope_id, status, current_version,
@@ -177,7 +186,7 @@ class ActionService:
                expires_at: datetime, rollback_guidance: str | None = None) -> dict:
         proposal = self._proposal(proposal_id, lock=True)
         cls = effect_class(proposal["effect_class"])
-        authority = self.authz.require("action.propose", proposal["scope_id"])
+        authority = self.authz.require(perm("propose", proposal["effect_class"]), proposal["scope_id"])
         if proposal["status"] != "open":
             raise Conflict(f"proposal is {proposal['status']}", code="proposal_not_open")
         if proposal["current_version"] != expected_version:
@@ -186,7 +195,7 @@ class ActionService:
         previous = self._version(proposal_id, expected_version)
         case = self._case(proposal["case_id"])
         connection = self._connection(previous["connection_id"], cls, case["scope_id"])
-        canonical = canonical_ticket_payload(payload)
+        canonical = canonical_ticket_payload(payload, connection["adapter"])
         expires_at = self._expiry(cls, expires_at, self.authz.now())
         new_number = expected_version + 1
         self.conn.execute("""UPDATE axiom.action_proposals SET current_version = %s, record_version = record_version + 1
@@ -201,7 +210,7 @@ class ActionService:
 
     def withdraw(self, proposal_id: UUID, reason: str) -> dict:
         proposal = self._proposal(proposal_id, lock=True)
-        authority = self.authz.require("action.propose", proposal["scope_id"])
+        authority = self.authz.require(perm("propose", proposal["effect_class"]), proposal["scope_id"])
         if proposal["status"] != "open":
             raise Conflict(f"proposal is {proposal['status']}", code="proposal_not_open")
         if not reason.strip():
@@ -234,7 +243,7 @@ class ActionService:
             raise ValidationFailed("a rationale is required")
         proposal = self._proposal(proposal_id, lock=True)
         cls = effect_class(proposal["effect_class"])
-        authority = self.authz.require("action.approve", proposal["scope_id"])
+        authority = self.authz.require(perm("approve", proposal["effect_class"]), proposal["scope_id"])
         if proposal["status"] != "open":
             raise Conflict(f"proposal is {proposal['status']}", code="proposal_not_open")
         if proposal["current_version"] != version_number:
@@ -284,7 +293,7 @@ class ActionService:
         if approval["approver_principal_id"] == self.ctx.principal_id:
             authority = self.authz.require("proposal.read", proposal["scope_id"])
         else:
-            authority = self.authz.require("action.approve", proposal["scope_id"])
+            authority = self.authz.require(perm("approve", proposal["effect_class"]), proposal["scope_id"])
         if approval["status"] != "active":
             raise Conflict(f"approval is {approval['status']}", code="approval_not_active")
         row = self.conn.execute(
@@ -301,7 +310,7 @@ class ActionService:
     def request_execution(self, proposal_id: UUID, version_number: int, approval_id: UUID) -> dict:
         # lock order: proposal, then approval (Design S 7: consistent locking of accounting rows)
         proposal = self._proposal(proposal_id, lock=True)
-        authority = self.authz.require("action.execute", proposal["scope_id"])
+        authority = self.authz.require(perm("execute", proposal["effect_class"]), proposal["scope_id"])
         approval = self.conn.execute("SELECT * FROM axiom.approvals WHERE id = %s AND proposal_id = %s FOR UPDATE",
                                      (approval_id, proposal_id)).fetchone()
         if approval is None:
@@ -319,8 +328,9 @@ class ActionService:
         if approval["uses_reserved"] - approval["uses_released"] >= approval["max_uses"]:
             raise Conflict("approval has no remaining uses", code="approval_exhausted")
         denial = None
-        if not self.authz.has("action.approve", proposal["scope_id"], principal_id=approval["approver_principal_id"]):
-            denial = "approver no longer holds action.approve for this scope"
+        if not self.authz.has(perm("approve", proposal["effect_class"]), proposal["scope_id"],
+                              principal_id=approval["approver_principal_id"]):
+            denial = f"approver no longer holds {perm('approve', proposal['effect_class'])} for this scope"
         case = self._case(proposal["case_id"])
         denial = denial or "; ".join(precondition_failures(case, version)) or None
         if denial:
@@ -369,7 +379,7 @@ class ActionService:
         if e is None:
             raise NotFound("execution not found", code="execution_not_found")
         proposal = self._proposal(e["proposal_id"])
-        authority = self.authz.require("action.execute", proposal["scope_id"])
+        authority = self.authz.require(perm("execute", proposal["effect_class"]), proposal["scope_id"])
         if e["state"] in TERMINAL_EXECUTION:
             raise Conflict(f"execution is {e['state']}", code="execution_finished")
         job = self.conn.execute("SELECT * FROM axiom.jobs WHERE id = %s FOR UPDATE", (e["job_id"],)).fetchone()
@@ -448,10 +458,11 @@ def finish_execution(conn, ctx: TenantContext, execution_id: UUID, state: str, *
                          (e["proposal_version_id"],)).fetchone()
         conn.execute(
             """INSERT INTO axiom.external_references(tenant_id, id, execution_id, case_id, provider, connection_id,
-                   external_id, verified, how) VALUES (%s, %s, %s, %s, 'jira_style', %s, %s, %s, %s)
+                   external_id, verified, how)
+               SELECT %s, %s, %s, %s, c.adapter, c.id, %s, %s, %s FROM axiom.connections c WHERE c.id = %s
                ON CONFLICT (tenant_id, execution_id) DO NOTHING""",
-            (ctx.tenant_id, uuid.uuid4(), execution_id, v["case_id"], e["connection_id"], external_ref, verified,
-             how or "created"))
+            (ctx.tenant_id, uuid.uuid4(), execution_id, v["case_id"], external_ref, verified, how or "created",
+             e["connection_id"]))
     audit.record(conn, ctx, action=f"action.execution_{state}", resource_type="action_execution",
                  resource_id=execution_id, detail={"external_ref": external_ref, "how": how, **(detail or {})})
     outbox.enqueue(conn, ctx, topic=f"action.execution_{state}", aggregate_type="action_execution",

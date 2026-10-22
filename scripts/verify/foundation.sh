@@ -62,8 +62,11 @@ FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='axi
 
 step "fresh SeaweedFS for S3 tests"
 CFG="$OUT/sw"; mkdir -p "$CFG"
-AK=$(python3 -c 'import secrets;print(secrets.token_hex(8))'); SK=$(python3 -c 'import secrets;print(secrets.token_hex(16))')
-printf '{"identities":[{"name":"axiom","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Read","Write","List","Tagging","Admin"]}]}' "$AK" "$SK" > "$CFG/s3.json"
+gen() { python3 -c 'import secrets,sys;print(secrets.token_hex(int(sys.argv[1])))' "$1"; }
+AK=$(gen 8); SK=$(gen 16); RK=$(gen 8); RS=$(gen 16); NK=$(gen 8); NS=$(gen 16)
+# full identity for tests; read+list only and read+write (no list) identities for witness permission tests
+printf '{"identities":[{"name":"axiom","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Read","Write","List","Tagging","Admin"]},{"name":"ro","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Read","List"]},{"name":"nolist","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Read","Write"]}]}' "$AK" "$SK" "$RK" "$RS" "$NK" "$NS" > "$CFG/s3.json"
+export AXIOM_TEST_S3_RO_KEY="$RK" AXIOM_TEST_S3_RO_SECRET="$RS" AXIOM_TEST_S3_NOLIST_KEY="$NK" AXIOM_TEST_S3_NOLIST_SECRET="$NS"
 docker run -d --name "$SW" -p 127.0.0.1:18334:8333 -v "$CFG":/cfg:ro \
   mirror.gcr.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d \
   server -s3 -s3.config=/cfg/s3.json -dir=/data >/dev/null

@@ -13,11 +13,22 @@ AdapterFactory = Callable[[dict, SecretResolver], object]
 
 
 def default_adapter_factory(connection: dict, secrets: SecretResolver):
-    if connection["adapter"] != "jira_style":
-        raise ValueError(f"no executor for adapter {connection['adapter']}")
-    ref = connection["credential_ref"]
-    client = JiraStyleClient(connection["base_url"], lambda: tuple(secrets.resolve(ref).split(":", 1)))
-    return JiraStyleTicketAdapter(client)
+    """Real adapters for workflow connections. All are fixture-tested only (see each module)."""
+    ref, cfg = connection["credential_ref"], connection.get("config") or {}
+    if connection["adapter"] == "jira_style":
+        client = JiraStyleClient(connection["base_url"], lambda: tuple(secrets.resolve(ref).split(":", 1)))
+        return JiraStyleTicketAdapter(client)
+    if connection["adapter"] == "servicenow":
+        from ...integrations.servicenow import ServiceNowTicketAdapter
+        return ServiceNowTicketAdapter(connection["base_url"], lambda: tuple(secrets.resolve(ref).split(":", 1)),
+                                       table=cfg.get("table", "incident"),
+                                       correlation_field=cfg.get("correlation_field", "correlation_id"),
+                                       states=cfg.get("states"))
+    if connection["adapter"] == "github_issues":
+        from ...integrations.github_issues import GitHubIssueAdapter
+        return GitHubIssueAdapter(cfg["repo"], lambda: secrets.resolve(ref),
+                                  api=connection["base_url"] or "https://api.github.com")
+    raise ValueError(f"no executor for adapter {connection['adapter']}")
 
 
 def _how(intent: dict | None, gate_how: str | None) -> str:
@@ -57,9 +68,8 @@ class ActionExecuteHandler:
                 set_execution_state(conn, execution_id, "executing")
         adapter = self.adapter_factory(connection, self.secrets)
         payload = v["canonical_payload"]
-        request = {"project_key": payload["project_key"], "summary": payload["summary"],
-                   "description": payload["description"], "labels": payload["labels"],
-                   "issue_type": payload["issue_type"]}
+        request = {k: payload[k] for k in ("project_key", "summary", "description", "labels", "issue_type")
+                   if k in payload}
         key = e["external_operation_id"]
         outcome = EffectGate(jc).run(adapter, request, lambda c: check_execution(c, jc.ctx, execution_id), key=key)
         step = outcome.step

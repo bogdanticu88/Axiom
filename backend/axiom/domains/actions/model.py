@@ -11,7 +11,7 @@ from ...errors import ValidationFailed
 class EffectClass:
     name: str
     enabled: bool
-    adapter: str | None                 # connection adapter that can execute it
+    adapters: tuple[str, ...]           # connection adapters that can execute it
     approval_required: bool = True
     max_uses_limit: int = 1             # upper bound an approver may grant
     max_proposal_days: int = 30
@@ -22,11 +22,12 @@ class EffectClass:
 # Production mutation is disabled by default and has no executor; enabling it needs a separate policy and
 # integration (Specification S 9), which do not exist.
 REGISTRY: dict[str, EffectClass] = {
-    "ticket.create": EffectClass("ticket.create", True, "jira_style", True, 3, 30,
-                                 "Create a remediation ticket in a Jira-style tracker (fixture-tested only)"),
-    "pull_request.create": EffectClass("pull_request.create", False, None,
+    "ticket.create": EffectClass("ticket.create", True, ("jira_style", "servicenow", "github_issues"), True, 3, 30,
+                                 "Create a remediation ticket (Jira-style, ServiceNow, GitHub Issues; all "
+                                 "fixture-tested only)"),
+    "pull_request.create": EffectClass("pull_request.create", False, (),
                                        description="Planned; no integration built"),
-    "production.change": EffectClass("production.change", False, None,
+    "production.change": EffectClass("production.change", False, (),
                                       description="Disabled by default; requires a separately enabled policy"),
 }
 
@@ -43,8 +44,14 @@ def effect_class(name: str) -> EffectClass:
     return cls
 
 
-def canonical_ticket_payload(payload: dict) -> dict:
-    """Validate and normalise a ticket.create payload. Only these keys are approved and sent."""
+def canonical_ticket_payload(payload: dict, adapter: str = "jira_style") -> dict:
+    """Validate and normalise a ticket.create payload. Only these keys are approved and sent. ``project_key`` is a
+    Jira concept: required for jira_style connections and refused for others (their target is the connection's
+    configured table or repository, which is itself part of the approved binding)."""
+    if adapter != "jira_style":
+        if "project_key" in payload or "issue_type" in payload:
+            raise ValidationFailed(f"{adapter} tickets take no project_key or issue_type")
+        payload = {**payload, "project_key": "NA", "issue_type": "Task"}
     unknown = set(payload) - {"project_key", "summary", "description", "labels", "issue_type"}
     if unknown:
         raise ValidationFailed(f"unknown payload fields: {sorted(unknown)}")
@@ -66,5 +73,9 @@ def canonical_ticket_payload(payload: dict) -> dict:
         raise ValidationFailed("the axiom-op- label prefix is reserved")
     if issue_type not in ("Task", "Bug"):
         raise ValidationFailed("issue_type must be Task or Bug")
-    return {"project_key": project, "summary": summary, "description": description, "labels": sorted(set(labels)),
-            "issue_type": issue_type}
+    out = {"project_key": project, "summary": summary, "description": description, "labels": sorted(set(labels)),
+           "issue_type": issue_type}
+    if adapter != "jira_style":
+        out.pop("project_key")
+        out.pop("issue_type")
+    return out

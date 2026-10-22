@@ -10,19 +10,21 @@ from uuid import UUID
 
 from fastapi import APIRouter, Header, Query
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from .. import idempotency
 from ..access import Authorizer
 from ..db import Database, TenantContext
 from ..domains.actions.service import ActionService
 from ..domains.cases.risk import RiskService
+from ..domains.reports.service import ReportService
+from ..errors import NotFound
 from ..errors import ValidationFailed
 from ..jobs import JobOperations
 from . import schemas as s
 
 
-def register(api: APIRouter, database: Database, Ctx) -> None:
+def register(api: APIRouter, database: Database, Ctx, store=None) -> None:
     def tx(ctx: TenantContext, fn: Callable[[Any, Authorizer], Any]) -> Any:
         with database.tenant_tx(ctx) as conn:
             return jsonable_encoder(fn(conn, Authorizer(conn, ctx)))
@@ -162,3 +164,51 @@ def register(api: APIRouter, database: Database, Ctx) -> None:
     def resolve_effect(ctx: Ctx, job_id: UUID, body: s.Resolve):
         return tx(ctx, lambda c, a: ops(c, a, ctx).resolve_effect(
             job_id, resolution=body.resolution, rationale=body.rationale, external_ref=body.external_ref))
+
+    # ------------------------------------------------------------------- reports, SLA, ticket state
+    def reports(conn, authz, ctx):
+        return ReportService(conn, ctx, authz, store)
+
+    @api.post("/reports/snapshots", status_code=201)
+    def generate_report(ctx: Ctx, body: s.GenerateReport):
+        return tx(ctx, lambda c, a: reports(c, a, ctx).generate(kind=body.kind, scope_id=body.scope_id))
+
+    @api.get("/reports/snapshots/{snapshot_id}")
+    def get_report(ctx: Ctx, snapshot_id: UUID):
+        return tx(ctx, lambda c, a: reports(c, a, ctx).get(snapshot_id))
+
+    @api.post("/reports/snapshots/{snapshot_id}/exports", status_code=201)
+    def export_report(ctx: Ctx, snapshot_id: UUID, body: s.ExportReport):
+        return tx(ctx, lambda c, a: reports(c, a, ctx).export(snapshot_id, body.format))
+
+    @api.get("/reports/exports/{export_id}/content")
+    def export_content(ctx: Ctx, export_id: UUID):
+        with database.tenant_tx(ctx) as conn:
+            row, data = ReportService(conn, ctx, Authorizer(conn, ctx), store).read_export(export_id)
+        media = "application/json" if row["format"] == "json" else "text/csv"
+        return Response(content=data, media_type=media, headers={
+            "X-Content-SHA256": row["sha256"],
+            "Content-Disposition": f'attachment; filename="report-{row["snapshot_id"]}.{row["format"]}"'})
+
+    @api.get("/cases/{case_id}/sla")
+    def case_sla(ctx: Ctx, case_id: UUID):
+        def read(conn, authz):
+            case = conn.execute("SELECT scope_id FROM axiom.finding_cases WHERE id = %s", (case_id,)).fetchone()
+            if case is None or not authz.has("case.read", case["scope_id"]):
+                raise NotFound("case not found", code="case_not_found")
+            return {"items": list(conn.execute("SELECT * FROM axiom.case_slas WHERE case_id = %s ORDER BY created_at",
+                                               (case_id,)))}
+        return tx(ctx, read)
+
+    @api.get("/external-references/{reference_id}/states")
+    def ticket_states(ctx: Ctx, reference_id: UUID):
+        def read(conn, authz):
+            ref = conn.execute("""SELECT r.*, c.scope_id FROM axiom.external_references r
+                                  JOIN axiom.finding_cases c ON c.id = r.case_id WHERE r.id = %s""",
+                               (reference_id,)).fetchone()
+            if ref is None or not authz.has("case.read", ref["scope_id"]):
+                raise NotFound("reference not found", code="reference_not_found")
+            return {"reference": ref, "states": list(conn.execute(
+                "SELECT * FROM axiom.external_ticket_states WHERE reference_id = %s ORDER BY observed_at, id",
+                (reference_id,)))}
+        return tx(ctx, read)

@@ -30,6 +30,9 @@ if [ -n "$hits" ]; then echo "$hits"; record secret-scan 1; else record secret-s
 tracked_env=$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$' || true)
 if [ -n "$tracked_env" ]; then echo "$tracked_env"; record no-env-files 1; else record no-env-files 0; fi
 
+stage "GitHub Actions pins (full commit hashes, verified against the official repositories)"
+scripts/ci/check-action-pins.sh; record action-pins $?
+
 stage "foundation verification (fresh cluster + SeaweedFS + full suite)"
 OUT="$OUT/foundation" scripts/verify/foundation.sh > "$OUT/foundation.stdout" 2>&1
 grep -E "^[0-9]+ passed|passed,|failed|error" "$OUT/foundation/verify.log" | tail -3

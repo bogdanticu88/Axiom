@@ -552,3 +552,48 @@ def test_operator_actions_are_audited_and_need_their_permission(env, admin_conn)
     with pytest.raises(PermissionDenied):
         with env.db.tenant_tx(env.ctx_for("approver")) as conn:
             JobOperations(conn, env.ctx_for("approver"), Authorizer(conn, env.ctx_for("approver"))).list_attention()
+
+
+# ------------------------------------------------------------------------------- per-class permissions (ACT-08)
+def test_weaker_class_permissions_never_authorise_a_stronger_effect(env, admin_conn, dbinfo, world, monkeypatch):
+    """production.change is disabled in the product; it is enabled here, in-process only, against the fake tracker,
+    to show that ticket permissions cannot propose, approve or execute it."""
+    from dataclasses import replace
+
+    from axiom.domains.actions import model
+    from axiom.provisioning import Provisioner
+    monkeypatch.setitem(model.REGISTRY, "production.change",
+                        replace(model.REGISTRY["production.change"], enabled=True, adapters=("jira_style",), max_uses_limit=1))
+    prov = Provisioner(dbinfo.admin_cli_dsn)
+
+    def propose_change(who):
+        return env.svc(who, lambda s: s.propose(case_id=env.case["id"], effect="production.change",
+                                                connection_id=env.connection["id"], payload=PAYLOAD,
+                                                verification_criteria="change applied", expires_at=soon()))
+    with pytest.raises(PermissionDenied):                     # analyst: ticket permissions only
+        propose_change("analyst")
+    prov.bootstrap_role(world.a.id, world["analyst2"], "production_change_requester", world.a.project, "test")
+    p = propose_change("analyst2")
+    with pytest.raises(PermissionDenied):                     # ticket approver cannot approve a production change
+        env.approve(p, who="approver")
+    prov.bootstrap_role(world.a.id, world["consultant"], "production_change_approver", world.a.project, "test")
+    a = env.approve(p, who="consultant")
+    with pytest.raises(PermissionDenied):                     # ticket executor cannot request it either
+        env.execute(p, a, who="analyst")
+    e = env.execute(p, a, who="analyst2")
+    # the stronger approver cannot approve tickets: no hierarchy in either direction
+    t = env.propose()
+    with pytest.raises(PermissionDenied):
+        env.approve(t, who="consultant")
+    # revoking the class-specific role before execution denies at the effect boundary
+    admin_conn.execute("UPDATE axiom.role_bindings SET revoked_at = now() WHERE principal_id = %s AND role_id = "
+                       "'production_change_approver'", (world["consultant"],))
+    assert env.drive(admin_conn, e["job_id"])["state"] == "failed"
+    assert "action.approve:production_change" in env.execution(e["id"])["outcome_detail"]["error"]
+    assert env.fake.create_requests == 0
+
+
+def test_generic_action_permissions_no_longer_grant_anything(env, admin_conn):
+    rows = admin_conn.execute("SELECT role_id, permission FROM axiom.role_permissions WHERE permission IN "
+                              "('action.propose', 'action.approve', 'action.execute')").fetchall()
+    assert rows == []

@@ -40,7 +40,7 @@ from typing import Any, Protocol
 import psycopg
 
 from .core import Done, Fail, JobContext, NeedsOperator, Retry, StaleLease, StepResult, event
-from .witness import check as witness_check
+from .witness import WitnessUnavailable, check as witness_check
 
 
 class DefinitelyNotApplied(Exception):
@@ -148,7 +148,12 @@ class EffectGate:
             fingerprint = conn.execute("SELECT axiom.db_fingerprint() AS f").fetchone()["f"]
             acknowledged = conn.execute("SELECT 1 FROM axiom.recovery_acknowledgements WHERE fingerprint = %s",
                                         (fingerprint,)).fetchone() is not None
-            behind = witness_check(conn, self.witness)
+            try:
+                behind = witness_check(conn, self.witness)
+            except WitnessUnavailable as exc:
+                event(conn, ctx, job["id"], "effect_witness_unavailable", lease_token=jc.lease_token,
+                      detail={"error": str(exc)})
+                return EffectOutcome(Retry(f"restore witness unavailable, nothing sent: {exc}"), None)
             if behind:
                 return self._park(conn, key, behind)
             intent = self._intent(conn, key)
@@ -173,13 +178,16 @@ class EffectGate:
                                      intent["external_ref"], "recorded")
             if intent["state"] in ("failed", "abandoned"):
                 return EffectOutcome(Fail(f"effect previously {intent['state']}"), None)
+            last_ack = conn.execute("SELECT max(acknowledged_at) AS t FROM axiom.recovery_acknowledgements").fetchone()["t"]
+            carried = (last_ack is not None and job["created_at"] < last_ack
+                       and (job["recovery_cleared_at"] is None or job["recovery_cleared_at"] < last_ack))
             restored = (intent["db_fingerprint"] != fingerprint or job["db_fingerprint"] != fingerprint
-                        or not acknowledged)
+                        or not acknowledged or carried)
             uncertain = restored or intent["state"] in ("executing", "unknown")
             if uncertain and lookup == "none" and not repeat_safe:
                 return self._park(conn, key, (
-                    "database restore detected (fingerprint changed or unacknowledged); reconcile and acknowledge "
-                    "before effects on integrations without lookup") if restored else
+                    "database restore detected (fingerprint changed, unacknowledged, or this job predates the latest "
+                    "recovery acknowledgement); reconcile this job before its effect can run") if restored else
                     "previous attempt's outcome is unknown and the integration can neither be queried nor deduplicate")
         # ---- 2: lookup before create (a hit is proof; a miss is not)
         if lookup != "none":

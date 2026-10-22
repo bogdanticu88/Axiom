@@ -265,6 +265,84 @@ class CaseService:
             authority=authority, evidence=evidence, dependents=dependents,
             payload={"target_asset_version_id": str(target_asset_version_id)}))
 
+    def withdraw_remediation(self, case_id: UUID, expected_version: int, *, rationale: str,
+                             deployment_state: str | None = None, evidence: Sequence[EvidenceRef] = (),
+                             target_asset_version_id: UUID | None = None,
+                             change_reference: str | None = None) -> dict:
+        """R7 (approved 2026-10-22): leave remediation when a plan is abandoned.
+
+        * from remediation_planned: back to review through an authorised, recorded decision;
+        * from remediating with ``deployment_state='none'``: back to review only with verified evidence that no
+          change was deployed;
+        * from remediating with ``deployed`` / ``partial`` / ``unknown``: to verification through an abandoned
+          remediation report (unknown has no target, so verification can only be inconclusive and returns to review).
+        Unresolved external effects block every route. Open proposals for the case are withdrawn and the plan epoch
+        advances, so an obsolete plan cannot execute later. Tickets, approvals, consumed uses and evidence are kept.
+        """
+        case = self._load(case_id)
+        model.check_expected_version(case["record_version"], expected_version)
+        if case["workflow"] not in (Workflow.PLANNED, Workflow.REMEDIATING):
+            raise Conflict("only planned or in-progress remediation can be withdrawn", code="invalid_state")
+        if case["workflow"] == Workflow.PLANNED:
+            authority = self.authz.require("remediation.propose", case["scope_id"])
+            if deployment_state not in (None, "none"):
+                raise ValidationFailed("nothing is deployed while remediation is only planned")
+        else:
+            authority = self._owner_or_propose(case)
+            if deployment_state not in ("none", "deployed", "partial", "unknown"):
+                raise ValidationFailed("deployment_state must be none, deployed, partial or unknown")
+        unresolved = [str(r["id"]) for r in self.conn.execute(
+            """SELECT e.id FROM axiom.action_executions e JOIN axiom.action_proposals p ON p.id = e.proposal_id
+                WHERE p.case_id = %s AND e.state IN ('prepared', 'executing', 'reconciling')""", (case_id,))]
+        if unresolved:
+            raise Conflict("reconcile or cancel external actions before leaving remediation",
+                           code="unresolved_external_effect", details={"execution_ids": unresolved})
+        withdrawn = self._withdraw_proposals(case_id, rationale)
+        common = {"changes": {"disposition": "unset", "review_at": None, "plan_epoch": case["plan_epoch"] + 1}}
+        payload = {"withdrawn_proposals": withdrawn, "deployment_state": deployment_state or "none"}
+        if case["workflow"] == Workflow.PLANNED:
+            return self._apply(case, expected_version, _Plan(
+                to_workflow=Workflow.REVIEW, event_type="case.remediation_withdrawn",
+                decision_kind="remediation_withdrawal", decision_outcome="plan_withdrawn", rationale=rationale,
+                authority=authority, evidence=evidence, payload=payload, **common))
+        if deployment_state == "none":
+            if not any(ref.relation == "supports" for ref in evidence):
+                raise ValidationFailed("evidence that no change was deployed is required", code="evidence_required")
+            return self._apply(case, expected_version, _Plan(
+                to_workflow=Workflow.REVIEW, event_type="case.remediation_withdrawn",
+                decision_kind="remediation_withdrawal", decision_outcome="no_change_deployed", rationale=rationale,
+                authority=authority, evidence=evidence, payload=payload, **common))
+        if deployment_state == "unknown" and target_asset_version_id is not None:
+            raise ValidationFailed("an unknown deployment has no target; use deployed or partial with a target")
+        if deployment_state != "unknown" and target_asset_version_id is None:
+            raise ValidationFailed("identify the deployment to verify, or use deployment_state=unknown")
+        report_id = uuid.uuid4()
+
+        def dependents(decision_id: UUID | None, _seq: int) -> dict:
+            self.conn.execute(
+                """INSERT INTO axiom.remediation_reports(tenant_id, id, case_id, target_asset_version_id,
+                       change_reference, reported_by, decision_id, kind, deployment_state)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, 'abandoned', %s)""",
+                (self.ctx.tenant_id, report_id, case_id, target_asset_version_id,
+                 change_reference or "remediation abandoned", self.ctx.principal_id, decision_id, deployment_state))
+            return {"remediation_report_id": str(report_id)}
+        return self._apply(case, expected_version, _Plan(
+            to_workflow=Workflow.VERIFYING, event_type="case.remediation_abandoned",
+            decision_kind="remediation_report", decision_outcome="remediation_abandoned", rationale=rationale,
+            authority=authority, evidence=evidence, dependents=dependents, payload=payload, **common))
+
+    def _withdraw_proposals(self, case_id: UUID, reason: str) -> list[str]:
+        ids = []
+        for p in self.conn.execute("SELECT id FROM axiom.action_proposals WHERE case_id = %s AND status = 'open' "
+                                   "FOR UPDATE", (case_id,)).fetchall():
+            self.conn.execute("""UPDATE axiom.action_proposals SET status = 'withdrawn',
+                                        record_version = record_version + 1 WHERE id = %s""", (p["id"],))
+            audit.record(self.conn, self.ctx, action="action.withdrawn", resource_type="action_proposal",
+                         resource_id=p["id"], detail={"reason": f"remediation withdrawn: {reason}",
+                                                      "by_case_transition": True})
+            ids.append(str(p["id"]))
+        return ids
+
     # ---------------------------------------------------------------- verification
     def record_verification(self, case_id: UUID, expected_version: int, *, claimed_result: str,
                             coverage: str, criteria: dict, rationale: str,
@@ -287,7 +365,10 @@ class CaseService:
                             code="separation_of_duties")
         target = self.conn.execute("SELECT * FROM axiom.asset_versions WHERE id = %s",
                                    (report["target_asset_version_id"],)).fetchone()
-        observed = self._resolve_observed_version(target, observed_asset_version_id, observed_deployment_digest)
+        if target is None:      # abandoned remediation with unknown deployment: nothing identifiable to verify
+            observed = None
+        else:
+            observed = self._resolve_observed_version(target, observed_asset_version_id, observed_deployment_digest)
         matches = None if observed is None else (observed["id"] == target["id"])
         evidence_ok = False
         if evidence_id is not None:
@@ -299,6 +380,8 @@ class CaseService:
         criteria_json = json.dumps(criteria, sort_keys=True, separators=(",", ":"))
         run_id = uuid.uuid4()
         to_workflow = model.workflow_after_verification(outcome)
+        if report["kind"] == "abandoned" and to_workflow == Workflow.REMEDIATING:
+            to_workflow = Workflow.REVIEW     # R7: the plan was abandoned, so a failed check goes back to review
 
         def dependents(decision_id: UUID | None, _seq: int) -> dict:
             self.conn.execute(

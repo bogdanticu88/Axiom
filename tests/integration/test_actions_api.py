@@ -163,3 +163,31 @@ def test_job_retry_requires_operate_permission_and_is_audited(client, as_, world
     audit = client.get("/api/v1/audit-events", headers=as_("auditor"), params={"resource_id": job["id"]})
     assert audit.status_code == 200
     assert "job.retry" in [e["action"] for e in audit.json()]
+
+
+def test_reports_sla_and_ticket_state_over_http(client, as_, world, setup, db):  # noqa: F811
+    import hashlib
+    case, connection = setup
+    analyst, approver, auditor = as_("analyst"), as_("approver"), as_("auditor")
+    proposal = client.post("/api/v1/action-proposals", headers=analyst, json={
+        "case_id": case["id"], "effect_class": "ticket.create", "connection_id": connection["id"],
+        "payload": PAYLOAD, "verification_criteria": "ticket exists", "expires_at": iso(days=5)}).json()
+    approval = client.post(f"/api/v1/action-proposals/{proposal['id']}/versions/1/decisions", headers=approver,
+                           json={"decision": "approved", "rationale": "fine"}).json()
+    e = client.post(f"/api/v1/action-proposals/{proposal['id']}/versions/1/executions",
+                    headers={**analyst, "Idempotency-Key": "exec-rep-1"}, json={"approval_id": approval["id"]}).json()
+    fake = JiraStyleFake()
+    run_worker(db, world, fake)
+    ref = client.get(f"/api/v1/action-executions/{e['id']}", headers=analyst).json()["external_references"][0]
+    assert client.get(f"/api/v1/external-references/{ref['id']}/states", headers=analyst).json()["states"] == []
+    assert client.get(f"/api/v1/cases/{case['id']}/sla", headers=analyst).status_code == 200
+    snap = client.post("/api/v1/reports/snapshots", headers=analyst,
+                       json={"kind": "exposure_summary", "scope_id": str(world.a.project)})
+    assert snap.status_code == 201, snap.text
+    sid = snap.json()["id"]
+    assert client.post(f"/api/v1/reports/snapshots/{sid}/exports", headers=analyst,
+                       json={"format": "csv"}).status_code == 403
+    ex = client.post(f"/api/v1/reports/snapshots/{sid}/exports", headers=auditor, json={"format": "csv"})
+    assert ex.status_code == 201, ex.text
+    body = client.get(f"/api/v1/reports/exports/{ex.json()['id']}/content", headers=auditor)
+    assert body.status_code == 200 and body.headers["X-Content-SHA256"] == hashlib.sha256(body.content).hexdigest()

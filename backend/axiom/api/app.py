@@ -203,6 +203,10 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
     command("record-assessment", s.RecordAssessment, lambda c, i, b: c.record_assessment(
         i, b.expected_version, assessment=b.assessment, rationale=b.rationale, limitations=b.limitations,
         evidence=[EvidenceRef(e.evidence_id, e.relation) for e in b.evidence]))
+    command("withdraw-remediation", s.WithdrawRemediation, lambda c, i, b: c.withdraw_remediation(
+        i, b.expected_version, rationale=b.rationale, deployment_state=b.deployment_state,
+        evidence=[EvidenceRef(e.evidence_id, e.relation) for e in b.evidence],
+        target_asset_version_id=b.target_asset_version_id, change_reference=b.change_reference))
     command("escalate", s.Versioned, lambda c, i, b: c.escalate(i, b.expected_version, b.rationale))
     command("request-more-evidence", s.Versioned,
             lambda c, i, b: c.request_more_evidence(i, b.expected_version, b.rationale))
@@ -371,7 +375,7 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
         return in_tx(ctx, read)
 
     from .operations import register as register_operations
-    register_operations(api, database, Ctx)
+    register_operations(api, database, Ctx, object_store)
     app.include_router(api)
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

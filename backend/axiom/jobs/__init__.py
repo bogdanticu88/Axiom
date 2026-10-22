@@ -2,8 +2,9 @@
 from .core import (Done, Fail, Handler, JobContext, JobOperations, NeedsOperator, Retry, StaleLease, StepResult,
                    Wait, enqueue)
 from .effects import DefinitelyNotApplied, EffectAdapter, EffectGate, PermanentFailure, UnknownOutcome
+from .witness import WitnessUnavailable
 from .worker import RestoreNotAcknowledged, Schedule, Worker, WorkerConfig
 
 __all__ = ["Done", "Fail", "Handler", "JobContext", "JobOperations", "NeedsOperator", "Retry", "StaleLease",
            "StepResult", "Wait", "enqueue", "DefinitelyNotApplied", "EffectAdapter", "EffectGate", "PermanentFailure",
-           "UnknownOutcome", "RestoreNotAcknowledged", "Schedule", "Worker", "WorkerConfig"]
+           "UnknownOutcome", "RestoreNotAcknowledged", "WitnessUnavailable", "Schedule", "Worker", "WorkerConfig"]

@@ -28,6 +28,8 @@ def test_transition_table_matches_specification():
     spec = {("received", "investigating"), ("investigating", "review_required"),
             ("review_required", "investigating"), ("review_required", "remediation_planned"),
             ("remediation_planned", "remediating"), ("remediating", "awaiting_verification"),
+            # R7, approved 2026-10-22 (Specification S 4 amendment)
+            ("remediation_planned", "review_required"), ("remediating", "review_required"),
             ("awaiting_verification", "closed"), ("awaiting_verification", "remediating"),
             ("awaiting_verification", "review_required"), ("review_required", "closed"),
             ("closed", "investigating")}

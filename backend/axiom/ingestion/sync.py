@@ -36,7 +36,7 @@ from .pipeline import IngestionService, RunState
 
 API_ADAPTERS = {"tenable_vm": "scanner", "azure_resource_graph": "context"}
 # Workflow connections are used by the action protocol, never synchronised (fixture-tested only).
-WORKFLOW_ADAPTERS = {"jira_style": "workflow"}
+WORKFLOW_ADAPTERS = {"jira_style": "workflow", "servicenow": "workflow", "github_issues": "workflow"}
 
 
 class SecretResolver(Protocol):

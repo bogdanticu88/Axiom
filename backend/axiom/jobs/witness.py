@@ -6,14 +6,19 @@ restore into a database recreated with the same OID, and any marker kept *inside
 with it. The witness keeps the highest effect watermark outside the database:
 
 * the gate draws a watermark from ``axiom.effect_watermark_seq`` in the transaction that marks an intent executing
-  and records it here **before** the request is sent;
+  and records it here **before** the request is sent (a failed write rolls back and nothing is sent);
 * a database whose watermark is lower than the witness has lost effects it once recorded, so workers refuse to
-  run and effects park until an operator reconciles and acknowledges (which moves the sequence past the witness).
+  run and effects park until an operator reconciles and acknowledges.
 
-Each worker writes only its own record and only upwards, so concurrent workers never lower the high-water mark.
-The witness only helps if it is **not** restored together with the database: keep it in a different backup domain
-(another bucket or account without point-in-time rollback tied to the database backups). If both are rolled back
-together the rollback is invisible; that blind spot is tested and documented.
+Records are **write-once**: one object or file per watermark, named ``<watermark:020d>-<worker>``. The high-water
+mark is the largest name in a listing, so concurrent writers, duplicate worker IDs, retried writes after a lost
+acknowledgement and partial failures can never lower it, and no read-modify-write or conditional write is needed.
+Older records are pruned best-effort (only records below the newest are deleted, so pruning cannot lower the mark).
+
+The witness only helps if it is **not** restored together with the database: keep it in a different backup domain.
+Its guarantees also depend on the storage: durable writes, and a listing that shows a completed write
+(read-after-write list consistency). Those properties must be validated for each production store; the tests here
+use SeaweedFS and a local directory only.
 """
 from __future__ import annotations
 
@@ -25,76 +30,127 @@ from pathlib import Path
 import psycopg
 
 _SAFE = re.compile(r"[^A-Za-z0-9._-]")
+_NAME = re.compile(r"^(\d{20})-")
+KEEP = 3
+
+
+class WitnessUnavailable(RuntimeError):
+    """The witness could not be read or written; effects must not proceed."""
+
+
+def _record_name(watermark: int, worker: str) -> str:
+    return f"{watermark:020d}-{worker}"
+
+
+def _parse(name: str) -> int | None:
+    m = _NAME.match(name)
+    return int(m.group(1)) if m else None
 
 
 class FileWitness:
-    """Directory of per-worker files. For single-host installs and tests; use a separate volume from the database."""
+    """Directory of write-once records. For single-host installs and tests; use a separate volume from the database."""
 
     def __init__(self, directory: Path | str, worker_id: str):
+        if not str(directory).strip():
+            raise ValueError("witness directory is empty")
         self.dir = Path(directory)
         self.dir.mkdir(parents=True, exist_ok=True)
-        self.name = _SAFE.sub("_", worker_id)
+        self.worker = _SAFE.sub("_", worker_id)
         self._lock = threading.Lock()
-        self._last = self._read(self.dir / self.name) or 0
 
-    @staticmethod
-    def _read(path: Path) -> int | None:
+    def probe(self) -> None:
+        """Fail at start-up if the directory cannot be listed or written."""
+        tmp = self.dir / f".probe-{self.worker}"
         try:
-            return int(path.read_text().strip())
-        except (FileNotFoundError, ValueError):
-            return None
+            tmp.write_text("probe")
+            tmp.unlink()
+            list(self.dir.iterdir())
+        except OSError as exc:
+            raise WitnessUnavailable(f"witness directory {self.dir} is not usable: {exc}") from exc
 
     def advance(self, watermark: int) -> None:
         with self._lock:
-            if watermark <= self._last:
+            final = self.dir / _record_name(watermark, self.worker)
+            if final.exists():
                 return
-            tmp = self.dir / f".{self.name}.tmp"
+            tmp = self.dir / f".{final.name}.tmp"
             with open(tmp, "w") as fh:
                 fh.write(str(watermark))
                 fh.flush()
                 os.fsync(fh.fileno())
-            os.replace(tmp, self.dir / self.name)
+            os.replace(tmp, final)
             dir_fd = os.open(self.dir, os.O_RDONLY)
             try:
                 os.fsync(dir_fd)
             finally:
                 os.close(dir_fd)
-            self._last = watermark
+            self._prune()
+
+    def _prune(self) -> None:
+        mine = sorted(p for p in self.dir.iterdir() if p.name.endswith(f"-{self.worker}") and _parse(p.name) is not None)
+        for p in mine[:-KEEP]:
+            try:
+                p.unlink()
+            except OSError:
+                pass
 
     def high_water(self) -> int | None:
-        values = [v for p in self.dir.iterdir() if not p.name.startswith(".")
-                  if (v := self._read(p)) is not None]
+        try:
+            values = [v for p in self.dir.iterdir() if (v := _parse(p.name)) is not None]
+        except OSError as exc:
+            raise WitnessUnavailable(f"witness directory unreadable: {exc}") from exc
         return max(values) if values else None
 
 
 class S3Witness:
-    """Per-worker objects under a prefix in an S3-compatible bucket (keep it outside the database backup domain)."""
+    """Write-once objects under a prefix in an S3-compatible bucket outside the database backup domain."""
 
     def __init__(self, client, bucket: str, prefix: str, worker_id: str):
         self.client, self.bucket = client, bucket
-        self.prefix = prefix.rstrip("/") + "/"
-        self.key = self.prefix + _SAFE.sub("_", worker_id)
+        self.prefix = prefix.strip("/") + "/"
+        self.worker = _SAFE.sub("_", worker_id)
         self._lock = threading.Lock()
-        self._last = 0
+
+    def probe(self) -> None:
+        """Fail at start-up unless the identity can write, list and delete under the prefix."""
+        key = f"{self.prefix}_probe/{self.worker}"
+        try:
+            self.client.put_object(Bucket=self.bucket, Key=key, Body=b"probe")
+            self.client.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix, MaxKeys=1)
+            self.client.delete_object(Bucket=self.bucket, Key=key)
+        except Exception as exc:  # noqa: BLE001 - any storage or permission error disables effects
+            raise WitnessUnavailable(f"S3 witness s3://{self.bucket}/{self.prefix} is not usable: {exc}") from exc
 
     def advance(self, watermark: int) -> None:
         with self._lock:
-            if watermark <= self._last:
-                return
-            self.client.put_object(Bucket=self.bucket, Key=self.key, Body=str(watermark).encode())
-            self._last = watermark
+            key = self.prefix + _record_name(watermark, self.worker)
+            try:
+                self.client.put_object(Bucket=self.bucket, Key=key, Body=str(watermark).encode())
+            except Exception as exc:  # noqa: BLE001
+                raise WitnessUnavailable(f"could not record watermark {watermark}: {exc}") from exc
+            self._prune()
+
+    def _keys(self) -> list[str]:
+        keys = []
+        for page in self.client.get_paginator("list_objects_v2").paginate(Bucket=self.bucket, Prefix=self.prefix):
+            keys += [o["Key"] for o in page.get("Contents", [])]
+        return keys
+
+    def _prune(self) -> None:
+        try:
+            mine = sorted(k for k in self._keys() if k.endswith(f"-{self.worker}")
+                          and _parse(k[len(self.prefix):]) is not None)
+            for k in mine[:-KEEP]:
+                self.client.delete_object(Bucket=self.bucket, Key=k)
+        except Exception:  # noqa: BLE001 - pruning is best effort and can never lower the mark
+            pass
 
     def high_water(self) -> int | None:
-        best = None
-        for page in self.client.get_paginator("list_objects_v2").paginate(Bucket=self.bucket, Prefix=self.prefix):
-            for obj in page.get("Contents", []):
-                body = self.client.get_object(Bucket=self.bucket, Key=obj["Key"])["Body"].read()
-                try:
-                    value = int(body.decode().strip())
-                except ValueError:
-                    continue
-                best = value if best is None else max(best, value)
-        return best
+        try:
+            values = [v for k in self._keys() if (v := _parse(k[len(self.prefix):])) is not None]
+        except Exception as exc:  # noqa: BLE001
+            raise WitnessUnavailable(f"S3 witness unreadable: {exc}") from exc
+        return max(values) if values else None
 
 
 def database_watermark(conn: psycopg.Connection) -> int:
@@ -103,7 +159,9 @@ def database_watermark(conn: psycopg.Connection) -> int:
 
 
 def check(conn: psycopg.Connection, witness) -> str | None:
-    """Return why effects must not run, or None. Compares the database watermark with the external witness."""
+    """Return why effects must not run (restore or rollback detected), or None. Compares the database watermark
+    with the external witness. An unreadable witness raises ``WitnessUnavailable`` (fail closed, but transient:
+    callers retry later rather than asking an operator)."""
     if witness is None:
         return None
     db_value = database_watermark(conn)

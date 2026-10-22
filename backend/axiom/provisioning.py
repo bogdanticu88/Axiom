@@ -179,8 +179,10 @@ class Provisioner:
                 elif external is None and db_mark > 0:
                     witness.advance(db_mark)
             fp = conn.execute("SELECT axiom.db_fingerprint() AS f").fetchone()["f"]
+            # Always a new row: a rollback that keeps the fingerprint is acknowledged again. Acknowledging never
+            # clears jobs; each job that predates this row needs its own reconciliation before any effect.
             conn.execute("""INSERT INTO axiom.recovery_acknowledgements(fingerprint, acknowledged_by, note)
-                            VALUES (%s, %s, %s) ON CONFLICT (fingerprint) DO NOTHING""", (fp, acknowledged_by, note))
+                            VALUES (%s, %s, %s)""", (fp, acknowledged_by, note))
         return fp
 
 

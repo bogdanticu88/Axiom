@@ -1,7 +1,8 @@
 # Hosted CI: provision tools, then run scripts/ci/run.sh (the same pipeline developers run locally).
-# Status: written and the script executed locally; this workflow has NOT run on GitHub (nothing is pushed).
-# Before enabling: pin the actions below to full commit SHAs (ADR 0007) after checking them against the
-# official repositories; tags are used here only because SHAs were not verified in this environment.
+# Status: the pipeline script is executed locally; this workflow has NOT run on GitHub (no remote is authorised).
+# Actions are pinned to full commit hashes resolved from the official repositories on 2026-10-22 (ADR 0007). The
+# comment after each hash is the release tag it was resolved from; scripts/ci/check-action-pins.sh re-verifies them.
+# To update a pin: see docs/ci-action-pins.md.
 name: ci
 on:
   pull_request:
@@ -17,8 +18,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
       - name: Install uv and PostgreSQL 16 server
@@ -31,7 +32,7 @@ jobs:
         run: sudo -E env "PATH=$PATH" scripts/ci/run.sh
       - name: Keep logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-logs
           path: .var/ci/

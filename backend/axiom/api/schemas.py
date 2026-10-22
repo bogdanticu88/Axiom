@@ -83,6 +83,14 @@ class AcceptRisk(Versioned):
     compensating_controls: str | None = Field(default=None, max_length=5000)
 
 
+class WithdrawRemediation(Versioned):
+    """R7: from remediation_planned no deployment_state; from remediating one of none/deployed/partial/unknown."""
+    deployment_state: Literal["none", "deployed", "partial", "unknown"] | None = None
+    evidence: list[EvidenceRefIn] = Field(default_factory=list, max_length=200)
+    target_asset_version_id: UUID | None = None
+    change_reference: str | None = Field(default=None, max_length=500)
+
+
 class Reopen(Versioned):
     reason: Literal["relevant_change", "recurrence", "authorised_reassessment"]
 
@@ -165,7 +173,7 @@ class RequestImport(Body):
 
 
 class CreateConnection(Body):
-    adapter: Literal["tenable_vm", "azure_resource_graph", "jira_style"]
+    adapter: Literal["tenable_vm", "azure_resource_graph", "jira_style", "servicenow", "github_issues"]
     scope_id: UUID
     display_name: str = Field(min_length=1, max_length=200)
     base_url: str | None = Field(default=None, max_length=500)
@@ -233,3 +241,12 @@ class Rationale(Body):
 class JobRetry(Body):
     rationale: str = Field(min_length=1, max_length=5000)
     extra_attempts: int = Field(default=3, ge=1, le=10)
+
+
+class GenerateReport(Body):
+    kind: Literal["exposure_summary"]
+    scope_id: UUID
+
+
+class ExportReport(Body):
+    format: Literal["json", "csv"]

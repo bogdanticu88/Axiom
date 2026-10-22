@@ -188,7 +188,8 @@ def test_ingestion_journey_through_api(client, as_, world, db, object_store):
     history = client.get(f"/api/v1/cases/{cases[0]['id']}/history", headers=analyst).json()
     assert history["events"][0]["event_type"] == "case.created"
     adapters = {a["name"]: a["support_level"] for a in client.get("/api/v1/adapters", headers=analyst).json()["items"]}
-    assert adapters["trivy_json"] == "fixture-tested" and adapters["jira"] == "planned"
+    assert adapters["trivy_json"] == "fixture-tested" and adapters["jira_style"] == "fixture-tested"
+    assert adapters["qualys_vmdr"] == "planned" and "jira" not in adapters
     # Unknown adapter and a body smuggling a tenant are rejected.
     assert client.post("/api/v1/imports", headers=analyst, json={"evidence_id": ev, "adapter": "nessus_xml",
                                                                 "scope_id": str(world.a.project)}).status_code == 422

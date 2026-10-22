@@ -265,8 +265,9 @@ class JobOperations:
             # the operator has reconciled this job against the current database
             row = self.conn.execute(
                 """UPDATE axiom.jobs SET state = 'queued', due_at = clock_timestamp(), operator_reason = NULL,
-                          db_fingerprint = axiom.db_fingerprint(), updated_at = clock_timestamp(),
-                          record_version = record_version + 1 WHERE id = %s RETURNING *""", (job_id,)).fetchone()
+                          db_fingerprint = axiom.db_fingerprint(), recovery_cleared_at = clock_timestamp(),
+                          updated_at = clock_timestamp(), record_version = record_version + 1
+                    WHERE id = %s RETURNING *""", (job_id,)).fetchone()
         event(self.conn, self.ctx, job_id, f"operator_{resolution}", detail={"rationale": rationale,
                                                                             "external_ref": external_ref})
         audit.record(self.conn, self.ctx, action=f"job.effect_{resolution}", resource_type="job", resource_id=job_id,

@@ -18,7 +18,9 @@ from ..api.app import build_object_store
 from ..config import Settings
 from ..db import Database
 from ..domains.actions.jobs import ActionExecuteHandler
+from ..domains.actions.sync import KIND as TICKET_SYNC, TicketSyncHandler
 from ..domains.cases.jobs import KIND as RISK_SWEEP, RiskExpirySweepHandler
+from ..domains.cases.sla import KIND as SLA_SWEEP, SlaSweepHandler
 from ..errors import ConfigurationError
 from ..domains.evidence.service import EvidenceService
 from ..ingestion.jobs import IngestionRunHandler
@@ -29,33 +31,49 @@ from ..jobs import Schedule, Worker, WorkerConfig
 log = logging.getLogger("axiom.workers.jobs")
 
 RISK_SWEEP_INTERVAL_SECONDS = 3600
+SLA_SWEEP_INTERVAL_SECONDS = 900
+TICKET_SYNC_INTERVAL_SECONDS = 900
 
 
 def build_worker(db: Database, ingestion: IngestionService, sync: SyncService, *, worker_id: str | None = None,
                  config: WorkerConfig | None = None, risk_sweep_interval: int = RISK_SWEEP_INTERVAL_SECONDS,
-                 action_handler: ActionExecuteHandler | None = None, witness=None) -> Worker:
+                 action_handler: ActionExecuteHandler | None = None, witness=None,
+                 ticket_sync: TicketSyncHandler | None = None) -> Worker:
     return Worker(db, [IngestionRunHandler(ingestion, sync), RiskExpirySweepHandler(),
-                       action_handler or ActionExecuteHandler()],
-                  worker_id=worker_id, config=config, schedules=[Schedule(RISK_SWEEP, 1, risk_sweep_interval)],
+                       action_handler or ActionExecuteHandler(), ticket_sync or TicketSyncHandler(), SlaSweepHandler()],
+                  worker_id=worker_id, config=config,
+                  schedules=[Schedule(RISK_SWEEP, 1, risk_sweep_interval),
+                             Schedule(SLA_SWEEP, 1, SLA_SWEEP_INTERVAL_SECONDS),
+                             Schedule(TICKET_SYNC, 1, TICKET_SYNC_INTERVAL_SECONDS)],
                   witness=witness)
 
 
-def build_witness(settings: Settings, worker_id: str):
-    from ..jobs.witness import FileWitness, S3Witness
-    spec = settings.restore_witness
+def build_witness(settings: Settings, worker_id: str, *, s3_client=None):
+    """Build the restore witness from AXIOM_RESTORE_WITNESS. Refuses (ConfigurationError) when it is required but
+    missing, malformed or unusable; never silently falls back to running without one in production."""
+    from ..jobs.witness import FileWitness, S3Witness, WitnessUnavailable
+    spec = (settings.restore_witness or "").strip()
     if not spec:
         if settings.env == "production":
             raise ConfigurationError("AXIOM_RESTORE_WITNESS is required in production (ADR 0010)")
         return None
     kind, _, where = spec.partition(":")
-    if kind == "dir":
-        return FileWitness(where, worker_id)
-    if kind == "s3":
-        import boto3
-        bucket, _, prefix = where.partition("/")
-        client = boto3.client("s3", endpoint_url=settings.s3_endpoint_url, region_name=settings.s3_region)
-        return S3Witness(client, bucket, prefix or "restore-witness", worker_id)
-    raise ConfigurationError("AXIOM_RESTORE_WITNESS must be dir:/path or s3:bucket/prefix")
+    where = where.strip()
+    try:
+        if kind == "dir" and where:
+            witness = FileWitness(where, worker_id)
+        elif kind == "s3" and where and not where.startswith("/"):
+            bucket, _, prefix = where.partition("/")
+            if s3_client is None:
+                import boto3
+                s3_client = boto3.client("s3", endpoint_url=settings.s3_endpoint_url, region_name=settings.s3_region)
+            witness = S3Witness(s3_client, bucket, prefix or "restore-witness", worker_id)
+        else:
+            raise ConfigurationError("AXIOM_RESTORE_WITNESS must be dir:/path or s3:bucket/prefix")
+        witness.probe()
+    except (WitnessUnavailable, OSError, ValueError) as exc:
+        raise ConfigurationError(f"restore witness unusable, refusing to start: {exc}") from exc
+    return witness
 
 
 def main() -> None:

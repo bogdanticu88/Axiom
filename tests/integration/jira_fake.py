@@ -43,6 +43,14 @@ class JiraStyleFake:
     def keys(self) -> list[str]:
         return [i["key"] for i in self.issues]
 
+    def set_status(self, key: str, name: str, category: str) -> None:
+        with self.lock:
+            next(i for i in self.issues if i["key"] == key)["status"] = (name, category)
+
+    def delete(self, key: str) -> None:
+        with self.lock:
+            self.issues = [i for i in self.issues if i["key"] != key]
+
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handle)
 
@@ -59,8 +67,9 @@ class JiraStyleFake:
             with self.lock:
                 for i in self.issues:
                     if i["key"] == key:
-                        return httpx.Response(200, json={"id": i["id"], "key": key,
-                                                         "fields": {"labels": i["labels"]}})
+                        return httpx.Response(200, json={"id": i["id"], "key": key, "fields": {
+                            "labels": i["labels"],
+                            "status": {"name": i["status"][0], "statusCategory": {"key": i["status"][1]}}}})
             return httpx.Response(404, json={"errorMessages": ["Issue does not exist"]})
         return httpx.Response(404)
 
@@ -100,7 +109,7 @@ class JiraStyleFake:
             n = len(self.issues) + 1
             key = f"{fields['project']['key']}-{n}"
             self.issues.append({"id": str(10000 + n), "key": key, "labels": labels, "summary": fields["summary"],
-                                "created": time.monotonic()})
+                                "created": time.monotonic(), "status": ("To Do", "new")})
             if idem_key:
                 self.idem[idem_key] = key
             lose = self.lose_ack > 0

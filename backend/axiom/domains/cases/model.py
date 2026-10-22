@@ -47,8 +47,8 @@ ALLOWED: dict[Workflow, frozenset[Workflow]] = {
     Workflow.RECEIVED: frozenset({Workflow.INVESTIGATING}),
     Workflow.INVESTIGATING: frozenset({Workflow.REVIEW}),
     Workflow.REVIEW: frozenset({Workflow.INVESTIGATING, Workflow.PLANNED, Workflow.CLOSED}),
-    Workflow.PLANNED: frozenset({Workflow.REMEDIATING}),
-    Workflow.REMEDIATING: frozenset({Workflow.VERIFYING}),
+    Workflow.PLANNED: frozenset({Workflow.REMEDIATING, Workflow.REVIEW}),         # R7 (approved 2026-10-22)
+    Workflow.REMEDIATING: frozenset({Workflow.VERIFYING, Workflow.REVIEW}),       # R7: only if no change deployed
     Workflow.VERIFYING: frozenset({Workflow.CLOSED, Workflow.REMEDIATING, Workflow.REVIEW}),
     Workflow.CLOSED: frozenset({Workflow.INVESTIGATING}),
 }

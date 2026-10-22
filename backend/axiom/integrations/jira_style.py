@@ -116,6 +116,19 @@ class JiraStyleTicketAdapter:
             return False
         return operation_label(operation_key) in (issue.get("fields", {}).get("labels") or [])
 
+    # Jira groups workflow statuses into the categories new / indeterminate / done (statusCategory.key).
+    _CATEGORY = {"new": "open", "indeterminate": "in_progress", "done": "done"}
+
+    def fetch_state(self, ref: str) -> tuple[str, str]:
+        """(status name, category) for inbound synchronisation. Category 'missing' when the issue is gone.
+        Raises httpx.HTTPError when the provider cannot be reached (try again later)."""
+        issue = self.client.get_issue(ref, ["status"])
+        if issue is None:
+            return "missing", "missing"
+        status = (issue.get("fields") or {}).get("status") or {}
+        key = (status.get("statusCategory") or {}).get("key")
+        return status.get("name", "unknown"), self._CATEGORY.get(key, "unknown")
+
     def create(self, operation_key: str, request: dict[str, Any], fencing_token: int) -> str:
         fields = {
             "project": {"key": request["project_key"]},

@@ -27,13 +27,23 @@ PLANNED = [
         ("defender_for_cloud", "scanner", "needs Azure subscription"),
         ("aws_security_hub", "scanner", "needs AWS account"),
         ("aws_resource_inventory", "context", "needs AWS account"),
-        ("jira", "workflow", "needs Jira site"),
-        ("servicenow", "workflow", "needs ServiceNow instance"),
-        ("github", "workflow", "needs GitHub organisation or app"),
         ("business_inventory_import", "context", "schema to be defined"),
         ("threat_intel_feeds", "intelligence", "feed selection and licence review pending"),
         ("witness", "evidence", "optional provider; platform runs without it"),
     ]
+]
+
+
+WORKFLOW = [
+    AdapterInfo("jira_style", "1", "workflow", ("rest-v3",), ("create_ticket", "lookup", "fetch_state"),
+                SupportLevel.FIXTURE_TESTED, "local fake only; never run against a Jira site; no deduplication, "
+                "search not read-after-write consistent (Atlassian docs)"),
+    AdapterInfo("servicenow", "1", "workflow", ("table-api",), ("create_ticket", "lookup", "fetch_state"),
+                SupportLevel.FIXTURE_TESTED, "local fake only; needs a ServiceNow instance; table, correlation field "
+                "and state mapping are per-instance assumptions"),
+    AdapterInfo("github_issues", "1", "workflow", ("rest-2022-11-28",), ("create_ticket", "lookup", "fetch_state"),
+                SupportLevel.FIXTURE_TESTED, "local fake only; needs a GitHub organisation or app; lookup scans recent "
+                "issues for a body marker"),
 ]
 
 
@@ -45,7 +55,7 @@ def parser(name: str) -> Parser:
 
 
 def catalogue() -> list[dict]:
-    rows = [p.info for p in PARSERS.values()] + PLANNED
+    rows = [p.info for p in PARSERS.values()] + WORKFLOW + PLANNED
     return [{"name": i.name, "kind": i.adapter_kind, "version": i.version, "formats": list(i.formats),
              "operations": list(i.operations), "support_level": i.support_level.value,
              "validation_notes": i.validation_notes} for i in rows]

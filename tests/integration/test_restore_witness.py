@@ -41,7 +41,11 @@ class Scratch:
         from axiom.provisioning import Provisioner
         prov = Provisioner(self.dsn("admin_cli"))
         boot = prov.create_tenant(prov.ensure_installation("shared"), f"r-{uuid.uuid4().hex[:6]}", "Restore drill")
-        self.tenant, self.system = boot.tenant_id, boot.system_principal_id
+        self.tenant, self.system, self.root = boot.tenant_id, boot.system_principal_id, boot.root_scope_id
+        provider = prov.ensure_identity_provider("https://idp.drill.invalid", "axiom-drill")
+        self.operator = prov.create_principal("drill operator", provider_id=provider, subject=f"op-{uuid.uuid4()}")
+        prov.add_membership(self.tenant, self.operator)
+        prov.bootstrap_role(self.tenant, self.operator, "policy_admin", self.root, "restore drill operator")
 
     def dsn(self, who: str) -> str:
         base = {"migrator": self.dbinfo.migrator_dsn, "app": self.dbinfo.app_dsn,
@@ -85,6 +89,10 @@ class Scratch:
     def ctx(self):
         from axiom.db import TenantContext
         return TenantContext(self.tenant, self.system, "workload", f"drill-{uuid.uuid4()}")
+
+    def operator_ctx(self):
+        from axiom.db import TenantContext
+        return TenantContext(self.tenant, self.operator, "human", f"drill-op-{uuid.uuid4()}")
 
     def enqueue_ticket(self, db: Database) -> uuid.UUID:
         ctx = self.ctx()
@@ -217,5 +225,79 @@ def test_witness_write_failure_means_nothing_is_sent(scratch, tmp_path):
             intent = conn.execute("SELECT state FROM axiom.effect_intents WHERE job_id = %s", (job_id,)).fetchone()
         assert job["state"] == "queued" and "witness volume unavailable" in job["last_error"]
         assert intent["state"] == "prepared"                     # never marked executing, so a retry is safe
+    finally:
+        db.close()
+
+
+def test_acknowledging_a_restore_does_not_authorise_replay(scratch, tmp_path):
+    """After a same-fingerprint rollback is acknowledged, the job carried across the restore still parks; only an
+    explicit reconciliation of that job lets it finish. Jobs created after the acknowledgement run normally."""
+    from axiom.access import Authorizer
+    from axiom.jobs import JobOperations
+    from axiom.provisioning import Provisioner
+    tickets = FileTickets(tmp_path / "t.jsonl", lookup_supported=False)
+    witness_dir = tmp_path / "witness"
+    db = scratch.app()
+    job_id = scratch.enqueue_ticket(db)
+    backup = scratch.dump()
+    Worker(db, [TicketHandler(tickets)], worker_id="w1", config=FAST, witness=FileWitness(witness_dir, "w1")).run_once()
+    db.close()
+    assert len(tickets.tickets()) == 1
+    scratch.restore_same_oid(backup)
+    Provisioner(scratch.dsn("admin_cli")).acknowledge_recovery(
+        "drill-operator", "restore acknowledged; carried jobs still need reconciliation", FileWitness(witness_dir, "op"))
+    db = scratch.app()
+    try:
+        w = Worker(db, [TicketHandler(tickets)], worker_id="w2", config=FAST, witness=FileWitness(witness_dir, "w2"))
+        w.run_once()
+        with db.tenant_tx(scratch.ctx()) as conn:
+            job = conn.execute("SELECT state, operator_reason FROM axiom.jobs WHERE id = %s", (job_id,)).fetchone()
+        assert job["state"] == "needs_operator" and "predates the latest recovery acknowledgement" in \
+            job["operator_reason"]
+        assert len(tickets.tickets()) == 1                           # acknowledgement did not authorise a replay
+        w.run_once()                                                 # nor does running again
+        assert len(tickets.tickets()) == 1
+        op = scratch.operator_ctx()
+        with db.tenant_tx(op) as conn:
+            JobOperations(conn, op, Authorizer(conn, op)).retry(job_id, "just try again")
+        w.run_once()                                                 # a plain retry is not a reconciliation
+        assert len(tickets.tickets()) == 1
+        with db.tenant_tx(op) as conn:
+            JobOperations(conn, op, Authorizer(conn, op)).resolve_effect(
+                job_id, resolution="adopt", rationale="TICKET-1 exists for this job", external_ref="TICKET-1")
+        w.run_once()                                                 # the re-queued job finishes from the adopted intent
+        with db.tenant_tx(scratch.ctx()) as conn:
+            assert conn.execute("SELECT state FROM axiom.jobs WHERE id = %s", (job_id,)).fetchone()["state"] == "succeeded"
+        new_job = scratch.enqueue_ticket(db)                         # created after the acknowledgement
+        w.run_once()
+        with db.tenant_tx(scratch.ctx()) as conn:
+            assert conn.execute("SELECT state FROM axiom.jobs WHERE id = %s", (new_job,)).fetchone()["state"] == \
+                "succeeded"
+        assert len(tickets.tickets()) == 2
+    finally:
+        db.close()
+
+
+def test_unreadable_witness_retries_instead_of_sending(scratch, tmp_path):
+    from axiom.jobs.witness import WitnessUnavailable
+    tickets = FileTickets(tmp_path / "t.jsonl", lookup_supported=False)
+
+    class Down(FileWitness):
+        def high_water(self):
+            raise WitnessUnavailable("storage unreachable")
+    db = scratch.app()
+    try:
+        job_id = scratch.enqueue_ticket(db)
+        handler = TicketHandler(tickets)
+        w = Worker(db, [handler], worker_id="w1", config=FAST, witness=Down(tmp_path / "w", "w1"))
+        with pytest.raises(WitnessUnavailable):
+            w.preflight()                                             # the worker's pass stops early
+        from axiom.jobs.core import JobContext
+        from axiom.jobs.effects import EffectGate
+        [(job, token)] = w.claim(scratch.ctx())
+        jc = JobContext(db, scratch.ctx(), job, token, "w1", Down(tmp_path / "w", "w1"))
+        out = EffectGate(jc).run(tickets, {"title": "x"}, lambda c: None)
+        assert type(out.step).__name__ == "Retry" and "witness unavailable" in out.step.error
+        assert tickets.tickets() == []
     finally:
         db.close()
