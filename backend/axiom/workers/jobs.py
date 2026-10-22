@@ -1,4 +1,4 @@
-"""Generic job worker (ADR 0006): ingestion runs, scheduled risk-expiry sweeps, and future job kinds.
+"""Generic job worker (ADR 0006): ingestion runs, action executions, scheduled risk-expiry sweeps.
 
   python -m axiom.workers.jobs --once
   python -m axiom.workers.jobs --interval 5
@@ -17,7 +17,9 @@ import time
 from ..api.app import build_object_store
 from ..config import Settings
 from ..db import Database
+from ..domains.actions.jobs import ActionExecuteHandler
 from ..domains.cases.jobs import KIND as RISK_SWEEP, RiskExpirySweepHandler
+from ..errors import ConfigurationError
 from ..domains.evidence.service import EvidenceService
 from ..ingestion.jobs import IngestionRunHandler
 from ..ingestion.pipeline import IngestionService
@@ -30,9 +32,30 @@ RISK_SWEEP_INTERVAL_SECONDS = 3600
 
 
 def build_worker(db: Database, ingestion: IngestionService, sync: SyncService, *, worker_id: str | None = None,
-                 config: WorkerConfig | None = None, risk_sweep_interval: int = RISK_SWEEP_INTERVAL_SECONDS) -> Worker:
-    return Worker(db, [IngestionRunHandler(ingestion, sync), RiskExpirySweepHandler()], worker_id=worker_id,
-                  config=config, schedules=[Schedule(RISK_SWEEP, 1, risk_sweep_interval)])
+                 config: WorkerConfig | None = None, risk_sweep_interval: int = RISK_SWEEP_INTERVAL_SECONDS,
+                 action_handler: ActionExecuteHandler | None = None, witness=None) -> Worker:
+    return Worker(db, [IngestionRunHandler(ingestion, sync), RiskExpirySweepHandler(),
+                       action_handler or ActionExecuteHandler()],
+                  worker_id=worker_id, config=config, schedules=[Schedule(RISK_SWEEP, 1, risk_sweep_interval)],
+                  witness=witness)
+
+
+def build_witness(settings: Settings, worker_id: str):
+    from ..jobs.witness import FileWitness, S3Witness
+    spec = settings.restore_witness
+    if not spec:
+        if settings.env == "production":
+            raise ConfigurationError("AXIOM_RESTORE_WITNESS is required in production (ADR 0010)")
+        return None
+    kind, _, where = spec.partition(":")
+    if kind == "dir":
+        return FileWitness(where, worker_id)
+    if kind == "s3":
+        import boto3
+        bucket, _, prefix = where.partition("/")
+        client = boto3.client("s3", endpoint_url=settings.s3_endpoint_url, region_name=settings.s3_region)
+        return S3Witness(client, bucket, prefix or "restore-witness", worker_id)
+    raise ConfigurationError("AXIOM_RESTORE_WITNESS must be dir:/path or s3:bucket/prefix")
 
 
 def main() -> None:
@@ -48,8 +71,12 @@ def main() -> None:
     store = build_object_store(settings)
     ingestion = IngestionService(db, store)
     sync = SyncService(db, ingestion, EvidenceService(db, store, max_bytes=settings.evidence_max_bytes))
-    worker = build_worker(db, ingestion, sync, worker_id=f"{socket.gethostname()}:{os.getpid()}")
+    worker_id = f"{socket.gethostname()}:{os.getpid()}"
+    worker = build_worker(db, ingestion, sync, worker_id=worker_id, witness=build_witness(settings, worker_id))
     worker.preflight()      # fail fast at start-up, not only on the first pass
+    if settings.worker_metrics_port:
+        from ..jobs.metrics import serve
+        serve(worker, settings.worker_metrics_port)
     while True:
         try:
             worker.run_once()

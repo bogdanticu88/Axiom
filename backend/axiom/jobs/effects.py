@@ -1,19 +1,32 @@
-"""Effect gate: the only way a job step may cause an external effect (Plan 7, B07, B08, ADR 0006).
+"""Effect gate: the only way a job step may cause an external effect (Plan S 7, B07, B08, ADR 0006, ADR 0010).
 
-Protocol for one effect identified by a stable ``operation_key`` (derived from the job and the exact request):
+One effect is identified by a stable ``operation_key``. The gate:
 
-1. Fenced check: the worker still holds the lease, the job is not cancelled, and ``revalidate`` (approval,
-   permission, resource preconditions) still passes, all in one transaction with the intent row.
-2. Intent: create or load the intent for the operation key. Terminal intents return their recorded outcome.
-3. Restore detection: an intent written under a different database fingerprint, or a fingerprint nobody has
-   acknowledged, means the database was restored. Integrations without reliable lookup then need an operator.
-4. Lookup before create (every attempt, not only after failures) when the integration supports it, so effects
-   performed after a backup was taken are adopted rather than repeated.
-5. Mark executing (fenced), call the integration with the operation key as idempotency key and the lease token
-   as fencing token, then record succeeded / failed / unknown / definitely-not-applied.
+1. In a fenced transaction: checks the lease, cancellation and ``revalidate`` (current authority, approval,
+   preconditions), loads or creates the intent row, and detects a restored database.
+2. Decides whether another create attempt is safe. That depends on what the integration can do:
 
-No exactly-once claim: this records intent and reconciles; integrations that can neither deduplicate nor be
-queried end in ``needs_operator`` instead of being retried blindly.
+   * ``dedupe``: ``idempotency_key`` (the provider returns the original object for a repeated key) or
+     ``unique_external_id`` (the provider refuses a second object carrying the operation key) make a repeated create
+     harmless; ``none`` does not.
+   * ``lookup``: ``strong`` (read-after-write consistent), ``eventual`` (e.g. a search index), or ``none``.
+     A lookup *hit* is proof and is adopted. A lookup *miss* is never proof that no effect exists: the index may be
+     stale, or a stale worker may still be about to send its request.
+   * ``provider_fencing``: the provider rejects requests carrying a lower fencing token than one it has seen.
+
+   A first attempt (intent ``prepared``) may create. Once an attempt may have reached the provider (intent
+   ``executing`` or ``unknown``, or the database was restored), the gate creates again **only** if the provider
+   deduplicates or fences. Otherwise a lookup hit is adopted and a miss parks the job for an operator.
+3. Marks the intent ``executing`` in a fenced transaction that re-reads the intent under lock, so two workers that
+   both saw ``prepared`` cannot both send a first attempt. The same transaction draws an effect watermark, which an
+   optional external ``RestoreWitness`` records before the request is sent (restore detection, ADR 0010).
+4. Calls the provider with the operation key as idempotency key / external identifier and the lease token as
+   fencing token, then records succeeded / failed / unknown / definitely-not-applied.
+
+Guarantees and limits (ADR 0010): the platform sends at most one first attempt per operation key, and never sends a
+repeat to a provider that cannot deduplicate or fence. A worker that loses its lease *after* step 3 can still deliver
+its request; discarding its result afterwards cannot undo that. Only provider deduplication or fencing stops that
+duplicate; without them the platform detects the uncertainty and requires reconciliation instead of creating again.
 """
 from __future__ import annotations
 
@@ -27,6 +40,7 @@ from typing import Any, Protocol
 import psycopg
 
 from .core import Done, Fail, JobContext, NeedsOperator, Retry, StaleLease, StepResult, event
+from .witness import check as witness_check
 
 
 class DefinitelyNotApplied(Exception):
@@ -41,13 +55,36 @@ class UnknownOutcome(Exception):
     """The request may or may not have taken effect (timeout after send, connection reset, ambiguous 5xx)."""
 
 
+class AlreadyExists(Exception):
+    """A unique-external-id provider refused a second object; ``ref`` identifies the existing one."""
+
+    def __init__(self, ref: str):
+        super().__init__(ref)
+        self.ref = ref
+
+
 class EffectAdapter(Protocol):
     integration: str
-    lookup_supported: bool
+    dedupe: str            # 'none' | 'idempotency_key' | 'unique_external_id'
+    lookup: str            # 'none' | 'strong' | 'eventual'
+    provider_fencing: bool
 
-    def lookup(self, operation_key: str) -> str | None: ...
+    def find(self, operation_key: str) -> str | None: ...
 
     def create(self, operation_key: str, request: dict[str, Any], fencing_token: int) -> str: ...
+
+
+def capabilities(adapter) -> tuple[str, str, bool]:
+    """Read capabilities; older adapters that only declare ``lookup_supported`` mean strong lookup, no dedupe."""
+    lookup = getattr(adapter, "lookup", None)
+    if not isinstance(lookup, str):
+        lookup = "strong" if getattr(adapter, "lookup_supported", False) else "none"
+    return getattr(adapter, "dedupe", "none"), lookup, bool(getattr(adapter, "provider_fencing", False))
+
+
+def _find(adapter, key: str) -> str | None:
+    fn = getattr(adapter, "find", None) or getattr(adapter, "lookup")
+    return fn(key)
 
 
 def operation_key(job_id, request: dict[str, Any]) -> str:
@@ -58,15 +95,25 @@ def canonical(request: dict[str, Any]) -> str:
     return json.dumps(request, sort_keys=True, separators=(",", ":"), default=str)
 
 
+class RestoreWitness(Protocol):
+    """Records effect watermarks outside the database (ADR 0010)."""
+
+    def advance(self, watermark: int) -> None: ...
+
+    def high_water(self) -> int | None: ...
+
+
 @dataclass
 class EffectOutcome:
     step: StepResult
     external_ref: str | None
+    how: str | None = None        # 'created' | 'adopted_by_lookup' | 'adopted_by_operator' | 'recorded'
 
 
 class EffectGate:
-    def __init__(self, jc: JobContext):
+    def __init__(self, jc: JobContext, witness: RestoreWitness | None = None):
         self.jc = jc
+        self.witness = witness if witness is not None else jc.witness
 
     def _intent(self, conn: psycopg.Connection, key: str) -> dict | None:
         return conn.execute("SELECT * FROM axiom.effect_intents WHERE operation_key = %s FOR UPDATE", (key,)).fetchone()
@@ -76,12 +123,19 @@ class EffectGate:
         conn.execute(f"UPDATE axiom.effect_intents SET {sets}, updated_at = clock_timestamp(), "
                      f"record_version = record_version + 1 WHERE id = %(id)s", {**fields, "id": intent_id})
 
+    def _park(self, conn, key: str, reason: str) -> EffectOutcome:
+        event(conn, self.jc.ctx, self.jc.job["id"], "effect_needs_operator", lease_token=self.jc.lease_token,
+              detail={"reason": reason, "operation_key": key})
+        return EffectOutcome(NeedsOperator(reason), None)
+
     def run(self, adapter: EffectAdapter, request: dict[str, Any],
-            revalidate: Callable[[psycopg.Connection], str | None]) -> EffectOutcome:
+            revalidate: Callable[[psycopg.Connection], str | None], *, key: str | None = None) -> EffectOutcome:
         jc, ctx = self.jc, self.jc.ctx
-        key = operation_key(jc.job["id"], request)
+        key = key or operation_key(jc.job["id"], request)
         digest = hashlib.sha256(canonical(request).encode()).hexdigest()
-        # 1-3: fenced checks, intent, restore detection
+        dedupe, lookup, fencing = capabilities(adapter)
+        repeat_safe = dedupe != "none" or fencing
+        # ---- 1: fenced checks, intent, restore detection
         with jc.db.tenant_tx(ctx) as conn:
             job = jc.fenced(conn)
             if job["cancel_requested"]:
@@ -94,37 +148,43 @@ class EffectGate:
             fingerprint = conn.execute("SELECT axiom.db_fingerprint() AS f").fetchone()["f"]
             acknowledged = conn.execute("SELECT 1 FROM axiom.recovery_acknowledgements WHERE fingerprint = %s",
                                         (fingerprint,)).fetchone() is not None
+            behind = witness_check(conn, self.witness)
+            if behind:
+                return self._park(conn, key, behind)
             intent = self._intent(conn, key)
             if intent is None:
-                intent_id = uuid.uuid4()
-                conn.execute(
+                # ON CONFLICT: a concurrent job may create the same intent; we then wait for it and read it
+                created = conn.execute(
                     """INSERT INTO axiom.effect_intents(tenant_id, id, job_id, integration, operation_key, request_digest,
-                           lookup_supported, state, lease_token, db_fingerprint)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, 'prepared', %s, %s)""",
-                    (ctx.tenant_id, intent_id, job["id"], adapter.integration, key, digest, adapter.lookup_supported,
-                     jc.lease_token, fingerprint))
-                intent = {"id": intent_id, "state": "prepared", "db_fingerprint": fingerprint, "external_ref": None}
-                event(conn, ctx, job["id"], "intent_prepared", lease_token=jc.lease_token,
-                      detail={"operation_key": key, "integration": adapter.integration})
+                           lookup_supported, state, lease_token, db_fingerprint, dedupe, lookup, provider_fencing)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, 'prepared', %s, %s, %s, %s, %s)
+                       ON CONFLICT (tenant_id, operation_key) DO NOTHING RETURNING id""",
+                    (ctx.tenant_id, uuid.uuid4(), job["id"], adapter.integration, key, digest, lookup != "none",
+                     jc.lease_token, fingerprint, dedupe, lookup, fencing)).fetchone()
+                if created:
+                    event(conn, ctx, job["id"], "intent_prepared", lease_token=jc.lease_token,
+                          detail={"operation_key": key, "integration": adapter.integration, "dedupe": dedupe,
+                                  "lookup": lookup, "provider_fencing": fencing})
+                intent = self._intent(conn, key)
+            if intent["request_digest"] != digest:
+                return self._park(conn, key, "operation key reused with a different request")
             if intent["state"] in ("succeeded", "reconciled"):
                 return EffectOutcome(Done({"external_ref": intent["external_ref"], "adopted": True}),
-                                     intent["external_ref"])
+                                     intent["external_ref"], "recorded")
             if intent["state"] in ("failed", "abandoned"):
                 return EffectOutcome(Fail(f"effect previously {intent['state']}"), None)
             restored = (intent["db_fingerprint"] != fingerprint or job["db_fingerprint"] != fingerprint
                         or not acknowledged)
-            uncertain = intent["state"] in ("executing", "unknown")
-            if not adapter.lookup_supported and (restored or uncertain):
-                reason = ("database restore detected (fingerprint changed or unacknowledged); reconcile and "
-                          "acknowledge before effects on integrations without lookup") if restored else \
-                         "previous attempt's outcome is unknown and the integration cannot be queried"
-                event(conn, ctx, job["id"], "effect_needs_operator", lease_token=jc.lease_token,
-                      detail={"reason": reason, "operation_key": key})
-                return EffectOutcome(NeedsOperator(reason), None)
-        # 4: lookup before create
-        if adapter.lookup_supported:
+            uncertain = restored or intent["state"] in ("executing", "unknown")
+            if uncertain and lookup == "none" and not repeat_safe:
+                return self._park(conn, key, (
+                    "database restore detected (fingerprint changed or unacknowledged); reconcile and acknowledge "
+                    "before effects on integrations without lookup") if restored else
+                    "previous attempt's outcome is unknown and the integration can neither be queried nor deduplicate")
+        # ---- 2: lookup before create (a hit is proof; a miss is not)
+        if lookup != "none":
             try:
-                found = adapter.lookup(key)
+                found = _find(adapter, key)
             except Exception as exc:  # noqa: BLE001 - cannot establish state: retry later, do not create
                 return EffectOutcome(Retry(f"lookup failed: {type(exc).__name__}: {exc}"), None)
             if found:
@@ -135,20 +195,43 @@ class EffectGate:
                                      resolution="adopted by lookup")
                     event(conn, ctx, jc.job["id"], "effect_adopted", lease_token=jc.lease_token,
                           detail={"external_ref": found})
-                return EffectOutcome(Done({"external_ref": found, "adopted": True}), found)
-        # 5: execute
+                return EffectOutcome(Done({"external_ref": found, "adopted": True}), found, "adopted_by_lookup")
+        # ---- 3: mark executing under lock, re-reading state (closes the double-first-attempt race)
         with jc.db.tenant_tx(ctx) as conn:
             job = jc.fenced(conn)
             if job["cancel_requested"]:
                 return EffectOutcome(Fail("cancelled before the effect"), None)
             denial = revalidate(conn)     # re-check at the effect boundary (A07)
             if denial:
+                event(conn, ctx, job["id"], "effect_denied", lease_token=jc.lease_token, detail={"reason": denial})
                 return EffectOutcome(Fail(f"denied before effect: {denial}"), None)
             current = self._intent(conn, key)
+            if current["state"] in ("succeeded", "reconciled"):
+                return EffectOutcome(Done({"external_ref": current["external_ref"], "adopted": True}),
+                                     current["external_ref"], "recorded")
+            if current["state"] in ("failed", "abandoned"):
+                return EffectOutcome(Fail(f"effect previously {current['state']}"), None)
+            if (uncertain or current["state"] != "prepared") and not repeat_safe:
+                why = "lookup found nothing" if lookup != "none" else "the integration cannot be queried"
+                return self._park(conn, key, (
+                    f"an earlier attempt may have reached the provider and {why}; the provider cannot deduplicate, "
+                    "so another create could duplicate the effect. Reconcile by hand"))
+            watermark = conn.execute("SELECT nextval('axiom.effect_watermark_seq') AS n").fetchone()["n"]
+            if self.witness is not None:
+                # recorded outside the database before the request can be sent; a failure here rolls back
+                # the transaction and nothing is sent
+                self.witness.advance(watermark)
             self._update(conn, current["id"], state="executing", lease_token=jc.lease_token,
-                         db_fingerprint=fingerprint, attempts=current.get("attempts", 0) + 1)
+                         db_fingerprint=fingerprint, attempts=current["attempts"] + 1, effect_watermark=watermark)
+            event(conn, ctx, job["id"], "effect_attempt", lease_token=jc.lease_token,
+                  detail={"attempt": current["attempts"] + 1, "watermark": watermark,
+                          "repeat": current["state"] != "prepared"})
+        # ---- 4: the provider call (the unavoidable window: a lease lost from here on cannot stop this request)
         try:
             ref = adapter.create(key, request, jc.lease_token)
+        except AlreadyExists as exc:
+            self._record(key, "reconciled", exc.ref, None, resolution="provider reported the existing object")
+            return EffectOutcome(Done({"external_ref": exc.ref, "adopted": True}), exc.ref, "adopted_by_lookup")
         except DefinitelyNotApplied as exc:
             self._record(key, "prepared", None, str(exc))
             return EffectOutcome(Retry(f"not applied: {exc}"), None)
@@ -157,27 +240,38 @@ class EffectGate:
             return EffectOutcome(Fail(f"integration rejected the request: {exc}"), None)
         except Exception as exc:  # noqa: BLE001 - UnknownOutcome and anything unexpected after the call
             self._record(key, "unknown", None, f"{type(exc).__name__}: {exc}")
-            if adapter.lookup_supported:
-                return EffectOutcome(Retry(f"outcome unknown, will reconcile by lookup: {exc}"), None)
+            if repeat_safe or lookup != "none":
+                return EffectOutcome(Retry(f"outcome unknown, will reconcile: {exc}"), None)
             return EffectOutcome(NeedsOperator(f"outcome unknown and integration cannot be queried: {exc}"), None)
         self._record(key, "succeeded", ref, None)
-        return EffectOutcome(Done({"external_ref": ref, "adopted": False}), ref)
+        return EffectOutcome(Done({"external_ref": ref, "adopted": False}), ref, "created")
 
-    def _record(self, key: str, state: str, ref: str | None, error: str | None) -> None:
-        """Record the observed outcome. This is a fact about the external world, so it is written even if the
-        lease was lost meanwhile; the job's own state transition stays fenced in the worker."""
+    def _record(self, key: str, state: str, ref: str | None, error: str | None, *, resolution: str | None = None
+                ) -> None:
+        """Record the observed outcome. Success is a fact about the external world and is written even if the lease
+        was lost meanwhile; 'definitely not applied' only resets the intent if this attempt is still the latest."""
         jc = self.jc
         with jc.db.tenant_tx(jc.ctx) as conn:
             intent = self._intent(conn, key)
             if intent["state"] in ("succeeded", "reconciled", "failed", "abandoned"):
+                if ref and intent["external_ref"] != ref:
+                    event(conn, jc.ctx, jc.job["id"], "effect_conflicting_outcome", lease_token=jc.lease_token,
+                          detail={"recorded": intent["external_ref"], "observed": ref})
                 return
+            if state in ("prepared", "unknown") and intent["lease_token"] != jc.lease_token:
+                event(conn, jc.ctx, jc.job["id"], f"effect_{state}_from_stale_attempt", lease_token=jc.lease_token,
+                      detail={"error": error})
+                if state == "prepared":
+                    return
             fields: dict[str, Any] = {"state": state, "last_error": error}
             if ref:
                 fields["external_ref"] = ref
+            if resolution:
+                fields["resolution"] = resolution
             self._update(conn, intent["id"], **fields)
             event(conn, jc.ctx, jc.job["id"], f"effect_{state}", lease_token=jc.lease_token,
                   detail={"external_ref": ref, "error": error})
 
 
 __all__ = ["EffectGate", "EffectAdapter", "EffectOutcome", "DefinitelyNotApplied", "PermanentFailure",
-           "UnknownOutcome", "operation_key", "StaleLease"]
+           "UnknownOutcome", "AlreadyExists", "RestoreWitness", "operation_key", "StaleLease", "capabilities"]

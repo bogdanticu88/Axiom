@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     evidence_max_bytes: int = 512 * 1024 * 1024
 
+    # Job worker (ADR 0006, ADR 0010). The restore witness must be outside the database's backup domain:
+    # "dir:/path" (separate volume) or "s3:bucket/prefix" (separate bucket/account; uses the S3 endpoint above).
+    restore_witness: str | None = None
+    worker_metrics_port: int | None = None
+
     @cached_property
     def trusted_issuers(self) -> list[TrustedIssuer]:
         raw = json.loads(self.trusted_issuers_json)

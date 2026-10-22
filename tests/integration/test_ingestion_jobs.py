@@ -83,5 +83,5 @@ def test_risk_expiry_sweep_is_scheduled_once_per_interval_per_tenant(world, run,
     w2.run_once(only_tenants={world.a.id})
     sys_a = ctx_for("system")
     sweeps = jobs_for(run, sys_a, RISK_SWEEP)
-    assert len(sweeps) == 1 and sweeps[0]["state"] == "succeeded" and sweeps[0]["result"] == {"expired": []}
+    assert len(sweeps) == 1 and sweeps[0]["state"] == "succeeded" and sweeps[0]["result"] == {"expired": [], "lapsed": [], "reassessment_notices": []}
     assert jobs_for(run, ctx_for("system", "b"), RISK_SWEEP) == []          # tenant b was not processed

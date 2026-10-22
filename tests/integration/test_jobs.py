@@ -447,3 +447,24 @@ def test_restore_is_detected_and_no_lookup_effects_park(db, world, sys_ctx, tmp_
     finally:
         with psycopg.connect(admin.replace(f"dbname={dbinfo.name}", "dbname=postgres"), autocommit=True) as c:
             c.execute(f'DROP DATABASE IF EXISTS "{restored}" WITH (FORCE)')
+
+
+def test_worker_metrics_endpoint_serves_prometheus_text(db, world, sys_ctx):
+    import socket
+    import urllib.request
+
+    from axiom.jobs.metrics import serve
+    put(db, sys_ctx, kind="test.scripted")
+    w = Worker(db, [ScriptedHandler([Done()])], worker_id="metrics-test", config=FAST)
+    w.run_once(only_tenants={world.a.id})
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    server = serve(w, port, host="127.0.0.1")
+    try:
+        text = urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=10).read().decode()
+    finally:
+        server.shutdown()
+    assert f'axiom_jobs{{tenant="{world.a.id}",kind="test.scripted",state="succeeded"}}' in text
+    assert 'axiom_worker_total{worker="metrics-test",counter="executed"} 1' in text
+    assert "axiom_jobs_oldest_due_seconds" in text

@@ -1,0 +1,38 @@
+# Hosted CI: provision tools, then run scripts/ci/run.sh (the same pipeline developers run locally).
+# Status: written and the script executed locally; this workflow has NOT run on GitHub (nothing is pushed).
+# Before enabling: pin the actions below to full commit SHAs (ADR 0007) after checking them against the
+# official repositories; tags are used here only because SHAs were not verified in this environment.
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install uv and PostgreSQL 16 server
+        run: |
+          python -m pip install "uv==0.11.32"
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16
+          sudo systemctl stop postgresql || true
+      - name: Run the pipeline
+        run: sudo -E env "PATH=$PATH" scripts/ci/run.sh
+      - name: Keep logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: .var/ci/
+          retention-days: 14

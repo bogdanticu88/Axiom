@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 from psycopg.types.json import Jsonb
 
 from ..db import Database, TenantContext
+from .witness import check as witness_check
 from .core import Done, Fail, Handler, JobContext, NeedsOperator, Retry, StaleLease, Wait, enqueue, event
 
 log = logging.getLogger(__name__)
@@ -53,8 +54,11 @@ class WorkerConfig:
 
 class Worker:
     def __init__(self, db: Database, handlers: list[Handler], *, worker_id: str | None = None,
-                 config: WorkerConfig | None = None, schedules: list[Schedule] | None = None):
+                 config: WorkerConfig | None = None, schedules: list[Schedule] | None = None, witness=None):
         self.db = db
+        self.witness = witness
+        self.counters: dict[str, int] = {"claimed": 0, "executed": 0, "stale_results_discarded": 0,
+                                         "dead_lettered_poison": 0, "handler_errors": 0}
         self.schedules = list(schedules or [])
         self.handlers = {h.kind: h for h in handlers}
         self.worker_id = worker_id or f"worker-{uuid.uuid4().hex[:8]}"
@@ -73,6 +77,11 @@ class Worker:
             row = conn.execute(
                 """SELECT axiom.db_fingerprint() AS f, EXISTS (SELECT 1 FROM axiom.recovery_acknowledgements
                                                             WHERE fingerprint = axiom.db_fingerprint()) AS ok""").fetchone()
+        with self.db.unbound_tx() as conn:
+            behind = witness_check(conn, self.witness)
+        if behind:
+            raise RestoreNotAcknowledged(behind + ". Reconcile external effects, then run: python -m "
+                                         "axiom.provisioning acknowledge-recovery --witness-dir/--witness-s3 ...")
         if not row["ok"]:
             raise RestoreNotAcknowledged(
                 f"database fingerprint {row['f']} has not been acknowledged; this looks like a restored or copied "
@@ -142,6 +151,7 @@ class Worker:
                                   last_error = %s, lease_owner = NULL, lease_expires_at = NULL,
                                   updated_at = clock_timestamp(), record_version = record_version + 1 WHERE id = %s""",
                         (f"poison: claimed {job['claims'] + 1} times without finishing", job["id"]))
+                    self.counters["dead_lettered_poison"] += 1
                     event(conn, ctx, job["id"], "dead_lettered_poison", worker=self.worker_id,
                           detail={"claims": job["claims"] + 1})
                     continue
@@ -156,6 +166,7 @@ class Worker:
                 event(conn, ctx, job["id"], "claimed", lease_token=updated["lease_token"], worker=self.worker_id,
                       detail={"claims": updated["claims"], "reclaimed_after_expiry": job["state"] == "running"})
                 claimed.append((updated, updated["lease_token"]))
+                self.counters["claimed"] += 1
         return claimed
 
     # ------------------------------------------------------------------------ execute
@@ -179,7 +190,7 @@ class Worker:
 
     def execute(self, ctx: TenantContext, job: dict, token: int) -> None:
         handler = self.handlers[job["kind"]]
-        jc = JobContext(self.db, ctx, job, token, self.worker_id)
+        jc = JobContext(self.db, ctx, job, token, self.worker_id, self.witness)
         try:
             with self.db.tenant_tx(ctx) as conn:
                 jc.fenced(conn)
@@ -198,10 +209,12 @@ class Worker:
                 return
             except Exception as exc:  # noqa: BLE001 - unexpected handler errors are retried with backoff
                 log.exception("job step raised", extra={"job_id": str(job["id"])})
+                self.counters["handler_errors"] += 1
                 outcome = Retry(f"{type(exc).__name__}: {exc}")
         finally:
             stop.set()
             beat.join(timeout=5)
+        self.counters["executed"] += 1
         self._finish(ctx, job, token, outcome)
 
     def _record_stale(self, ctx, job, token, why: str) -> None:
@@ -216,6 +229,7 @@ class Worker:
                 "SELECT * FROM axiom.jobs WHERE id = %s AND lease_token = %s AND state = 'running' FOR UPDATE",
                 (job["id"], token)).fetchone()
             if current is None:
+                self.counters["stale_results_discarded"] += 1
                 event(conn, ctx, job["id"], "stale_result_discarded", lease_token=token, worker=self.worker_id,
                       detail={"outcome": type(outcome).__name__})
                 return

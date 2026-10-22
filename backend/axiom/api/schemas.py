@@ -165,7 +165,7 @@ class RequestImport(Body):
 
 
 class CreateConnection(Body):
-    adapter: Literal["tenable_vm", "azure_resource_graph"]
+    adapter: Literal["tenable_vm", "azure_resource_graph", "jira_style"]
     scope_id: UUID
     display_name: str = Field(min_length=1, max_length=200)
     base_url: str | None = Field(default=None, max_length=500)
@@ -177,3 +177,59 @@ class ResolveCandidate(Body):
     expected_version: int = Field(ge=0)
     outcome: Literal["confirmed_same", "confirmed_distinct", "dismissed"]
     rationale: str = Field(min_length=1, max_length=5000)
+
+
+# ---------------------------------------------------------------- actions, risk requests, job operations
+class CreateProposal(Body):
+    case_id: UUID
+    effect_class: str = Field(min_length=1, max_length=100)
+    connection_id: UUID
+    payload: dict
+    verification_criteria: str = Field(min_length=1, max_length=5000)
+    rollback_guidance: str | None = Field(default=None, max_length=5000)
+    expires_at: datetime
+
+
+class ReviseProposal(Body):
+    expected_version: int = Field(ge=1)
+    payload: dict
+    verification_criteria: str = Field(min_length=1, max_length=5000)
+    rollback_guidance: str | None = Field(default=None, max_length=5000)
+    expires_at: datetime
+
+
+class Decide(Body):
+    decision: Literal["approved", "rejected"]
+    rationale: str = Field(min_length=1, max_length=10000)
+    valid_until: datetime | None = None
+    max_uses: int = Field(default=1, ge=1, le=100)
+
+
+class Reason(Body):
+    reason: str = Field(min_length=1, max_length=5000)
+
+
+class RequestExecution(Body):
+    approval_id: UUID
+
+
+class Resolve(Body):
+    resolution: Literal["adopt", "not_applied", "abandon"]
+    rationale: str = Field(min_length=1, max_length=5000)
+    external_ref: str | None = Field(default=None, max_length=200)
+
+
+class RiskRequest(Body):
+    expected_version: int = Field(ge=0)
+    expires_at: datetime
+    rationale: str = Field(min_length=1, max_length=10000)
+    compensating_controls: str | None = Field(default=None, max_length=10000)
+
+
+class Rationale(Body):
+    rationale: str = Field(min_length=1, max_length=10000)
+
+
+class JobRetry(Body):
+    rationale: str = Field(min_length=1, max_length=5000)
+    extra_attempts: int = Field(default=3, ge=1, le=10)

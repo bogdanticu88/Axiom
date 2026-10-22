@@ -65,6 +65,7 @@ class JobContext:
     job: dict
     lease_token: int
     worker_id: str
+    witness: Any = None     # external restore witness (axiom.jobs.witness), passed to the effect gate
 
     def fenced(self, conn: psycopg.Connection) -> dict:
         """Lock the job row and verify this worker still holds the lease. Call inside a transaction."""
@@ -119,11 +120,19 @@ def event(conn: psycopg.Connection, ctx: TenantContext, job_id: UUID, name: str,
 class JobOperations:
     """Human operations on jobs: inspect, cancel, resolve parked effects, migrate handler versions."""
 
-    def __init__(self, conn: psycopg.Connection, ctx: TenantContext, authz: Authorizer):
+    def __init__(self, conn: psycopg.Connection, ctx: TenantContext, authz: Authorizer, *,
+                 permission: str = "job.operate", scope_id: UUID | None = None):
+        """``permission``/``scope_id`` let a domain (e.g. action reconciliation) authorise an operator action with
+        its own narrower permission at the resource's scope instead of tenant-wide ``job.operate``."""
         self.conn, self.ctx, self.authz = conn, ctx, authz
+        self.operate_permission = permission
+        self.operate_scope = scope_id
 
     def _root(self) -> UUID:
         return self.conn.execute("SELECT id FROM axiom.scopes WHERE kind = 'tenant_root'").fetchone()["id"]
+
+    def _operate(self):
+        return self.authz.require(self.operate_permission, self.operate_scope or self._root())
 
     def _job(self, job_id: UUID) -> dict:
         row = self.conn.execute("SELECT * FROM axiom.jobs WHERE id = %s FOR UPDATE", (job_id,)).fetchone()
@@ -141,6 +150,51 @@ class JobOperations:
             "SELECT * FROM axiom.effect_intents WHERE job_id = %s ORDER BY created_at", (job_id,)))
         return job
 
+    def list(self, *, state: str | None = None, kind: str | None = None, limit: int = 100) -> list[dict]:
+        self.authz.require("job.read", self._root())
+        return list(self.conn.execute(
+            """SELECT id, kind, handler_version, state, attempts, max_attempts, claims, max_claims, operator_retries,
+                      due_at, wait_reason, last_error, operator_reason, aggregate_type, aggregate_id, created_at,
+                      updated_at, finished_at
+                 FROM axiom.jobs WHERE (%(state)s::text IS NULL OR state = %(state)s)
+                  AND (%(kind)s::text IS NULL OR kind = %(kind)s)
+                ORDER BY updated_at DESC LIMIT %(limit)s""", {"state": state, "kind": kind, "limit": limit}))
+
+    def retry(self, job_id: UUID, rationale: str, *, extra_attempts: int = 3) -> dict:
+        """Operator retry. Dead-lettered and failed jobs go back to the queue with a larger budget; a parked job
+        (needs_operator) is re-run as is, so its effect gate decides again from the recorded intent. Approvals and
+        reservations are never changed here."""
+        authority = self._operate()
+        if not rationale.strip():
+            raise ValidationFailed("a rationale is required")
+        if not 1 <= extra_attempts <= 10:
+            raise ValidationFailed("extra_attempts must be 1 to 10")
+        job = self._job(job_id)
+        if job["state"] in ("dead_lettered", "failed"):
+            row = self.conn.execute(
+                """UPDATE axiom.jobs SET state = 'queued', operator_retries = operator_retries + 1, due_at = clock_timestamp(),
+                          finished_at = NULL, operator_reason = NULL, lease_owner = NULL, lease_expires_at = NULL,
+                          max_attempts = LEAST(100, GREATEST(max_attempts, attempts + %s)),
+                          max_claims = LEAST(1000, GREATEST(max_claims, claims + %s)),
+                          updated_at = clock_timestamp(), record_version = record_version + 1
+                    WHERE id = %s RETURNING *""", (extra_attempts, extra_attempts * 2, job_id)).fetchone()
+        elif job["state"] == "needs_operator":
+            row = self.conn.execute(
+                """UPDATE axiom.jobs SET state = 'queued', due_at = clock_timestamp(), operator_reason = NULL,
+                          updated_at = clock_timestamp(), record_version = record_version + 1
+                    WHERE id = %s RETURNING *""", (job_id,)).fetchone()
+        else:
+            raise Conflict(f"a {job['state']} job cannot be retried", code="invalid_state")
+        event(self.conn, self.ctx, job_id, "operator_retry", detail={"rationale": rationale, "from": job["state"]})
+        audit.record(self.conn, self.ctx, action="job.retry", resource_type="job", resource_id=job_id,
+                     detail={"rationale": rationale, "from": job["state"], "authority": authority.as_json()})
+        return row
+
+    def metrics(self) -> dict:
+        """Tenant-level runner metrics (see also axiom.jobs.metrics for the worker's Prometheus endpoint)."""
+        self.authz.require("job.read", self._root())
+        return collect(self.conn)
+
     def list_attention(self, limit: int = 100) -> list[dict]:
         self.authz.require("job.read", self._root())
         return list(self.conn.execute(
@@ -148,7 +202,7 @@ class JobOperations:
                 WHERE state IN ('needs_operator', 'dead_lettered') ORDER BY updated_at DESC LIMIT %s""", (limit,)))
 
     def request_cancel(self, job_id: UUID, reason: str) -> dict:
-        authority = self.authz.require("job.operate", self._root())
+        authority = self._operate()
         job = self._job(job_id)
         if job["state"] in TERMINAL:
             raise Conflict("job already finished", code="job_finished")
@@ -173,7 +227,7 @@ class JobOperations:
         'adopt' records the external object the operator found; 'not_applied' lets the job retry;
         'abandon' fails the job without an effect.
         """
-        authority = self.authz.require("job.operate", self._root())
+        authority = self._operate()
         if resolution not in ("adopt", "not_applied", "abandon"):
             raise ValidationFailed("resolution must be adopt, not_applied or abandon")
         if not rationale.strip():
@@ -226,7 +280,7 @@ class JobOperations:
                 GROUP BY kind, handler_version, state ORDER BY kind, handler_version""", (list(TERMINAL),)))
 
     def migrate_version(self, job_id: UUID, to_version: int, rationale: str) -> dict:
-        authority = self.authz.require("job.operate", self._root())
+        authority = self._operate()
         job = self._job(job_id)
         if job["state"] in TERMINAL or job["state"] == "running":
             raise Conflict("only queued, waiting or parked jobs can be migrated", code="invalid_state")
@@ -238,3 +292,24 @@ class JobOperations:
         audit.record(self.conn, self.ctx, action="job.migrate_version", resource_type="job", resource_id=job_id,
                      detail={"from": job["handler_version"], "to": to_version, "authority": authority.as_json()})
         return row
+
+
+def collect(conn: psycopg.Connection) -> dict:
+    """Runner metrics for the tenant bound to ``conn`` (RLS scopes every query)."""
+    by_state = list(conn.execute(
+        "SELECT kind, state, count(*) AS n FROM axiom.jobs GROUP BY kind, state ORDER BY kind, state"))
+    oldest = conn.execute(
+        """SELECT EXTRACT(EPOCH FROM clock_timestamp() - min(due_at)) AS age FROM axiom.jobs
+            WHERE state IN ('queued', 'waiting') AND due_at <= clock_timestamp()""").fetchone()["age"]
+    events = {r["event"]: r["n"] for r in conn.execute(
+        """SELECT event, count(*) AS n FROM axiom.job_events
+            WHERE created_at > clock_timestamp() - interval '1 hour'
+              AND event IN ('stale_result_discarded', 'dead_lettered_poison', 'effect_needs_operator',
+                            'effect_adopted', 'effect_attempt', 'effect_denied', 'operator_retry')
+            GROUP BY event""")}
+    reclaimed = conn.execute(
+        """SELECT count(*) AS n FROM axiom.job_events WHERE event = 'claimed'
+            AND created_at > clock_timestamp() - interval '1 hour'
+            AND (detail->>'reclaimed_after_expiry')::boolean""").fetchone()["n"]
+    return {"jobs_by_kind_state": by_state, "oldest_due_seconds": float(oldest or 0.0),
+            "last_hour": {**events, "lease_expiries": reclaimed}}

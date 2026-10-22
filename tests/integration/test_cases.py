@@ -233,32 +233,41 @@ def test_inconclusive_assessment_cannot_be_dismissed(world, run, ctx_for, scenar
 
 
 def test_risk_acceptance_limits_owner_and_expiry_reopens(world, run, ctx_for, scenario):
-    """A11 plus delegation limits."""
+    """A11 plus delegation limits, through the two-step flow (RISK-02): analyst requests, risk owner authorises."""
+    from axiom.domains.cases.risk import RiskService
     cid = scenario["case"]["id"]
     analyst, risk_owner, admin = ctx_for("analyst"), ctx_for("risk_owner"), ctx_for("admin")
     advance_to_review(run, analyst, cid, scenario["evidence"]["id"])
     soon = datetime.now(timezone.utc) + timedelta(days=30)
+
+    def risk(ctx, fn):
+        return run(ctx, lambda s: fn(RiskService(s.conn, ctx, s.authz)))
+    req = risk(analyst, lambda r: r.request(cid, 2, expires_at=soon, rationale="compensated"))
+    assert req["independent_required"] is True                     # pending priority counts as urgent
     with pytest.raises(Forbidden) as err:   # no delegation limit yet
-        run(risk_owner, lambda s: s.cases.accept_risk(cid, 2, expires_at=soon, rationale="compensated"))
+        risk(risk_owner, lambda r: r.authorise(req["id"], rationale="ok"))
     assert err.value.code == "delegation_limit_exceeded"
     run(admin, lambda s: s.tenancy.set_delegation_limit(principal_id=world["risk_owner"], action_class="risk.accept",
                                                          scope_id=world.a.project, max_priority="medium",
                                                          max_duration_days=90))
     with pytest.raises(Forbidden):          # pending priority counts as urgent
-        run(risk_owner, lambda s: s.cases.accept_risk(cid, 2, expires_at=soon, rationale="compensated"))
+        risk(risk_owner, lambda r: r.authorise(req["id"], rationale="ok"))
     run(admin, lambda s: s.tenancy.set_delegation_limit(principal_id=world["risk_owner"], action_class="risk.accept",
                                                          scope_id=world.a.project, max_priority="urgent",
                                                          max_duration_days=90))
+    risk(analyst, lambda r: r.withdraw(req["id"], reason="ask for longer"))
+    long = risk(analyst, lambda r: r.request(cid, 2, expires_at=soon + timedelta(days=100), rationale="too long"))
     with pytest.raises(Forbidden):          # beyond max duration
-        run(risk_owner, lambda s: s.cases.accept_risk(cid, 2, expires_at=soon + timedelta(days=100),
-                                                      rationale="too long"))
-    expiry = datetime.now(timezone.utc) + timedelta(seconds=2)
-    closed = run(risk_owner, lambda s: s.cases.accept_risk(cid, 2, expires_at=expiry, rationale="WAF rule",
-                                                          compensating_controls="WAF rule 991"))
+        risk(risk_owner, lambda r: r.authorise(long["id"], rationale="ok"))
+    risk(risk_owner, lambda r: r.reject(long["id"], rationale="too long"))
+    expiry = datetime.now(timezone.utc) + timedelta(seconds=3)
+    req = risk(analyst, lambda r: r.request(cid, 2, expires_at=expiry, rationale="WAF rule",
+                                            compensating_controls="WAF rule 991"))
+    closed = risk(risk_owner, lambda r: r.authorise(req["id"], rationale="WAF rule accepted"))["case"]
     assert closed["workflow"] == "closed" and closed["disposition"] == "accept_risk"
     system = ctx_for("system")
     assert run(system, lambda s: expire_risk_acceptances(s.conn, system, s.authz)) == []
-    time.sleep(2.5)
+    time.sleep(3.5)
     expired = run(system, lambda s: expire_risk_acceptances(s.conn, system, s.authz))
     assert len(expired) == 1
     case = run(analyst, lambda s: s.cases.get(cid))
@@ -271,6 +280,7 @@ def test_risk_acceptance_limits_owner_and_expiry_reopens(world, run, ctx_for, sc
 
 
 def test_case_owner_cannot_accept_own_risk(world, run, ctx_for, scenario, dbinfo):
+    from axiom.domains.cases.risk import RiskService
     from axiom.provisioning import Provisioner
     Provisioner(dbinfo.admin_cli_dsn).bootstrap_role(world.a.id, world["owner"], "risk_owner", world.a.project,
                                                      "owner also risk owner")
@@ -283,10 +293,11 @@ def test_case_owner_cannot_accept_own_risk(world, run, ctx_for, scenario, dbinfo
     run(ctx_for("analyst2"), lambda s: s.cases.record_verification(
         cid, 5, claimed_result="inconclusive", coverage="none", criteria={"package": "openssl"},
         observed_deployment_digest=DIGEST_NEW, rationale="scanner unavailable"))
-    owner = ctx_for("owner")
+    analyst2, owner = ctx_for("analyst2"), ctx_for("owner")
+    req = run(analyst2, lambda s: RiskService(s.conn, analyst2, s.authz).request(
+        cid, 6, expires_at=datetime.now(timezone.utc) + timedelta(days=7), rationale="owner cannot fix yet"))
     with pytest.raises(Forbidden) as err:
-        run(owner, lambda s: s.cases.accept_risk(cid, 6, expires_at=datetime.now(timezone.utc) + timedelta(days=7),
-                                                 rationale="I own it and accept it"))
+        run(owner, lambda s: RiskService(s.conn, owner, s.authz).authorise(req["id"], rationale="I own it"))
     assert err.value.code == "separation_of_duties"
 
 

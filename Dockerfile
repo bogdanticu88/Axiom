@@ -20,6 +20,8 @@ WORKDIR /app
 COPY --from=build --chown=root:root /app/.venv /app/.venv
 COPY --chown=root:root db /app/db
 ENV PATH=/app/.venv/bin:$PATH PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+# Restore witness mount point (ADR 0010); a named volume mounted here inherits this ownership.
+RUN mkdir -p /var/lib/axiom/witness && chown 10001:10001 /var/lib/axiom/witness
 USER 10001
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --retries=5 CMD python -c "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready',timeout=2).status==200 else 1)"

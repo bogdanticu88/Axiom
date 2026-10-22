@@ -35,6 +35,8 @@ from ..errors import ConfigurationError, NotFound, ValidationFailed
 from .pipeline import IngestionService, RunState
 
 API_ADAPTERS = {"tenable_vm": "scanner", "azure_resource_graph": "context"}
+# Workflow connections are used by the action protocol, never synchronised (fixture-tested only).
+WORKFLOW_ADAPTERS = {"jira_style": "workflow"}
 
 
 class SecretResolver(Protocol):
@@ -86,8 +88,9 @@ class SyncService:
     # ------------------------------------------------------------------ configuration
     def create_connection(self, ctx: TenantContext, *, adapter: str, scope_id: UUID, display_name: str,
                           base_url: str | None, credential_ref: str | None, config: dict) -> dict:
-        if adapter not in API_ADAPTERS:
-            raise ValidationFailed(f"adapter {adapter} has no API synchronisation")
+        kinds = {**API_ADAPTERS, **WORKFLOW_ADAPTERS}
+        if adapter not in kinds:
+            raise ValidationFailed(f"adapter {adapter} cannot be configured as a connection")
         if base_url and not base_url.startswith("https://"):
             raise ValidationFailed("connections must use HTTPS")
         with self.db.tenant_tx(ctx) as conn:
@@ -95,7 +98,7 @@ class SyncService:
             row = conn.execute(
                 """INSERT INTO axiom.connections(tenant_id, id, scope_id, adapter, adapter_kind, display_name, base_url,
                        credential_ref, config, created_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
-                (ctx.tenant_id, uuid.uuid4(), scope_id, adapter, API_ADAPTERS[adapter], display_name, base_url,
+                (ctx.tenant_id, uuid.uuid4(), scope_id, adapter, kinds[adapter], display_name, base_url,
                  credential_ref, Jsonb(config), ctx.principal_id)).fetchone()
             audit.record(conn, ctx, action="connection.create", resource_type="connection", resource_id=row["id"],
                          detail={"adapter": adapter, "authority": authority.as_json()})
@@ -109,6 +112,8 @@ class SyncService:
             authority = Authorizer(conn, ctx).require("ingestion.import", connection["scope_id"])
             if connection["status"] != "active":
                 raise ValidationFailed("connection is disabled")
+            if connection["adapter"] not in API_ADAPTERS:
+                raise ValidationFailed(f"adapter {connection['adapter']} does not synchronise")
             run_id = uuid.uuid4()
             row = conn.execute(
                 """INSERT INTO axiom.ingestion_runs(tenant_id, id, scope_id, connection_id, source_kind, adapter,

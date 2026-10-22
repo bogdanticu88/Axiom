@@ -370,6 +370,8 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
             return rows
         return in_tx(ctx, read)
 
+    from .operations import register as register_operations
+    register_operations(api, database, Ctx)
     app.include_router(api)
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

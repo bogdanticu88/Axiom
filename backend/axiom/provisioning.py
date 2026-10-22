@@ -145,22 +145,39 @@ class Provisioner:
                          (binding_id, principal_id, role))
         return binding_id
 
-    def recovery_status(self) -> dict:
-        """Current database fingerprint, whether it is acknowledged, and effects whose outcome is uncertain."""
+    def recovery_status(self, witness=None) -> dict:
+        """Current database fingerprint, whether it is acknowledged, effect watermarks, and effects whose outcome
+        is uncertain."""
+        from .jobs.witness import check, database_watermark
         with self._connect() as conn:
+            db_mark = database_watermark(conn)
+            witness_problem = check(conn, witness)
             fp = conn.execute("SELECT axiom.db_fingerprint() AS f").fetchone()["f"]
             ack = conn.execute("SELECT * FROM axiom.recovery_acknowledgements WHERE fingerprint = %s", (fp,)).fetchone()
             pending = conn.execute(
                 """SELECT count(*) AS n FROM axiom.effect_intents
                     WHERE state IN ('prepared', 'executing', 'unknown') AND db_fingerprint <> %s""", (fp,)).fetchone()
         return {"fingerprint": fp, "acknowledged": ack is not None, "uncertain_effects_from_other_fingerprints":
-                pending["n"]}
+                pending["n"], "database_watermark": db_mark,
+                "witness_high_water": witness.high_water() if witness is not None else None,
+                "witness_problem": witness_problem}
 
-    def acknowledge_recovery(self, acknowledged_by: str, note: str) -> str:
-        """Record that an operator has reconciled external effects after a restore (ADR 0006)."""
+    def acknowledge_recovery(self, acknowledged_by: str, note: str, witness=None) -> str:
+        """Record that an operator has reconciled external effects after a restore (ADR 0006, ADR 0010).
+
+        With a witness, the effect watermark sequence is moved past the witness high-water mark (so the database
+        is no longer "behind"), and an empty witness is seeded from the database."""
+        from .jobs.witness import database_watermark
         if not note.strip() or not acknowledged_by.strip():
             raise ValueError("acknowledged_by and a note describing the reconciliation are required")
         with self._connect() as conn:
+            if witness is not None:
+                external = witness.high_water()
+                db_mark = database_watermark(conn)
+                if external is not None and external > db_mark:
+                    conn.execute("SELECT setval('axiom.effect_watermark_seq', %s, true)", (external,))
+                elif external is None and db_mark > 0:
+                    witness.advance(db_mark)
             fp = conn.execute("SELECT axiom.db_fingerprint() AS f").fetchone()["f"]
             conn.execute("""INSERT INTO axiom.recovery_acknowledgements(fingerprint, acknowledged_by, note)
                             VALUES (%s, %s, %s) ON CONFLICT (fingerprint) DO NOTHING""", (fp, acknowledged_by, note))
@@ -192,10 +209,12 @@ def main(argv: list[str] | None = None) -> int:
     rol.add_argument("--role", required=True)
     rol.add_argument("--scope", required=True)
     rol.add_argument("--reason", required=True)
-    sub.add_parser("recovery-status")
+    st = sub.add_parser("recovery-status")
+    st.add_argument("--witness-dir")
     ack = sub.add_parser("acknowledge-recovery")
     ack.add_argument("--by", required=True)
     ack.add_argument("--note", required=True)
+    ack.add_argument("--witness-dir")
     args = parser.parse_args(argv)
     p = Provisioner(args.dsn)
     if args.command == "ensure-installation":
@@ -208,10 +227,13 @@ def main(argv: list[str] | None = None) -> int:
         out = {"principal_id": str(p.create_principal(args.name, provider_id=provider, subject=args.subject))}
     elif args.command == "add-member":
         out = {"membership_id": str(p.add_membership(UUID(args.tenant), UUID(args.principal)))}
-    elif args.command == "recovery-status":
-        out = p.recovery_status()
-    elif args.command == "acknowledge-recovery":
-        out = {"acknowledged_fingerprint": p.acknowledge_recovery(args.by, args.note)}
+    elif args.command in ("recovery-status", "acknowledge-recovery"):
+        from .jobs.witness import FileWitness
+        witness = FileWitness(args.witness_dir, "operator-acknowledgement") if args.witness_dir else None
+        if args.command == "recovery-status":
+            out = p.recovery_status(witness)
+        else:
+            out = {"acknowledged_fingerprint": p.acknowledge_recovery(args.by, args.note, witness)}
     else:
         out = {"binding_id": str(p.bootstrap_role(UUID(args.tenant), UUID(args.principal), args.role,
                                                    UUID(args.scope), args.reason))}

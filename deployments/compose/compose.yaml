@@ -107,7 +107,9 @@ services:
     security_opt: ["no-new-privileges:true"]
     networks: [data, edge]
 
-  # Interim ingestion dispatcher (ADR 0006 pending); same image, runtime DB role, no inbound ports.
+  # Job worker (ADR 0006): ingestion runs, action executions, risk sweeps. Same image, runtime DB role, no inbound
+  # ports. The restore witness (ADR 0010) is on its own volume, separate from pgdata; in production it must be in a
+  # different backup domain from the database.
   job-worker:
     <<: *backend
     depends_on:
@@ -119,8 +121,10 @@ services:
       AXIOM_S3_ENDPOINT_URL: http://objects:8333
       AXIOM_S3_BUCKET: axiom-evidence
       AXIOM_TRUSTED_ISSUERS_FILE: /var/lib/axiom/dev-idp/issuers.json
+      AXIOM_RESTORE_WITNESS: dir:/var/lib/axiom/witness
     volumes:
       - devidp:/var/lib/axiom/dev-idp:ro
+      - witness:/var/lib/axiom/witness
     entrypoint: ["sh", "-c", "export AXIOM_TRUSTED_ISSUERS_JSON=\"$$(cat $$AXIOM_TRUSTED_ISSUERS_FILE)\" && exec python -m axiom.workers.jobs --interval 3"]
     healthcheck: {disable: true}
     read_only: true
@@ -134,6 +138,7 @@ volumes:
   objdata: {}
   objcfg: {}
   devidp: {}
+  witness: {}
 
 networks:
   data: {internal: true}

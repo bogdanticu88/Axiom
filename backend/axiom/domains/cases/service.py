@@ -417,30 +417,12 @@ class CaseService:
 
     def accept_risk(self, case_id: UUID, expected_version: int, *, expires_at: datetime, rationale: str,
                     compensating_controls: str | None = None) -> dict:
-        case = self._load(case_id)
-        model.check_expected_version(case["record_version"], expected_version)
-        model.require_state(case["workflow"], Workflow.REVIEW)
-        authority = self.authz.require("risk.accept", case["scope_id"])
-        if case["owner_principal_id"] == self.ctx.principal_id:
-            raise Forbidden("the case owner cannot accept its risk", code="separation_of_duties")
-        now = self.authz.now()
-        if expires_at.tzinfo is None or expires_at <= now:
-            raise ValidationFailed("risk acceptance requires a future expiry")
-        limit = self._delegation_limit("risk.accept", case, now, expires_at)
-        acceptance_id = uuid.uuid4()
-
-        def dependents(decision_id: UUID | None, _seq: int) -> dict:
-            self.conn.execute(
-                """INSERT INTO axiom.risk_acceptances(tenant_id, id, case_id, owner_principal_id, decision_id,
-                       delegation_limit_id, rationale, compensating_controls, starts_at, expires_at, status)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'active')""",
-                (self.ctx.tenant_id, acceptance_id, case_id, self.ctx.principal_id, decision_id, limit["id"],
-                 rationale, compensating_controls, now, expires_at))
-            return {"risk_acceptance_id": str(acceptance_id), "expires_at": expires_at.isoformat()}
-
-        return self._close(case, expected_version, ClosureReason.ACCEPTED_RISK, rationale, authority,
-                           disposition="accept_risk", risk_acceptance_id=acceptance_id,
-                           pre_dependents=dependents, decision_kind="risk_acceptance")
+        """Single-call acceptance (request + self-authorisation). Allowed only where the risk policy does not require
+        independent authorisation; otherwise use the request/authorise flow (``domains.cases.risk``)."""
+        from .risk import RiskService
+        return RiskService(self.conn, self.ctx, self.authz).accept_directly(
+            case_id, expected_version, expires_at=expires_at, rationale=rationale,
+            compensating_controls=compensating_controls)
 
     def reopen(self, case_id: UUID, expected_version: int, *, reason: str, rationale: str,
                system: bool = False) -> dict:
@@ -646,8 +628,11 @@ def expire_risk_acceptances(conn: psycopg.Connection, ctx: TenantContext, authz:
         current_closure = conn.execute(
             "SELECT * FROM axiom.closure_records WHERE case_id = %s AND case_event_sequence = %s",
             (case["id"], case["record_version"])).fetchone()
+        root = acceptance
+        while root["renewal_of"] is not None:      # renewals supersede, the closure keeps the original
+            root = conn.execute("SELECT * FROM axiom.risk_acceptances WHERE id = %s", (root["renewal_of"],)).fetchone()
         if (case["workflow"] == Workflow.CLOSED and current_closure is not None
-                and current_closure["risk_acceptance_id"] == acceptance["id"]):
+                and current_closure["risk_acceptance_id"] == root["id"]):
             service.reopen(case["id"], case["record_version"], reason=ReopenReason.ACCEPTANCE_EXPIRY.value,
                            rationale=f"risk acceptance {acceptance['id']} expired", system=True)
         expired.append(acceptance["id"])
