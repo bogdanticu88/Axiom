@@ -5,7 +5,7 @@ import { useGet } from "../api";
 import { Badge, Field, Loaded, Section, fmt } from "../ui";
 
 const WORKFLOWS = ["", "received", "investigating", "review_required", "remediation_planned", "remediating",
-  "verifying", "closed"];
+  "awaiting_verification", "closed"];
 
 export function priorityBadge(p: string) {
   const kind = p === "urgent" ? "bad" : p === "high" ? "warn" : p === "pending" ? "info" : "ok";

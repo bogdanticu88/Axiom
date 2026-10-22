@@ -400,6 +400,37 @@ def register(api: APIRouter, database: Database, Ctx, store=None, settings=None)
             return {"occurrences": occ, "asset_versions": versions, "business_context": contexts}
         return tx(ctx, read)
 
+    @api.get("/cases/{case_id}/risk")
+    def case_risk(ctx: Ctx, case_id: UUID):
+        """Risk-acceptance requests and acceptances for a case, with the record history the requester may see.
+
+        Needs case.read. The audit trail of these records is included only for a requester holding audit.read at
+        the tenant root (as /audit-events); otherwise ``audit`` is null and ``audit_withheld`` says why. What the
+        requester may *do* is decided by the command endpoints, not by this view."""
+        def read(conn, authz):
+            case = _case_or_404(conn, authz, case_id)
+            requests = conn.execute("SELECT * FROM axiom.risk_acceptance_requests WHERE case_id = %s ORDER BY created_at",
+                                    (case_id,)).fetchall()
+            acceptances = conn.execute("SELECT * FROM axiom.risk_acceptances WHERE case_id = %s ORDER BY created_at",
+                                       (case_id,)).fetchall()
+            decisions = conn.execute(
+                """SELECT id, kind, outcome, rationale, actor_principal_id, authority, recorded_at FROM axiom.decisions
+                    WHERE case_id = %s AND (kind = 'risk_acceptance' OR (kind = 'reopen' AND outcome = 'acceptance_expiry'))
+                    ORDER BY recorded_at""", (case_id,)).fetchall()
+            root = conn.execute("SELECT id FROM axiom.scopes WHERE kind = 'tenant_root'").fetchone()
+            out = {"case": {"id": case["id"], "workflow": case["workflow"], "priority": case["priority"],
+                            "record_version": case["record_version"]},
+                   "requests": requests, "acceptances": acceptances, "decisions": decisions,
+                   "audit": None, "audit_withheld": "requires audit.read at the tenant root"}
+            if authz.has("audit.read", root["id"]):
+                ids = [str(r["id"]) for r in requests] + [str(a["id"]) for a in acceptances]
+                out["audit"] = conn.execute(
+                    """SELECT occurred_at, action, actor_principal_id, actor_kind, resource_type, resource_id, outcome
+                         FROM axiom.audit_events WHERE resource_id = ANY(%s) ORDER BY occurred_at""", (ids,)).fetchall()
+                out["audit_withheld"] = None
+            return out
+        return tx(ctx, read)
+
     @api.get("/cases/{case_id}/evidence-snapshots")
     def case_snapshots(ctx: Ctx, case_id: UUID):
         def read(conn, authz):

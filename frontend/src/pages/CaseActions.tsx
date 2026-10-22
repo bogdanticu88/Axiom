@@ -140,13 +140,13 @@ function Proposal({ p, conns, onChange }: { p: any; conns: any[]; onChange: () =
       <div><strong>{p.effect_class}</strong> v{p.current_version} · <Badge kind={p.status === "open" ? "info" : "warn"}>{p.status}</Badge>
         {conn && <> · {conn.display_name} {supportLabel(conn.support_level)}</>}</div>
       {current && <>
-        <pre className="small">{JSON.stringify(current.payload, null, 1)}</pre>
+        <pre className="small" data-testid="approved-payload">{JSON.stringify(current.canonical_payload ?? current.payload, null, 1)}</pre>
         <div className="small muted">payload digest {String(current.payload_digest).slice(0, 16)} · expires {fmt(current.expires_at)}
           · proposed by {short(current.created_by)}</div>
         <div className="small">Verification criteria: {current.verification_criteria}</div></>}
       <h3>Approvals</h3>
       {p.approvals.length === 0 ? <div className="small muted">None yet. The proposer cannot approve their own proposal.</div> :
-        <ul className="small">{p.approvals.map((a: any) => <li key={a.id}>{a.decision} by {short(a.approver_principal_id)} ·
+        <ul className="small" data-testid="approvals">{p.approvals.map((a: any) => <li key={a.id}>{a.decision} by {short(a.approver_principal_id)} ·
           {" "}{a.status} · uses {a.uses_reserved - a.uses_released}/{a.max_uses} · valid until {fmt(a.valid_until)}
           {a.revocation_reason && <> · revoked: {a.revocation_reason}</>}</li>)}</ul>}
       {p.status === "open" && <div className="row">
@@ -203,6 +203,7 @@ export function Verification({ c, onChange }: { c: any; onChange: () => void }) 
   const [result, setResult] = useState("passed");
   const [coverage, setCoverage] = useState("complete");
   const [observed, setObserved] = useState("");
+  const [evidence, setEvidence] = useState("");
   const v = c.record_version;
   const send = (path: string, body: object, ok: string) =>
     cmd.run(() => post(`/cases/${c.id}/commands/${path}`, { expected_version: v, rationale, ...body }), ok);
@@ -217,30 +218,39 @@ export function Verification({ c, onChange }: { c: any; onChange: () => void }) 
                 <table data-testid="verifications">
                   <thead><tr><th>Recorded</th><th>Outcome</th><th>Coverage</th><th>Observed deployment</th><th>Reason</th><th /></tr></thead>
                   <tbody>{d.verifications.map((r: any) => (
-                    <tr key={r.id}><td>{fmt(r.recorded_at)}</td>
+                    <tr key={r.id} data-outcome={r.outcome}><td>{fmt(r.recorded_at)}<div className="small">
+                      <Badge kind="manual">recorded by a person</Badge> {short(r.recorded_by)}</div></td>
                       <td><Badge kind={r.outcome === "passed" ? "ok" : r.outcome === "failed" ? "bad" : "warn"}>{r.outcome}</Badge></td>
                       <td>{r.coverage}</td><td>{short(r.observed_asset_version_id)}</td><td className="small">{r.outcome_reason}</td>
-                      <td>{r.outcome === "passed" && c.workflow === "verifying" &&
+                      <td>{r.outcome === "passed" && c.workflow === "awaiting_verification" &&
                         <button data-testid="close-verified" disabled={cmd.busy || !rationale}
                           onClick={() => send("close-verified", { verification_run_id: r.id }, "Case closed.")}>Close as verified</button>}</td>
                     </tr>))}</tbody>
                 </table>)}
               {d.closures.length > 0 && <ul data-testid="closures">{d.closures.map((x: any) =>
                 <li key={x.id ?? x.case_event_sequence}>Closed: {x.disposition ?? x.kind} {fmt(x.closed_at ?? x.created_at)}</li>)}</ul>}
-              <p className="muted small">A verification passes only with complete coverage of a known deployment. A result the
-                submitter claims is recomputed by the platform.</p>
+              <p className="muted small">Verification results are entered by a person after a check (no verification
+                worker exists). The platform recomputes the outcome: a pass needs complete coverage of the reported
+                deployment and verified evidence, and the person who reported the change cannot verify it.</p>
             </>)}
         </Loaded>
       </Section>
       <Section title={`Next step (workflow: ${c.workflow})`}>
         <Field label="Rationale (required for every decision)"><textarea data-testid="verify-rationale" value={rationale}
           onChange={(e) => setRationale(e.target.value)} /></Field>
-        {(c.workflow === "review_required" || c.workflow === "investigating") && c.assessment === "supported" && (
+        {c.workflow === "review_required" && c.assessment === "supported" && (
           <div className="row"><Field label="Remediation owner principal id"><input value={owner}
             onChange={(e) => setOwner(e.target.value)} /></Field>
             <button disabled={cmd.busy || !rationale || !owner} onClick={() => send("plan-remediation",
               { owner_principal_id: owner }, "Remediation planned.")}>Plan remediation</button></div>)}
-        {(c.workflow === "remediation_planned" || c.workflow === "remediating") && (
+        {c.workflow === "remediation_planned" && (
+          <div className="row">
+            <Field label="External work reference (e.g. ticket key)"><input data-testid="external-ref" value={change}
+              onChange={(e) => setChange(e.target.value)} /></Field>
+            <button data-testid="record-external-work" disabled={cmd.busy || !rationale || !change} onClick={() =>
+              send("record-external-work", { external_reference: change }, "External work recorded.")}>
+              Record external work</button></div>)}
+        {c.workflow === "remediating" && (
           <div className="row">
             <Field label="Fixed deployment"><select value={target} onChange={(e) => setTarget(e.target.value)}>
               <option value="">choose…</option>{versions.map((x) => <option key={x.id} value={x.id}>
@@ -249,18 +259,22 @@ export function Verification({ c, onChange }: { c: any; onChange: () => void }) 
             <button data-testid="report-change" disabled={cmd.busy || !rationale || !target || !change} onClick={() =>
               send("report-change", { target_asset_version_id: target, change_reference: change }, "Change reported.")}>
               Report change deployed</button></div>)}
-        {c.workflow === "verifying" && (
+        {c.workflow === "awaiting_verification" && (
           <div className="row">
-            <Field label="Result"><select value={result} onChange={(e) => setResult(e.target.value)}>
+            <Field label="Result"><select data-testid="verify-result" value={result} onChange={(e) => setResult(e.target.value)}>
               <option>passed</option><option>failed</option><option>inconclusive</option></select></Field>
-            <Field label="Coverage"><select value={coverage} onChange={(e) => setCoverage(e.target.value)}>
+            <Field label="Coverage"><select data-testid="verify-coverage" value={coverage} onChange={(e) => setCoverage(e.target.value)}>
               <option>complete</option><option>partial</option><option>none</option></select></Field>
-            <Field label="Observed deployment"><select value={observed} onChange={(e) => setObserved(e.target.value)}>
+            <Field label="Observed deployment"><select data-testid="verify-observed" value={observed}
+              onChange={(e) => setObserved(e.target.value)}>
               <option value="">unknown</option>{versions.map((x) => <option key={x.id} value={x.id}>
                 {x.deployment_digest ?? short(x.id)}</option>)}</select></Field>
+            <Field label="Verified evidence id (upload first)"><input data-testid="verify-evidence" value={evidence}
+              onChange={(e) => setEvidence(e.target.value)} /></Field>
             <button data-testid="record-verification" disabled={cmd.busy || !rationale} onClick={() =>
               send("record-verification", { claimed_result: result, coverage, criteria: { check: "rescan", by: "ui" },
-                observed_asset_version_id: observed || null }, "Verification recorded.")}>Record verification</button></div>)}
+                observed_asset_version_id: observed || null, evidence_id: evidence || null }, "Verification recorded.")}>
+              Record verification</button></div>)}
         {cmd.status}
       </Section>
     </>

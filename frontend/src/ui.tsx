@@ -12,11 +12,17 @@ const MESSAGES: Record<string, string> = {
   dependency: "A service the platform depends on did not respond. Nothing was changed by this request; try again.",
 };
 
+// Denials whose message would only repeat the generic text; any other denial code (separation of duties, independence
+// required, delegation limit) is shown with the server's explanation.
+const GENERIC_DENIALS = ["permission_denied", "forbidden", "case_not_found", "not_found", "tenant_not_available"];
+
 export function ErrorView({ error, onRetry }: { error: ApiError; onRetry?: () => void }) {
   return (
     <div className={`state state-${error.kind}`} data-state={error.kind} role="alert">
       <strong>{MESSAGES[error.kind]}</strong>
-      {error.kind !== "denied" && error.kind !== "not_found" && <div className="muted">{error.message}</div>}
+      {(error.kind !== "denied" && error.kind !== "not_found") || !GENERIC_DENIALS.includes(error.code)
+        ? <div className="muted" data-testid="error-detail">{error.message}</div> : null}
+      {error.code && <div className="muted small" data-testid="error-code">Code: {error.code}</div>}
       {error.correlationId && <div className="muted small">Reference: {error.correlationId}</div>}
       {error.kind === "signed_out" && <a className="button" href="/auth/login?return_to=/ui/">Sign in</a>}
       {onRetry && (error.kind === "stale" || error.kind === "dependency") &&

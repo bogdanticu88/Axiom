@@ -218,6 +218,7 @@ export function Assessment({ c, onChange }: { c: any; onChange: () => void }) {
   const [runs] = useGet<{ items: any[] }>(`/cases/${c.id}/investigations`, [c.record_version]);
   const [ctx] = useGet<any>(`/cases/${c.id}/context`, [c.id]);
   const cmd = useCommand(onChange);
+  const start = useCommand(onChange);
   const [assessment, setAssessment] = useState("supported");
   const [rationale, setRationale] = useState("");
   const [limitations, setLimitations] = useState("");
@@ -228,10 +229,10 @@ export function Assessment({ c, onChange }: { c: any; onChange: () => void }) {
     <>
       {c.workflow === "received" && (
         <Section title="Start investigation">
-          <button data-testid="start-case-investigation" disabled={cmd.busy} onClick={() => cmd.run(() =>
+          <button data-testid="start-case-investigation" disabled={start.busy} onClick={() => start.run(() =>
             post(`/cases/${c.id}/commands/start-investigation`, { expected_version: version,
               rationale: "investigation started from the UI" }), "Investigation started.")}>Move to investigating</button>
-          {cmd.status}
+          {start.status}
         </Section>)}
       <Section title="Record assessment (human decision)">
         {c.workflow !== "investigating" ? <div className="state" data-state="empty">Assessments are recorded while the

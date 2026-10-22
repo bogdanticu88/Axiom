@@ -1,7 +1,7 @@
 // API client for the analyst UI. Same origin as the API: the session cookie is HttpOnly and sent by the browser; the
 // CSRF token cookie is read and echoed in X-CSRF-Token on every state-changing request. The selected tenant goes in
 // X-Axiom-Tenant and is re-checked by the server on every request.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type ErrorKind =
   | "signed_out" | "denied" | "not_found" | "stale" | "conflict" | "invalid" | "dependency";
@@ -66,14 +66,18 @@ export function newKey(): string {
 
 export type Load<T> = { state: "loading" } | { state: "ok"; data: T } | { state: "error"; error: ApiError };
 
+// A refetch of the same path keeps showing the data already loaded until the new response arrives, so forms and
+// their result messages below it stay mounted; a different path starts from the loading state.
 export function useGet<T = any>(path: string | null, deps: unknown[] = []): [Load<T>, () => void] {
   const [load, setLoad] = useState<Load<T>>({ state: "loading" });
   const [tick, setTick] = useState(0);
+  const shown = useRef<string | null>(null);
   const reload = useCallback(() => setTick((t) => t + 1), []);
   useEffect(() => {
     if (path === null) return;
     let live = true;
-    setLoad({ state: "loading" });
+    if (shown.current !== path) setLoad({ state: "loading" });
+    shown.current = path;
     get<T>(path).then((data) => live && setLoad({ state: "ok", data }),
                       (error) => live && setLoad({ state: "error", error }));
     return () => { live = false; };

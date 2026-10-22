@@ -5,6 +5,7 @@ import { Badge, Field, Loaded, Section, basisLabel, fmt, short, useCommand } fro
 import { priorityBadge } from "./Cases";
 import { Assessment, Evidence, Investigations } from "./CaseEvidence";
 import { Actions, Priority, Verification } from "./CaseActions";
+import { Risk } from "./CaseRisk";
 
 export default function CaseDetail() {
   const { caseId } = useParams();
@@ -24,7 +25,8 @@ export default function CaseDetail() {
           <nav className="tabs">
             {[["", "Overview"], ["context", "Assets & ownership"], ["evidence", "Evidence snapshots"],
               ["investigations", "Investigations"], ["assessment", "Assessment"], ["priority", "Priority"],
-              ["actions", "Proposals & approvals"], ["verification", "Verification & closure"]].map(([to, label]) => (
+              ["actions", "Proposals & approvals"], ["risk", "Risk acceptance"],
+              ["verification", "Verification & closure"]].map(([to, label]) => (
               <NavLink key={to} end to={to} data-testid={`tab-${to || "overview"}`}>{label}</NavLink>))}
           </nav>
           <Routes>
@@ -35,6 +37,7 @@ export default function CaseDetail() {
             <Route path="assessment" element={<Assessment c={c} onChange={reload} />} />
             <Route path="priority" element={<Priority c={c} onChange={reload} />} />
             <Route path="actions" element={<Actions c={c} onChange={reload} />} />
+            <Route path="risk" element={<Risk c={c} onChange={reload} />} />
             <Route path="verification" element={<Verification c={c} onChange={reload} />} />
           </Routes>
         </>

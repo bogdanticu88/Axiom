@@ -43,7 +43,7 @@ export default function Reports() {
           }}
         </Loaded>
         {snap && (
-          <div data-testid="report-snapshot">
+          <div data-testid="report-snapshot" data-snapshot-id={snap.id}>
             <div className="facts"><span>Snapshot {short(snap.id)}</span><span>generated {fmt(snap.generated_at ?? snap.created_at)}</span>
               <span className="mono small">digest {snap.content_digest.slice(0, 16)}</span></div>
             <ul className="kv">{Object.entries(snap.content.unknowns ?? {}).map(([k, v]) =>
