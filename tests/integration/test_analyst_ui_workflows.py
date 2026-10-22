@@ -10,6 +10,7 @@ Each refusal is asserted by the server's error code shown in the UI, not only by
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -157,7 +158,7 @@ def test_verification_recorded_by_a_person_then_closure(browser, wui, keycloak, 
     assert error_code(alice) == "stale_version"
     alice.reload()
     alice.get_by_test_id("verifications").locator("tr[data-outcome]").first.wait_for()
-    alice.get_by_test_id("case-workflow").filter(has_text="review_required").wait_for()
+    alice.get_by_test_id("case-workflow").filter(has_text=re.compile(r"^review_required$")).wait_for()
     rows = alice.get_by_test_id("verifications").locator("tr[data-outcome]")
     assert rows.count() == 1 and "inconclusive" in rows.first.inner_text()
     assert "recorded by a person" in rows.first.inner_text() and "coverage partial" in rows.first.inner_text()
@@ -180,7 +181,7 @@ def test_complete_verification_and_closure_in_the_ui(browser, wui, keycloak, wor
     alice.get_by_test_id("close-verified").click()
     alice.locator("text=Case closed.").wait_for()
     # the header keeps the loaded case on screen while it refetches; wait for the refreshed value
-    alice.get_by_test_id("case-workflow").filter(has_text="closed").wait_for()
+    alice.get_by_test_id("case-workflow").filter(has_text=re.compile(r"^closed$")).wait_for()
     run_row = run(ctx_for("analyst"), lambda s: s.conn.execute(
         "SELECT outcome, recorded_by FROM axiom.verification_runs WHERE case_id = %s", (cid,)).fetchone())
     assert run_row["outcome"] == "passed" and run_row["recorded_by"] == wui.ids["alice"]
@@ -274,7 +275,7 @@ def test_risk_acceptance_request_rules_expiry_and_history(browser, wui, keycloak
     run(owner, lambda s: RiskService(s.conn, owner, s.authz).authorise(req_id, rationale="independent review"))
     bob.reload()
     bob.get_by_test_id("active-acceptance").wait_for()
-    bob.get_by_test_id("case-workflow").filter(has_text="closed").wait_for()
+    bob.get_by_test_id("case-workflow").filter(has_text=re.compile(r"^closed$")).wait_for()
 
     # expiry: fault injection moves the acceptance into the past; the system sweep reopens the case
     admin_conn.execute("SET session_replication_role = replica")
@@ -295,6 +296,6 @@ def test_risk_acceptance_request_rules_expiry_and_history(browser, wui, keycloak
     assert "(workload)" in audit                                       # expiry recorded by the system principal
     history = mallory.get_by_test_id("risk-decisions").inner_text()
     assert "reopen acceptance_expiry" in history and "system result (expiry)" in history
-    mallory.get_by_test_id("case-workflow").filter(has_text="investigating").wait_for()
+    mallory.get_by_test_id("case-workflow").filter(has_text=re.compile(r"^investigating$")).wait_for()
     assert "expired" in mallory.get_by_test_id("risk-acceptances").inner_text()
     shot(mallory, "17-risk-expired-history")
