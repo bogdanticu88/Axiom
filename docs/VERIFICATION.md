@@ -3,6 +3,10 @@
 Every result below was produced by an actual run in this workspace. Separate runs are listed separately; results from
 one run are never combined with another without saying so. Logs are stored under `docs/verification/`.
 
+Commit hashes in the run records refer to the original development repository. The history was rewritten when the
+project was renamed to Axiom, so those hashes do not exist here; use the checkpoint tags instead. Paths in archived logs
+were normalised (the build host's home directory reads `/home/dev/`).
+
 ## Environment (recorded by run 1)
 Linux container; Python 3.13.16; uv 0.11.32; PostgreSQL 16.15 server binaries (Ubuntu build) for test clusters;
 Docker 29.9.1; Docker Compose v5.6.0. Locked packages: fastapi 0.143.0, psycopg 3.3.6, psycopg-pool 3.3.3,

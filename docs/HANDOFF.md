@@ -2,8 +2,11 @@
 
 ## Current checkpoint
 * Latest checkpoint: see "Checkpoint record" at the end of this file (a commit cannot contain its own hash).
-* Branch: `main`. No remote is configured. **Nothing has been pushed or published.** A permanent repository location
-  has not been chosen; preservation archives and a git bundle were kept as release archives.
+* Branch: `main`, published at https://github.com/bogdanticu88/Axiom. Each checkpoint was also kept as a git bundle
+  and a source archive.
+* The project was renamed to Axiom before publication, and the history was rewritten at the same time. Commit hashes
+  quoted in these documents and in docs/VERIFICATION.md refer to the original development repository; the checkpoint
+  tags in this repository mark the corresponding commits.
 * The first commit imports the supplied foundation archive; its contents predate this repository.
 
 ## What works and what is missing

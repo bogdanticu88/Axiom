@@ -5,10 +5,12 @@ investigate with deterministic checks and constrained AI, prioritise by versione
 remediation, verify outcomes against the affected deployment, and report from recorded evidence. Supports a shared
 multi-client installation and dedicated single-enterprise installations from one codebase.
 
-**Status: Phase A foundation (incomplete), Phase B core, Phase D action protocol and two-step risk acceptance; see
-`docs/IMPLEMENTATION_STATUS.md`.** Nothing here is production-ready. Authentication is development token
-authentication only. Connectors are at most **fixture-tested** (Trivy, SARIF, Tenable, Azure Resource Graph, and a
-Jira-style ticket integration tested only against a local fake); none has been validated against a live service.
+**Status: work in progress; nothing here is production-ready.** Built and tested so far: the foundation (tenant
+isolation, database roles, evidence storage, the case workflow), ingestion, a durable job runner, the action and
+approval protocol, risk acceptance, policies, ownership, SLA clocks, reporting, evidence-backed investigation against a
+**deterministic fake model** (no language model has been called), an analyst UI, OIDC sign-in tested **only against a
+local Keycloak**, and a verification worker tested **only against a local fixture endpoint**. Connectors are at most
+**fixture-tested**; none has been validated against a live service. Details: `docs/IMPLEMENTATION_STATUS.md`.
 
 ## Documents
 * Design inputs: `docs/Axiom-Specification.md`, `...-Implementation-Plan.md`, `...-Data-and-Access-Design.md`
@@ -19,8 +21,8 @@ Jira-style ticket integration tested only against a local fake); none has been v
 
 ## Layout
 ```
-backend/axiom/          API, auth, access control, domains (cases, risk, actions, evidence, assets, tenancy),
-                           ingestion and adapters, job runner (axiom.jobs), integrations, migrations
+backend/axiom/             API, auth, access control, domains (cases, risk, actions, evidence, assets, tenancy),
+                           ingestion and adapters, job runner (axiom.jobs), verification worker, migrations
 db/provision_roles.sql     cluster-level role provisioning (run once per cluster)
 deployments/compose/       single-host install (PostgreSQL, SeaweedFS S3, init jobs, API, job worker)
 scripts/dev/test-db.sh     disposable PostgreSQL cluster for tests
