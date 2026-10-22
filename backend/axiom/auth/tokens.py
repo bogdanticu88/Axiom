@@ -25,7 +25,8 @@ class VerifiedIdentity:
 
 
 class TokenVerifier:
-    def __init__(self, issuers: list[TrustedIssuer], *, leeway_seconds: int = 30):
+    def __init__(self, issuers: list[TrustedIssuer], *, leeway_seconds: int = 30, env: str = "development"):
+        self._env = env
         self._issuers = {i.issuer: i for i in issuers}
         self._leeway = leeway_seconds
         self._clients: dict[str, PyJWKClient] = {}
@@ -57,6 +58,9 @@ class TokenVerifier:
         cfg = self._issuers.get(unverified.get("iss"))
         if cfg is None:
             raise Unauthenticated("untrusted issuer")
+        if self._env == "production" and cfg.jwks is not None:
+            # start-up already refuses this configuration; this is the runtime second line
+            raise Unauthenticated("development token authentication is disabled in production")
         if header.get("alg") not in cfg.algorithms:
             raise Unauthenticated("token algorithm not accepted")
         key = self._key_for(cfg, token, header.get("kid"))

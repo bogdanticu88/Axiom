@@ -20,7 +20,8 @@ class TrustedIssuer(BaseModel):
     issuer: str
     audience: str
     jwks_uri: str | None = None
-    # Inline JWKS is for development and tests only.
+    # Inline JWKS is for development and tests only ("development-token authentication"); refused in production
+    # at start-up and, as a second line, by the token verifier at runtime.
     jwks: dict | None = None
     algorithms: list[str] = Field(default_factory=lambda: ["RS256", "ES256", "PS256"])
 
@@ -54,6 +55,19 @@ class Settings(BaseSettings):
     model_destinations: str = ""
     tool_destinations: str = ""
 
+    # Enterprise sign-in for the analyst UI (ADR 0013): OpenID Connect authorization code flow with PKCE, run by the
+    # backend (confidential client). Sessions are server-side; the browser holds an HttpOnly cookie.
+    oidc_issuer: str | None = None
+    oidc_client_id: str | None = None
+    oidc_client_secret_ref: str | None = None      # secretref:env/NAME (never the secret itself)
+    oidc_redirect_uri: str | None = None
+    oidc_scopes: str = "openid profile email"
+    oidc_post_logout_redirect_uri: str | None = None
+    ui_session_ttl_seconds: int = 8 * 3600
+    ui_session_idle_seconds: int = 1800
+    ui_cookie_secure: bool = True
+    ui_dist_dir: str | None = None                 # built analyst UI to serve at /ui
+
     @property
     def model_destination_set(self) -> frozenset[str]:
         return frozenset(o.strip().rstrip("/") for o in self.model_destinations.split(",") if o.strip())
@@ -86,3 +100,13 @@ class Settings(BaseSettings):
                 raise ConfigurationError("JWKS must be fetched over HTTPS in production")
             if self.object_store == "filesystem":
                 raise ConfigurationError("filesystem object store is not permitted in production")
+            if self.oidc_issuer:
+                for name in ("oidc_issuer", "oidc_redirect_uri"):
+                    if not (getattr(self, name) or "").startswith("https://"):
+                        raise ConfigurationError(f"{name} must use HTTPS in production")
+                if not self.ui_cookie_secure:
+                    raise ConfigurationError("UI session cookies must be Secure in production")
+        if self.oidc_issuer and not (self.oidc_client_id and self.oidc_client_secret_ref and self.oidc_redirect_uri):
+            raise ConfigurationError("OIDC sign-in needs client id, client secret reference and redirect URI")
+        if self.oidc_client_secret_ref and not self.oidc_client_secret_ref.startswith("secretref:"):
+            raise ConfigurationError("the OIDC client secret must be given as a secret reference, not a value")

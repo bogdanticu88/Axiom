@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from .. import audit
 from ..access import Authorizer
 from ..auth import Actor, Authenticator, TokenVerifier
+from ..auth.sessions import BINDING_COOKIE, CSRF_COOKIE, SESSION_COOKIE
 from ..config import Settings
 from ..db import Database, TenantContext
 from ..domains.assets.service import AssetService
@@ -72,11 +73,24 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
     database = db or Database(settings.database_dsn, min_size=settings.db_pool_min, max_size=settings.db_pool_max)
     owns_db = db is None
     authenticator = Authenticator(database, TokenVerifier(settings.trusted_issuers,
-                                                          leeway_seconds=settings.token_leeway_seconds))
+                                                          leeway_seconds=settings.token_leeway_seconds,
+                                                          env=settings.env))
     object_store = store or build_object_store(settings)
     evidence = EvidenceService(database, object_store, max_bytes=settings.evidence_max_bytes)
     ingestion = IngestionService(database, object_store)
     sync = SyncService(database, ingestion, evidence)
+
+    sessions = None
+    if settings.oidc_issuer:
+        from ..auth.oidc import OidcClient
+        from ..auth.sessions import SessionService
+        from ..ingestion.sync import EnvSecretResolver
+        secret_ref = settings.oidc_client_secret_ref
+        oidc = OidcClient(issuer=settings.oidc_issuer, client_id=settings.oidc_client_id,
+                          client_secret=lambda: EnvSecretResolver().resolve(secret_ref),
+                          redirect_uri=settings.oidc_redirect_uri, scopes=settings.oidc_scopes)
+        sessions = SessionService(database, oidc, ttl_seconds=settings.ui_session_ttl_seconds,
+                                  idle_seconds=settings.ui_session_idle_seconds)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -97,6 +111,13 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
         response = await call_next(request)
         response.headers["X-Correlation-ID"] = request.state.correlation_id
         response.headers["Cache-Control"] = "no-store"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Frame-Options"] = "DENY"
+        if request.url.path.startswith("/ui"):
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'")
         return response
 
     @app.exception_handler(DomainError)
@@ -123,9 +144,14 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
 
     # ------------------------------------------------------------ dependencies
     def get_actor(request: Request, authorization: Annotated[str | None, Header()] = None) -> Actor:
-        if not authorization or not authorization.lower().startswith("bearer "):
-            raise Unauthenticated("bearer token required")
-        return authenticator.authenticate(authorization[7:].strip())
+        if authorization and authorization.lower().startswith("bearer "):
+            return authenticator.authenticate(authorization[7:].strip())
+        token = request.cookies.get(SESSION_COOKIE)
+        if token and sessions is not None:
+            sa = sessions.authenticate(token, method=request.method,
+                                       csrf_header=request.headers.get("x-csrf-token"))
+            return Actor(sa.principal_id, sa.kind, sa.issuer, sa.subject)
+        raise Unauthenticated("sign in or present a bearer token")
 
     def get_ctx(request: Request, actor: Annotated[Actor, Depends(get_actor)],
                 x_axiom_tenant: Annotated[str | None, Header()] = None) -> TenantContext:
@@ -379,6 +405,68 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
     from .operations import register as register_operations
     register_operations(api, database, Ctx, object_store, settings)
     app.include_router(api)
+
+    # ------------------------------------------------------------------- sign-in (ADR 0013)
+    from fastapi.responses import RedirectResponse
+
+    def cookie(resp, name, value, *, http_only=True, max_age=None):
+        resp.set_cookie(name, value, httponly=http_only, secure=settings.ui_cookie_secure, samesite="lax", path="/",
+                        max_age=max_age)
+
+    @app.get("/auth/login")
+    def login(return_to: str | None = None):
+        if sessions is None:
+            raise NotFound("sign-in is not configured", code="sso_not_configured")
+        url, binding = sessions.start_login(return_to)
+        resp = RedirectResponse(url, status_code=302)
+        cookie(resp, BINDING_COOKIE, binding, max_age=600)
+        return resp
+
+    @app.get("/auth/callback")
+    def callback(request: Request, code: str | None = None, state: str | None = None, iss: str | None = None,
+                 error: str | None = None):
+        if sessions is None:
+            raise NotFound("sign-in is not configured", code="sso_not_configured")
+        token, csrf, return_to = sessions.finish_login(code=code, state=state, iss=iss, error=error,
+                                                       binding=request.cookies.get(BINDING_COOKIE))
+        resp = RedirectResponse(return_to, status_code=303)
+        cookie(resp, SESSION_COOKIE, token, max_age=settings.ui_session_ttl_seconds)
+        cookie(resp, CSRF_COOKIE, csrf, http_only=False, max_age=settings.ui_session_ttl_seconds)
+        resp.delete_cookie(BINDING_COOKIE, path="/")
+        return resp
+
+    @app.post("/auth/logout")
+    def logout(request: Request):
+        token = request.cookies.get(SESSION_COOKIE)
+        if token and sessions is not None:
+            try:                       # a valid session needs the CSRF token (Forbidden is not caught)
+                sessions.authenticate(token, method="POST", csrf_header=request.headers.get("x-csrf-token"))
+            except Unauthenticated:
+                pass                   # already expired or revoked: still clear the cookies
+        url = sessions.logout(token, settings.oidc_post_logout_redirect_uri) if sessions else None
+        resp = JSONResponse({"signed_out": True, "end_session_url": url})
+        resp.delete_cookie(SESSION_COOKIE, path="/")
+        resp.delete_cookie(CSRF_COOKIE, path="/")
+        return resp
+
+    @app.get("/auth/session")
+    def session_info(actor: Annotated[Actor, Depends(get_actor)]):
+        return jsonable_encoder({"principal_id": actor.principal_id, "kind": actor.kind, "issuer": actor.issuer,
+                                 "tenants": authenticator.list_tenants(actor),
+                                 "sso_configured": sessions is not None})
+
+    # ------------------------------------------------------------------- analyst UI (static build)
+    if settings.ui_dist_dir:
+        from pathlib import Path
+        from fastapi.responses import FileResponse
+        dist = Path(settings.ui_dist_dir).resolve()
+
+        @app.get("/ui/{path:path}")
+        def ui(path: str):
+            target = (dist / path).resolve()
+            if path and target.is_file() and dist in target.parents:
+                return FileResponse(target)
+            return FileResponse(dist / "index.html")
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
     def unknown(rest: str):
