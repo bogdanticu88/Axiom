@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     # origin listed here; nothing is enabled by default. The deterministic fake model is refused in production.
     model_destinations: str = ""
     tool_destinations: str = ""
+    # Verification worker (ADR 0014): allowed check-endpoint origins, and optionally the networks their addresses must
+    # be in. No origin is allowed by default.
+    verification_destinations: str = ""
+    verification_networks: str = ""
 
     # Enterprise sign-in for the analyst UI (ADR 0013): OpenID Connect authorization code flow with PKCE, run by the
     # backend (confidential client). Sessions are server-side; the browser holds an HttpOnly cookie.

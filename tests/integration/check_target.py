@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
 
-def _pki(directory: Path) -> tuple[Path, Path, Path]:
+def _pki(directory: Path, hostnames: tuple[str, ...] = ()) -> tuple[Path, Path, Path]:
     now = dt.datetime.now(dt.timezone.utc)
     ca_key = ec.generate_private_key(ec.SECP256R1())
     ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "axiom test check CA")])
@@ -39,7 +39,8 @@ def _pki(directory: Path) -> tuple[Path, Path, Path]:
             .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")])).issuer_name(ca_name)
             .public_key(key.public_key()).serial_number(x509.random_serial_number())
             .not_valid_before(now - dt.timedelta(minutes=5)).not_valid_after(now + dt.timedelta(days=1))
-            .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]),
+            .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
+                                                       + [x509.DNSName(h) for h in hostnames]),
                            critical=False)
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
             .add_extension(x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
@@ -68,8 +69,10 @@ class CheckTarget:
             self.server.server_close()
 
 
-def start(directory: Path) -> CheckTarget:
-    ca_path, cert_path, key_path = _pki(directory)
+def start(directory: Path, hostnames: tuple[str, ...] = ()) -> CheckTarget:
+    """``hostnames`` are added to the certificate (besides 127.0.0.1) for tests that pin a name to this address."""
+    directory.mkdir(parents=True, exist_ok=True)
+    ca_path, cert_path, key_path = _pki(directory, hostnames)
     target = CheckTarget("", ca_path)
 
     class Handler(BaseHTTPRequestHandler):
@@ -77,11 +80,15 @@ def start(directory: Path) -> CheckTarget:
             body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
             request = json.loads(body)
             target.requests.append({"path": self.path, "headers": dict(self.headers), "json": request})
-            status, payload = target.behaviour(request) if target.behaviour else (500, None)
+            answer = target.behaviour(request) if target.behaviour else (500, None)
+            status, payload = answer[0], answer[1]
+            extra = answer[2] if len(answer) > 2 else {}
             data = payload if isinstance(payload, bytes) else (b"" if payload is None else json.dumps(payload).encode())
             self.send_response(status)
-            if status in (301, 302, 307, 308):
+            if status in (301, 302, 307, 308) and "Location" not in extra:
                 self.send_header("Location", "https://example.invalid/elsewhere")
+            for k, v in extra.items():
+                self.send_header(k, v)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()

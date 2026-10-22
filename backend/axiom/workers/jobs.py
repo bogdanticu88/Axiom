@@ -105,8 +105,11 @@ def main() -> None:
     investigation = InvestigationHandler(store=ingestion.store, env=settings.env,
                                          model_destinations=settings.model_destination_set,
                                          tool_destinations=settings.tool_destination_set)
+    from ..verification.checks import DestinationPolicy
+    verification = VerificationCheckHandler(sync.evidence, secrets=sync.secrets, policy=DestinationPolicy.from_settings(
+        settings.verification_destinations, settings.verification_networks))
     worker = build_worker(db, ingestion, sync, worker_id=worker_id, witness=build_witness(settings, worker_id),
-                          investigation=investigation)
+                          investigation=investigation, verification=verification)
     worker.preflight()      # fail fast at start-up, not only on the first pass
     if settings.worker_metrics_port:
         from ..jobs.metrics import serve

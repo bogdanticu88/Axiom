@@ -37,8 +37,14 @@ def now_iso(delta: timedelta = timedelta()) -> str:
     return (datetime.now(timezone.utc) + delta).isoformat()
 
 
+def local_policy(target):
+    """The fixture endpoint runs on loopback, which the default policy never contacts, so it is allowed explicitly."""
+    return checks.DestinationPolicy.from_settings(target.base_url, "127.0.0.0/8")
+
+
 def clean(request, **over):
-    doc = {"schema": checks.SCHEMA, "request_id": request["request_id"], "observed_at": now_iso(),
+    doc = {"schema": checks.SCHEMA, "request_id": request["request_id"], "nonce": request["nonce"],
+           "asset_id": request["asset"]["id"], "observed_at": now_iso(),
            "deployment_digest": request["deployment_digest"], "coverage": "complete",
            "results": [{"criterion": "original_condition", "result": "absent"}]}
     return 200, {**doc, **over}
@@ -65,11 +71,13 @@ def setup(db, world, dbinfo, ctx_for, target, tmp_path, evidence):
         ctx_for("admin"), adapter="verification_check", scope_id=world.a.project, display_name="local check fixture",
         base_url=target.base_url, credential_ref=f"secretref:file{secrets_dir}/check-token", config={})
 
-    def factory(conn, secrets, clock):
+    def factory(conn, secrets, clock, policy):
         ref = conn["credential_ref"]
-        return checks.CheckEndpointClient(conn["base_url"], lambda: secrets.resolve(ref), verify=ssl.create_default_context(cafile=str(target.ca_path)),
+        return checks.CheckEndpointClient(conn["base_url"], lambda: secrets.resolve(ref), policy=policy,
+                                          verify=ssl.create_default_context(cafile=str(target.ca_path)),
                                           clock=clock, timeout=3)
     handler = VerificationCheckHandler(evidence, secrets=SecretRefResolver(env="test", file_dirs=(str(secrets_dir),)),
+                                       policy=local_policy(target),
                                        client_factory=factory)
 
     class S:
@@ -394,8 +402,9 @@ def test_project_boundary_binding_elsewhere_gives_no_authority(world, run, ctx_f
     SyncService(db, None, None).create_connection(
         ctx_for("admin"), adapter="verification_check", scope_id=world.a.root, display_name="root check",
         base_url=target.base_url, credential_ref=None, config={})
-    handler = VerificationCheckHandler(evidence, client_factory=lambda c, s, clock: checks.CheckEndpointClient(
-        c["base_url"], verify=ssl.create_default_context(cafile=str(target.ca_path)), clock=clock))
+    handler = VerificationCheckHandler(evidence, policy=local_policy(target),
+                                       client_factory=lambda c, s, clock, policy: checks.CheckEndpointClient(
+        c["base_url"], policy=policy, verify=ssl.create_default_context(cafile=str(target.ca_path)), clock=clock))
     cid = advance_to_verification(run, ctx_for, world, scenario)["id"]
     Worker(db, [handler]).run_once(only_tenants={world.a.id})
     j = job_for(admin_conn, cid)

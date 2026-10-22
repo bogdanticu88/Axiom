@@ -16,7 +16,7 @@ OTHER = "sha256:" + "c" * 64
 
 
 def body(**over):
-    doc = {"schema": "axiom-check/1", "request_id": "job-1", "observed_at": (NOW - timedelta(minutes=1)).isoformat(),
+    doc = {"schema": "axiom-check/2", "request_id": "job-1", "nonce": "n-1", "asset_id": "asset-1", "observed_at": (NOW - timedelta(minutes=1)).isoformat(),
            "deployment_digest": TARGET, "coverage": "complete",
            "results": [{"criterion": "original_condition", "result": "absent"}]}
     doc.update(over)
@@ -25,7 +25,8 @@ def body(**over):
 
 def assess(raw: bytes, status: int = 200, truncated: bool = False):
     ex = checks.Exchange(status, raw, truncated, NOW - timedelta(seconds=1), NOW)
-    return checks.assess(ex, request_id="job-1", criteria=["original_condition"], target_digest=TARGET,
+    return checks.assess(ex, request_id="job-1", nonce="n-1", asset_id="asset-1", criteria=["original_condition"],
+                         target_digest=TARGET,
                          change_reported_at=REPORTED, max_age=timedelta(hours=1))
 
 
@@ -40,8 +41,13 @@ CASES = [
     ("404", body(), "inconclusive", "none", "target_refused"),
     ("truncated", body(), "inconclusive", "none", "malformed_response"),
     ("not json", b"<html>", "inconclusive", "none", "malformed_response"),
-    ("wrong schema", body(schema="axiom-check/2"), "inconclusive", "none", "malformed_response"),
-    ("other request", body(request_id="job-2"), "inconclusive", "none", "malformed_response"),
+    ("wrong schema", body(schema="axiom-check/1"), "inconclusive", "none", "malformed_response"),
+    ("other request", body(request_id="job-2"), "inconclusive", "none", "unbound_response"),
+    ("other nonce", body(nonce="n-2"), "inconclusive", "none", "unbound_response"),
+    ("no nonce", body(nonce=...), "inconclusive", "none", "unbound_response"),
+    ("other asset", body(asset_id="asset-2"), "inconclusive", "none", "unbound_response"),
+    ("generic success", json.dumps({"schema": "axiom-check/2", "status": "ok", "coverage": "complete",
+                                    "results": []}).encode(), "inconclusive", "none", "unbound_response"),
     ("no coverage", body(coverage=...), "inconclusive", "none", "malformed_response"),
     ("bad entry", body(results=[{"criterion": "original_condition", "result": "maybe"}]), "inconclusive", "none",
      "malformed_response"),
@@ -87,3 +93,42 @@ def test_only_a_matching_complete_clean_check_with_verified_evidence_passes_afte
 
 def test_origin_strips_credentials_paths_and_queries():
     assert checks.origin("https://user:pw@check.example:8443/base/path?q=1") == "https://check.example:8443"
+
+
+# ----------------------------------------------------------------------------------------- destination policy
+POLICY = checks.DestinationPolicy.from_settings("https://checks.example:8443, https://scan.example")
+
+
+@pytest.mark.parametrize("url", ["https://checks.example:8443", "https://CHECKS.example:8443/base", "https://scan.example",
+                                 "https://scan.example:443"])
+def test_allowed_origins(url):
+    POLICY.check_origin(url)
+
+
+@pytest.mark.parametrize("url", ["https://checks.example", "https://checks.example:9443", "http://scan.example",
+                                 "https://evil.example", "https://user:pw@scan.example", "https://scan.example.evil.test"])
+def test_refused_origins(url):
+    with pytest.raises(checks.DestinationRefused):
+        POLICY.check_origin(url)
+
+
+def test_nothing_is_allowed_by_default():
+    with pytest.raises(checks.DestinationRefused):
+        checks.DestinationPolicy().check_origin("https://scan.example")
+
+
+@pytest.mark.parametrize("addresses", [["127.0.0.1"], ["169.254.169.254"], ["::1"], ["fe80::1"], ["0.0.0.0"],
+                                       ["10.0.0.5", "127.0.0.1"], []])
+def test_default_address_rules_refuse_local_and_metadata_ranges(addresses):
+    with pytest.raises(checks.DestinationRefused):
+        POLICY.check_addresses(addresses)
+
+
+def test_private_addresses_are_allowed_by_default_and_networks_narrow_them():
+    POLICY.check_addresses(["10.0.0.5", "192.168.1.10", "203.0.113.7"])
+    narrow = checks.DestinationPolicy.from_settings("https://scan.example", "10.20.0.0/16")
+    narrow.check_addresses(["10.20.1.1"])
+    for bad in (["10.21.0.1"], ["203.0.113.7"], ["10.20.1.1", "10.30.0.1"]):
+        with pytest.raises(checks.DestinationRefused):
+            narrow.check_addresses(bad)
+    checks.DestinationPolicy.from_settings("https://x.example", "127.0.0.0/8").check_addresses(["127.0.0.1"])

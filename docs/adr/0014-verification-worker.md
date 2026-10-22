@@ -111,3 +111,52 @@ verified evidence can end as passed.
 * Acceptance criteria beyond the original condition; criteria per case or per remediation plan.
 * A human-requested re-check (a second job for the same report); today one automated check runs per reported change.
 * Scheduling a check after a delay (for example waiting for a rollout to finish).
+
+## Amendment 1 (2026-10-22, checkpoint 8): the worker as an untrusted-input boundary
+
+### Who influences what the worker sends, and where
+* **Endpoint:** only a connection with adapter `verification_check`, created by someone holding
+  `connection.configure` (a policy administrator). Analysts, remediation owners and imported data cannot set or
+  change it. The connection covering the case's scope is chosen when the job runs.
+* **Target:** the deployment named in the latest remediation report, chosen by the person who reported the change
+  from the affected asset's recorded versions.
+* **Request content:** asset name and kind, vulnerability references and component locators come from imported
+  scanner data or people. They are lower-trust text sent as JSON values; they cannot change the destination, headers
+  or credential.
+
+### Destination policy (new)
+Operators list allowed origins in `AXIOM_VERIFICATION_DESTINATIONS`; nothing is allowed by default. The host is
+resolved once per attempt, and every resolved address must be inside `AXIOM_VERIFICATION_NETWORKS` when that is set,
+or outside loopback, link-local (including cloud metadata), unspecified and multicast ranges when it is not. Private
+ranges are allowed by default because internal check services are a normal deployment; operators who want them
+excluded or required set the networks explicitly. The request goes to the checked address, with TLS hostname
+verification against the configured name, so a different DNS answer between check and connect cannot redirect it.
+A refused destination or an untrusted certificate parks the job for an operator and records nothing about the case.
+
+### Responses are bound to the request (contract `axiom-check/2`)
+The request carries the job ID and a random nonce per attempt. A response must echo the job ID, the nonce and the
+asset ID, otherwise it is `unbound_response` (inconclusive). A generic "ok" therefore never verifies anything. What
+binding does not establish: that the endpoint actually examined the deployment. The examined digest, observation
+time and results are the endpoint's claims; nothing signs them. The platform records its own send and receive times
+separately from the endpoint's `observed_at`, and does not treat its own timestamps as evidence of what the endpoint
+did.
+
+### Credentials and secrets
+The bearer credential is read from a secret reference at use and sent only in the Authorization header of the pinned
+request; redirects are never followed. If a response echoes the credential, it is replaced before the response is
+stored as evidence, and the observation records `response_redacted`. Errors and job messages carry no credential.
+
+### Lifecycle (tested in `tests/integration/test_verification_lifecycle.py`)
+* Two workers racing: only the lease holder calls the endpoint and records.
+* Crash after the response, before the commit: nothing is recorded; the retry calls the endpoint again and records
+  once; the first attempt's evidence stays, attributed to the worker and cited by nothing.
+* Crash after the commit, before the acknowledgement: the job finishes as `already_recorded` without another call.
+* Retry after revocation: fails with `authority_missing` and does not call the endpoint.
+* Case sent back to review during the check: skipped on retry, nothing overwritten.
+* Newer deployment examined during the check: `different_deployment`, inconclusive.
+* Another tenant's evidence cannot be cited (not visible).
+
+Duplicate prevention has three layers: the job-level check for an existing observation, the report-level check for
+any existing verification, and `UNIQUE (tenant_id, job_id)` on observations. The checkpoint-7 crash test establishes
+the combined property (no second call, no second record) but cannot tell the first two layers apart; the mutation
+that removed the first layer was caught only through the job's result status. Each later layer now has its own test.

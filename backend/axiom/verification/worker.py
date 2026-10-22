@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from secrets import token_hex
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -48,13 +49,14 @@ from .routing import ADAPTER, KIND, covering_connection
 DEFAULT_MAX_AGE = 3600
 CRITERION = "original_condition"
 
-ClientFactory = Callable[[dict, object, Callable[[], datetime]], checks.CheckEndpointClient]
+ClientFactory = Callable[[dict, object, Callable[[], datetime], checks.DestinationPolicy],
+                         checks.CheckEndpointClient]
 
 
-def default_client_factory(connection: dict, secrets, clock) -> checks.CheckEndpointClient:
+def default_client_factory(connection: dict, secrets, clock, policy) -> checks.CheckEndpointClient:
     ref = connection["credential_ref"]
     return checks.CheckEndpointClient(connection["base_url"], (lambda: secrets.resolve(ref)) if ref else None,
-                                      clock=clock)
+                                      policy=policy, clock=clock)
 
 
 def max_age(connection: dict) -> timedelta:
@@ -73,9 +75,10 @@ class VerificationCheckHandler:
     current_version = 1
 
     def __init__(self, evidence: EvidenceService, *, secrets=None, client_factory: ClientFactory | None = None,
-                 clock: Callable[[], datetime] | None = None):
+                 clock: Callable[[], datetime] | None = None, policy: checks.DestinationPolicy | None = None):
         from ..ingestion.sync import EnvSecretResolver
         self.evidence = evidence
+        self.policy = policy or checks.DestinationPolicy()      # default: no destination allowed
         self.secrets = secrets or EnvSecretResolver()
         self.client_factory = client_factory or default_client_factory
         self.clock = clock or (lambda: datetime.now(timezone.utc))
@@ -156,7 +159,7 @@ class VerificationCheckHandler:
 
         criteria_doc = {"check": "verification_check", "connection_id": str(connection["id"]),
                         "criteria": [{"id": CRITERION, "kind": "finding_absent", "conditions": conditions}]}
-        request = {"schema": checks.SCHEMA, "request_id": str(jc.job["id"]),
+        request = {"schema": checks.SCHEMA, "request_id": str(jc.job["id"]), "nonce": token_hex(16),
                    "asset": {"id": str(asset["id"]), "kind": asset["asset_kind"], "name": asset["display_name"]},
                    "deployment_digest": target["deployment_digest"], "criteria": criteria_doc["criteria"]}
         attempt = jc.job["attempts"] + 1
@@ -168,16 +171,19 @@ class VerificationCheckHandler:
             result = checks.inconclusive("no_checkable_condition",
                                          "the case has no vulnerability reference on the reported asset")
         else:
-            client = self.client_factory(connection, self.secrets, self.clock)
+            client = self.client_factory(connection, self.secrets, self.clock, self.policy)
             try:
                 exchange = client.run(request)
                 requested_at = exchange.sent_at
+            except checks.DestinationRefused as exc:
+                return NeedsOperator(f"verification destination refused: {exc}")
             except checks.CheckUnavailable as exc:
                 if attempt < jc.job["max_attempts"]:
                     return Retry(str(exc))
                 result = checks.inconclusive("target_unavailable", f"{exc} on all {attempt} attempts")
             else:
-                result = checks.assess(exchange, request_id=request["request_id"], criteria=[CRITERION],
+                result = checks.assess(exchange, request_id=request["request_id"], nonce=request["nonce"],
+                                       asset_id=request["asset"]["id"], criteria=[CRITERION],
                                        target_digest=target["deployment_digest"],
                                        change_reported_at=report["created_at"], max_age=max_age(connection))
                 if exchange.body:
@@ -204,14 +210,15 @@ class VerificationCheckHandler:
                            verification_run_id, job_id, lease_token, worker, connection_id, source_adapter,
                            source_origin, request_digest, requested_at, received_at, http_status, response_digest,
                            evidence_object_id, target_observed_at, observed_deployment_digest, rule, attempts,
-                           recorded_by)
+                           recorded_by, connected_address, response_redacted)
                        VALUES (%s, gen_random_uuid(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                               %s, %s, %s, %s, %s)""",
+                               %s, %s, %s, %s, %s, %s, %s)""",
                     (vctx.tenant_id, case_id, report_id, run["id"], jc.job["id"], jc.lease_token, jc.worker_id,
                      connection["id"], ADAPTER, checks.origin(connection["base_url"]), _digest(request),
                      requested_at, exchange.received_at if exchange else None, exchange.status if exchange else None,
                      hashlib.sha256(exchange.body).hexdigest() if exchange else None, run["evidence_object_id"],
-                     result.observed_at, result.observed_digest, result.rule, attempt, principal))
+                     result.observed_at, result.observed_digest, result.rule, attempt, principal,
+                     exchange.connected_address if exchange else None, bool(exchange and exchange.redacted)))
         except PermissionDenied as exc:
             return Fail(f"authority_revoked: {exc}")
         except Conflict as exc:
