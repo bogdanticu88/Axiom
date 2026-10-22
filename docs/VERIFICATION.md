@@ -201,3 +201,44 @@ archive's own copy of this file stops at run 10.)
   With `BUILD=1`: `SMOKE PASS (axiom-smoke-230723)`, including
   `Trivy import via API + job-worker: completed complete 30`. Log: `docs/verification/2026-10-22-jobs/compose-smoke.log`.
 * Not covered: database-server crash with the product runner (only in the experiment), load, CI.
+
+### Run 13: action protocol, two-step risk acceptance, job operations, restore witness, CI (2026-10-22 ~06:00Z to 07:45Z)
+Bugs found by the new tests while writing them (all fixed before the recorded runs):
+* **Intent creation race**: two jobs creating the intent for one operation key at once both found no row; the second
+  insert failed with a unique violation. Now `INSERT ... ON CONFLICT DO NOTHING` then re-read under lock
+  (act::test_two_jobs_racing_on_one_operation_key_send_one_first_attempt).
+* A duplicate pending risk request surfaced as a raw unique-index error; now a 409 `request_pending`.
+* Test-side mistakes corrected: a viewer gets 404 (not 403) for proposals it cannot read; analysts hold `job.read`
+  only at project scope, so tenant-wide job reads are 403 for them; `audit_events` uses `occurred_at`; the sweep
+  result now includes lapsed requests and reassessment notices. A 80-day test value I picked was below the 90-day
+  independence threshold, so the acceptance (correctly) went through; restored to 120 days.
+
+Mutation checks (`docs/verification/2026-10-22-actions-mutation-checks.log`): 12 targeted mutations, 11 caught. The
+one not caught removed only the proposal lock; the approval row lock still serialises reservations. Removing **both**
+service locks was caught 3/3, and the database CHECK on use counts rejected the over-reservation each time
+(raw `CheckViolation`), so no approval was over-used. Other mutations caught: no state re-read when marking executing;
+lookup miss treated as proof; approval status, approver authority and preconditions ignored at execution; proposer
+approval with only the DB trigger left; idempotency digest not compared; witness not checked; risk self-authorisation
+with only the DB check left; stale risk requests; renewal chain ignored at expiry.
+
+Timing-sensitive tests (stale worker x4 variants, two-job race, 4 workers x 12 executions): 5 consecutive runs,
+7 passed each (`docs/verification/2026-10-22-actions/timing-tests-5x.log`).
+
+CI pipeline `scripts/ci/run.sh` (this is a local execution; the hosted workflow has never run):
+* **First run: failed** in three stages, none due to product code. The Docker daemon was not running after the
+  workspace restarted (SeaweedFS could not start, so the 2 S3 tests failed with "object storage unavailable", and the
+  Compose image build failed), and the restore drill could not start its cluster because port 55434 was held by a
+  leftover cluster from an earlier run. My earlier "port free" check used `ss`, which is not installed here, so
+  it proved nothing. Fixes: started `dockerd`; the drill now picks a free port and destroys its cluster even when
+  start fails. Output kept as `docs/verification/2026-10-22-actions/ci-run1-failed.out`.
+* **Second run: CI PASS.** Dependencies (locked), byte-compile, tracked-file secret scan (no keys, no `.env` files)
+  passed. Foundation on a fresh separate cluster with fresh SeaweedFS: migrations `applied: 0001 ... 0007`,
+  re-run `applied: none`, second database `applied: 0001 ... 0007`, edited migration rejected (checksum), RLS audit 51
+  tables forced, 3 global tables without (`permissions`, `role_permissions`, `recovery_acknowledgements`), 0 not owned
+  by `axiom_owner`; **199 passed, 1 skipped (the opt-in drill), 1 warning in 110.17s**. New files: actions 28,
+  actions API 4, risk two-step 7, restore witness 5, jobs 25, ingestion jobs 4. Physical snapshot drill: **1 passed**.
+  Compose smoke with a rebuilt image (`sha256:d0b2177a95ac...`), job worker running with a restore witness volume:
+  `SMOKE PASS (axiom-smoke-074003)`. Logs: `docs/verification/2026-10-22-actions/`.
+
+Not covered: any live tracker (the Jira-style integration is fixture-tested only); the S3 witness backend; hosted CI;
+load beyond the 4 x 12 concurrency test; point-in-time recovery.

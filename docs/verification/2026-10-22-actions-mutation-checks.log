@@ -1,0 +1,17 @@
+gate: no re-read of intent state when marking executing: CAUGHT (1 failed in 1.19s)
+gate: lookup miss treated as proof (create again): CAUGHT (2 failed, 3 passed, 23 deselected in 3.13s)
+service: no row locks on proposal/approval when reserving: NOT CAUGHT (1 passed in 1.09s)
+re-check: approval status ignored: CAUGHT (1 failed in 1.16s)
+re-check: approver's current authority ignored: CAUGHT (1 failed in 1.26s)
+re-check: preconditions ignored: CAUGHT (1 failed in 1.15s)
+service: proposer may approve (DB trigger remains): CAUGHT (1 failed in 1.10s)
+idempotency: digest not compared: CAUGHT (1 failed in 1.12s)
+witness: not checked: CAUGHT (2 failed, 3 passed in 6.02s)
+risk: requester may self-authorise (DB check remains): CAUGHT (1 failed in 0.99s)
+risk: authorise ignores case changes since request: CAUGHT (1 failed in 1.02s)
+risk: expiry ignores renewal chain: CAUGHT (1 failed in 9.31s)
+note: "no row locks" above removed only the proposal lock; the approval row lock (FOR UPDATE) still serialises
+reservations, so the test correctly still passes. Stronger mutation, both service locks removed (3 runs):
+service: no proposal lock and no approval lock: CAUGHT 3/3 (1 failed each); the database check
+  approvals_check (uses_reserved - uses_released <= max_uses) rejected the over-reservation
+  (psycopg.errors.CheckViolation), so no approval was over-used even with the service locks gone.

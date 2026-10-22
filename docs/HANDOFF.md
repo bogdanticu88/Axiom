@@ -33,16 +33,30 @@ observability, backup/restore, retention; no connectors at any support level. Se
 * After restoring a database backup, workers refuse to start until `python -m axiom.provisioning --dsn ...
   recovery-status` has been reviewed and `acknowledge-recovery --by ... --note ...` run.
 
+## State after the actions checkpoint
+* Action protocol (ADR 0010): proposals with DB-computed digests, approvals bound to version and digest, locked
+  use reservations, pre-execution re-check, API idempotency keys, capability-based effect gate, operator
+  reconciliation. Jira-style ticket integration is **fixture-tested only**.
+* Two-step risk acceptance (request / authorise / reject / withdraw / renew / reassessment / lapse) with interim
+  thresholds D-RISK-1 (DECISIONS.md).
+* Job operations API, worker Prometheus endpoint, operator retry (migration 0006), CI pipeline `scripts/ci/run.sh`
+  plus `.github/workflows/ci.yml` (never run on a hosted service).
+* Restore detection: fingerprint plus external witness (`AXIOM_RESTORE_WITNESS=dir:...|s3:...`, required in production).
+  Rolling back database and witness together is undetectable by design; keep the witness in another backup domain.
+* **R7 is still open** (route back from remediation_planned / remediating to review): awaiting the project owner's decision.
+
 ## Next tasks (in order)
-1. Job runner remainder: metrics (queue depth, oldest due job, lease expiries, fenced refusals), job operations API,
-   CI execution of the kill suite (with DEP-08).
-2. Phase D groundwork on that runner: action proposals, approvals bound to digest/scope/expiry/uses, reservations,
-   intents, reconciliation, idempotency-key storage (API-07); then RISK-02 request/authorise/renew.
-3. Phase B remainder: merge/split execution for confirmed identity candidates (AST-03), webhooks (ING-08), connector
-   health and freshness (ING-10), real CodeQL/Semgrep SARIF fixtures, production secret resolution (Key Vault /
-   workload identity), Defender for Cloud and AWS inventory (Phase E list).
-4. Production SSO (AUTHZ-14) and CI (DEP-08).
-5. Decide open item R7 (route back from planned/remediating to review).
+1. On the R7 decision: implement or record the rejection (see the checkpoint report for options).
+2. Phase D remainder: inbound ticket status sync (ACT-09 negative path), SLA timers, ownership routing, immutable
+   report snapshots and GRC exports; per-effect-class approval permissions (ACT-08); expired idempotency-key cleanup.
+3. Workflow integrations beyond the fake: ServiceNow and GitHub adapters (fixture-tested first); a Jira Cloud sandbox
+   is needed before any Jira support claim.
+4. Operations: S3 witness backend test against SeaweedFS; operations UI; pin CI actions to verified SHAs and run CI on
+   a hosted service once a remote.
+5. Phase B remainder: merge/split execution (AST-03), webhooks (ING-08), connector health (ING-10), real CodeQL /
+   Semgrep SARIF fixtures, production secret resolution.
+6. Production SSO (AUTHZ-14). Phase C (investigation, prioritisation, policy engine), which also provides the
+   priority command the material-change test currently injects.
 
 ## Commands
 ```
@@ -50,6 +64,9 @@ uv sync --frozen
 scripts/dev/test-db.sh start                 # disposable cluster 127.0.0.1:55432; writes .env.test (gitignored)
 uv run pytest tests -q
 scripts/verify/foundation.sh                 # separate fresh cluster + SeaweedFS; log in .var/verify/<stamp>/
+scripts/ci/run.sh                            # full CI pipeline: foundation + restore drill + Compose smoke (BUILD=1)
+AXIOM_RUN_DRILLS=1 uv run pytest tests/drills   # physical snapshot rollback drill on its own cluster (free port)
+python -m axiom.provisioning --dsn ... recovery-status --witness-dir DIR   # after any restore
 BUILD=1 scripts/verify/compose-smoke.sh      # behind a TLS proxy add BUILD_CA=<ca bundle>
 scripts/dev/test-db.sh destroy               # remove the disposable cluster
 ```

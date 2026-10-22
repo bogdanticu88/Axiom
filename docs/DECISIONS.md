@@ -15,11 +15,18 @@ completeness.
 | [0007](adr/0007-dependency-pinning.md) | Dependency pinning | accepted | uv lock with cooldown; digest-pinned images |
 | [0008](adr/0008-authentication.md) | Authentication | accepted for development | Dev token auth only; production SSO is a tracked gap |
 | [0009](adr/0009-ingestion-pipeline.md) | Ingestion pipeline, source identity, asset correlation | accepted for Phase B | Fenced page commits, coverage rules, strong/weak identifiers, no automatic merges |
+| [0010](adr/0010-action-protocol-and-duplicate-prevention.md) | Action protocol, duplicate prevention, restore detection | accepted | DB-computed proposal digests; approvals bound to version and digest; locked reservations; capability-based effect gate (no repeat without provider dedupe or fencing); external restore witness |
 
 ## Proposed specification changes awaiting approval
 | Ref | Proposal | Why | Status |
 |---|---|---|---|
 | R7 | Allow `remediation_planned -> review_required` and `remediating -> review_required` with an authorised decision | No way to abandon a plan today without a fake verification | awaiting decision; not implemented |
+
+## Interim defaults pending business decisions
+| Ref | Default in force | Where | Decision needed |
+|---|---|---|---|
+| D-RISK-1 | Independent risk authorisation for pending/urgent/high priority or more than 90 days; maximum 365 days; requests lapse after 14 days; reassessment notice 14 days before expiry | `RiskPolicy` (stored with each request) | Approval thresholds (Specification S 17) |
+| D-ACT-1 | `ticket.create` approvals: at most 3 uses; proposals expire within 30 days | `domains/actions/model.py` | Approval thresholds (Specification S 17) |
 
 ## Business decisions still open (from the specification, section 17)
 Product name and licence; supported vendor editions and test accounts; approved model providers and offline-model

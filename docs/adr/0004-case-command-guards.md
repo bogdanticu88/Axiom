@@ -59,5 +59,9 @@ retirement).
 * **No route back** from `remediation_planned` or `remediating` to review when a plan is abandoned (R7). Proposed
   specification change: allow `remediation_planned -> review_required` and `remediating -> review_required` with an
   authorised decision. Awaiting approval; not implemented.
-* **Risk acceptance is single-step** (R9): a risk owner authorises directly within limits. The specified
-  request / authorise / renew flow (RISK-02) is not built. This is an acknowledged gap, not a scope change.
+* ~~Risk acceptance is single-step (R9).~~ **Resolved 2026-10-22:** request / authorise / reject / withdraw / renew /
+  reassess is built (`domains/cases/risk.py`, migration 0007). Independent authorisation is required for pending,
+  urgent or high priority and for durations over 90 days; these thresholds are **defaults pending the business
+  decision on approval thresholds** (Specification S 17) and are stored with each request. The single-call
+  `accept_risk` remains only for acceptances policy allows to be self-authorised. Renewals supersede the active
+  acceptance; the closure keeps the original and the expiry sweep follows the renewal chain.

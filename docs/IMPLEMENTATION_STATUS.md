@@ -22,7 +22,7 @@ Capability states used here:
 | HTTP API (/api/v1) | verified for implemented endpoints | api:: tests and Compose smoke |
 | Compose single-host install | **incomplete** | PostgreSQL, SeaweedFS, init, API and job worker verified by fresh-install smoke; UI and real IdP not included |
 | Workflow engine decision (ADR 0006) | **accepted** | PostgreSQL-backed runner chosen on the project owner's "Proceed"; Temporal is the named alternative with revisit triggers |
-| Durable job runner `axiom.jobs` | **verified (single-effect jobs)** | job::* (24 tests incl. real SIGKILL and pg_dump/pg_restore drill), mutation-check log; leases capped at step deadline, claim counter dead-letters poison jobs, fenced results, per-tenant cap, version pinning and migration, cancellation, operator tooling, effect gate with intents, lookup-before-create, operator parking and restore detection. **Not built:** metrics, an operations UI/API, CI execution of the kill suite, multi-step workflows, cancellation after an external call has started |
+| Durable job runner `axiom.jobs` | **verified (single-effect jobs)**; operations API, metrics and CI added (see Phase D and ADR 0006 condition table) | job::* (24 tests incl. real SIGKILL and pg_dump/pg_restore drill), mutation-check log; leases capped at step deadline, claim counter dead-letters poison jobs, fenced results, per-tenant cap, version pinning and migration, cancellation, operator tooling, effect gate with intents, lookup-before-create, operator parking and restore detection. **Not built:** an operations UI, hosted CI execution, multi-step workflows, cancellation after an external call has started |
 | CI pipeline | not started | DEP-08 |
 | Phase A ADRs (workflow engine, isolation, evidence retention) | incomplete | 0002, 0005 and 0006 (accepted) written; retention rules not yet decided |
 
@@ -57,9 +57,25 @@ separate (met for weak overlaps); live access validates advertised API operation
 so no adapter is advertised beyond fixture-tested).
 
 ## Phase C: Investigation and prioritisation - not started
-## Phase D: Remediation and GRC lifecycle - not started
-Partial domain groundwork exists: remediation reports, verification runs, single-step risk acceptance with expiry
-sweep (RISK-02 two-step flow missing), closure records.
+## Phase D: Remediation and GRC lifecycle - incomplete (action protocol and risk flow verified)
+
+| Item | State | Evidence / gap |
+|---|---|---|
+| Action proposals (immutable versions, DB-computed binding digest, preconditions, expiry) | verified | act::* (ADR 0010) |
+| Approvals bound to version and digest; SoD in service and DB; expiry; use counts; revocation | verified | act::*, mutation checks |
+| Pre-execution re-check (approver and requester authority, membership, revocation, preconditions, connection) | verified | act::test_revocation..., ::test_approver_losing_membership..., ::test_material_change... |
+| Transactional use reservation; uses returned only if never attempted | verified | act::test_concurrent_reservations..., ::test_a_use_is_never_returned... |
+| API idempotency keys (required on execution) | verified | act::test_idempotency..., act_api:: |
+| Effect gate: capability-based repeat rule, race-safe first attempt, lost-ack and stale-worker handling | verified against fakes | act::test_lost_ack..., ::test_stale_worker_already_past_the_boundary[4 variants], ::test_two_jobs_racing..., ::test_concurrent_workers_many_executions_no_duplicates |
+| Jira-style ticket integration | **fixture-tested** | local fake only; not Jira support |
+| Operator reconciliation (adopt / not applied / abandon), preserves approvals, audited | verified | act::test_lost_ack_with_lagging_search..., ::test_operator_actions_are_audited..., act_api:: |
+| Two-step risk acceptance: request, independent authorisation, reject, withdraw, renew, reassessment notices, lapse | verified | risk2::*, act_api::test_risk_request..., defaults D-RISK-1 |
+| ServiceNow, GitHub, pull requests, production change | not started | production change disabled by design |
+| SLA timers, ownership routing, inbound ticket sync, immutable report snapshots, GRC exports | not started | |
+
+**Phase D gate** (Plan 8): ingestion through approved ticket (**met against the fake tracker only**), deployed fix
+verification and closure (met in case tests), recurrence (met), unknown action outcome reconciles safely (met against
+fakes; see ADR 0010 for the exact guarantee and its limits).
 ## Phase E: Integration breadth - not started
 All 20 catalogue connectors are at "planned". None is fixture-tested, sandbox-validated or production-supported.
 ## Phase F: Production operations and evaluation - not started
@@ -69,10 +85,13 @@ All 20 catalogue connectors are at "planned". None is fixture-tested, sandbox-va
 | Capability | State |
 |---|---|
 | Tenant isolation (DB, API, objects) | verified |
-| Tenant isolation (jobs, caches, search, exports, credentials, model requests) | not started (components do not exist) |
+| Tenant isolation (jobs) | verified (job::test_jobs_are_tenant_isolated; RLS on all job, action and risk tables) |
+| Tenant isolation (caches, search, exports, credentials, model requests) | not started (components do not exist) |
 | Case lifecycle and closure routes, including asset retirement | verified |
-| Request/authorise/renew risk acceptance | not started (single-step only) |
-| Approvals and external actions in product code | not started (experiment only) |
+| Request/authorise/renew risk acceptance | verified (thresholds are interim defaults) |
+| Approvals and external actions in product code | verified against fakes; Jira-style integration fixture-tested |
+| Restore detection | fingerprint plus external witness; blind spots tested and documented (ADR 0010) |
+| Job operations (API, metrics, retry, reconciliation) and CI | verified locally; hosted CI never run |
 | Production SSO | not started |
 | Ingestion and correlation | verified core (see Phase B) |
 | Connectors | 4 fixture-tested, 16 planned, none sandbox-validated |

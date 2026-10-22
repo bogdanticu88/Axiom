@@ -15,6 +15,8 @@ requirement is verified, the status is `implementing` and the note says which pa
 Test references are abbreviated: `cases::name` = tests/integration/test_cases.py, `iso::` = test_isolation.py,
 `evo::` = test_evidence_outbox.py, `api::` = test_api.py, `s3::` = test_s3_store.py, `unit::` = tests/unit/test_rules.py,
 `spike::` = experiments/workflow-spike/tests/test_scenarios.py. `job::` = tests/integration/test_jobs.py.
+`act::` = tests/integration/test_actions.py. `act_api::` = tests/integration/test_actions_api.py.
+`risk2::` = tests/integration/test_risk_two_step.py. `rw::` = tests/integration/test_restore_witness.py.
 `ingjob::` = tests/integration/test_ingestion_jobs.py.
 
 Last updated: 2026-10-22 (Phase B checkpoint).
@@ -25,10 +27,11 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | Gap | Requirement IDs | State |
 |---|---|---|
 | Authentication is **development token authentication** (generated key, inline JWKS). No production enterprise OIDC/SSO login, IdP integration test, revocation strategy or workload identity yet | AUTHZ-14, ADR 0008 | planned |
-| Risk acceptance is **single-step**; the request, authorise and renew flow is not built | RISK-02, ADR 0004 | planned |
-| Job runner built for single-effect jobs only: no metrics, operations UI/API, multi-step workflows or CI execution of the kill suite; every integration so far is a test fake | ARC-02, ADR 0006 | implementing |
+| Job runner: no operations UI, no multi-step workflows; CI pipeline executed locally only (hosted workflow never run) | ARC-02, DEP-08, ADR 0006 | implementing |
+| Action protocol is fixture-tested only: the Jira-style integration has never met a real Jira; no other workflow integration exists | INT-15..17, ADR 0010 | fixture-tested |
+| Restore detection cannot see a rollback of the database **and** the witness together; S3 witness backend untested | ADR 0010 | documented limitation |
 | No route back from planned/remediating to review | R7, DECISIONS.md | awaiting decision |
-| Not built: webhooks, merge/split execution, Defender/AWS context (Phase B remainder), investigation and AI, prioritisation (C), actions, approvals, workflow adapters, reporting and GRC (D), UI, Helm/AKS, observability, backup/restore, retention and deletion (F), evaluation dataset | sections 8 to 17 | planned |
+| Not built: webhooks, merge/split execution, Defender/AWS context (Phase B remainder), investigation and AI, prioritisation (C), ServiceNow and GitHub workflow adapters, inbound ticket status sync, reporting and GRC (D), UI, Helm/AKS, observability, backup/restore, retention and deletion (F), evaluation dataset | sections 8 to 17 | planned |
 | **No connector is sandbox-validated or production-supported.** Four are fixture-tested (Trivy and SARIF with real tool output; Tenable and Azure Resource Graph with synthetic data and local fakes); the other 16 are planned; commercial ones need licensed accounts | INT-01..INT-20 | fixture-tested / planned / blocked for sandbox validation |
 
 ---
@@ -43,8 +46,8 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | B04 | Failed or partial synchronisation never implies remediation | coverage rules; absence and source fixes never touch cases | ing::test_partial_scan..., ::test_tenable_identity..., sync::test_interrupted_sync_keeps_committed_pages_as_partial | verified | |
 | B05 | Untrusted content cannot grant authority, change policy or choose tool destinations | Authority only from tokens and bindings | none | planned | Investigation tools and gateway (Phase C) |
 | B06 | Records, jobs, objects, credentials, caches and model requests enforce tenant boundaries | RLS, composite FKs, `TenantObjectStore`, tx-bound context | iso::*, evo::test_cross_tenant_evidence_is_not_found, api::test_cross_tenant_access_through_api_is_denied, job::test_jobs_are_tenant_isolated | implementing | Verified for database, API, object storage and jobs; credentials (secret refs only so far), caches and model requests do not exist yet |
-| B07 | Approvals bind to exact action, arguments, resources, tenant, validity and use count | Experiment only; the effect gate's `revalidate` hook re-checks authority at the boundary (job::test_revoked_authority...) | spike::approval digest mismatch, expired approval | implementing | Platform approval tables not built (Phase D) |
-| B08 | Unknown external outcomes reconcile before retry; no exactly-once claim | `jobs/effects.py` EffectGate, `axiom.effect_intents` | job::test_lost_ack_with_lookup..., ::test_lost_ack_without_lookup_parks..., ::test_sigkill_after_effect... | verified | Against a file-backed fake integration only; each real integration must be shown to support lookup or idempotency keys |
+| B07 | Approvals bind to exact action, arguments, resources, tenant, validity and use count | `approvals` FK on (version, digest); DB-computed digest; expiry, max_uses, counters guarded | act::test_approval_cannot_point_at_a_different_digest, ::test_revision_after_approval_requires_new_approval, ::test_concurrent_reservations_never_exceed_max_uses, ::test_approval_limits | verified | Tenant binding via RLS and composite FKs |
+| B08 | Unknown external outcomes reconcile before retry; no exactly-once claim | EffectGate capability rules (ADR 0010), `axiom.effect_intents`, `action_executions` | act::test_lost_ack_with_lagging_search_parks..., ::test_lost_ack_adopted..., ::test_lost_ack_with_provider_idempotency..., ::test_stale_worker_already_past_the_boundary[*], job::test_sigkill_after_effect... | verified | Against local fakes only; real providers must be shown to have the declared capabilities |
 | B09 | Previous decisions remain retrievable after reassessment | Append-only decisions, events, closure records | cases::test_full_lifecycle_to_verified_closure_and_reopen_preserves_history | verified | |
 | B10 | Report figures derive from reproducible queries over an identified snapshot | none | none | planned | Phase D reporting |
 | B11 | Model output is analysis, supported by independent observations | none | none | planned | Phase C |
@@ -55,13 +58,13 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | ID | Scenario | Verification | Status | Notes |
 |---|---|---|---|---|
 | A01 | Reimport and replay: no duplicate occurrences, decisions or external actions | ing::test_replayed_import_creates_no_duplicates, ::test_resume_after_in_process_crash_skips_committed_pages, ::test_real_process_kill_then_resume | implementing | Occurrences, cases, events and decisions verified; external actions do not exist yet |
-| A02 | Lost acknowledgement after ticket creation reconciles or pauses | job::test_lost_ack_with_lookup_is_adopted_not_repeated, ::test_lost_ack_without_lookup_parks_and_operator_adopts | implementing | Runner level verified with a fake ticket system; no ticket integration (Jira etc.) built yet |
+| A02 | Lost acknowledgement after ticket creation reconciles or pauses | act::test_lost_ack_with_lagging_search_parks_instead_of_creating_again, ::test_lost_ack_adopted_when_the_index_has_caught_up, ::test_lost_ack_with_provider_idempotency_retries_safely | verified | Jira-style fake (fixture-tested); no live tracker |
 | A03 | Half a scan: keep cases, show partial coverage, close none | ing::test_partial_scan_closes_nothing_and_complete_rescan_records_absence | verified | |
 | A04 | Conflicting asset identifiers require review; no cross-tenant/deployment merge | ing::test_tenable_identity..., sync::test_tenable_host_and_azure_vm..., iso::test_cross_tenant_foreign_key_rejected | implementing | Weak overlaps and strong conflicts verified; merge execution not built |
 | A05 | Malicious instructions in scanner text change nothing | none | planned | Phase C adversarial suite |
 | A06 | Model conclusion citing nonexistent observation is rejected | none | planned | Phase C |
-| A07 | Revoked evidence access or approval before execution denies and records why | cases::test_permission_scope_and_revocation (permission part) | implementing | Approval revocation is Phase D |
-| A08 | Changed arguments after approval require new approval | spike digest mismatch | implementing | Phase D in platform |
+| A07 | Revoked evidence access or approval before execution denies and records why | cases::test_permission_scope_and_revocation, act::test_revocation_before_execution_denies_and_returns_the_unused_use, ::test_approver_losing_membership_before_execution_denies | verified | Denial reason recorded on the execution and in job events |
+| A08 | Changed arguments after approval require new approval | act::test_revision_after_approval_requires_new_approval, act_api::test_action_journey_with_idempotent_execution | verified | |
 | A09 | External ticket closure without deployment proof keeps the case open | cases::test_no_closure_path_from_remediating | implementing | Domain side verified; Jira/ServiceNow sync must preserve it (Phase D) |
 | A10 | Losing a connector or model preserves work and resumes with bounded retry | sync::test_interrupted_sync..., adp::test_tenable_client_bounded_retries... | implementing | Connector part verified against fakes; model part is Phase C |
 | A11 | Risk acceptance expiry reopens review and notifies the owner | cases::test_risk_acceptance_limits_owner_and_expiry_reopens, ingjob::test_risk_expiry_sweep_is_scheduled_once_per_interval_per_tenant | implementing | Reopen, notification event and hourly scheduled sweep verified; notification delivery not built |
@@ -93,7 +96,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | X17 | Tenant selection gives no existence oracle | iso::test_tenant_selection_and_security_events | verified | |
 | X18 | Emergency access is time-bound and raises a review event | cases::test_tenant_admin_delegation_rules | verified | Review workflow itself planned |
 | X19 | Concurrent outbox relays never double-claim | evo::test_concurrent_relays_do_not_double_claim | verified | |
-| X20 | Approval waits survive worker restart without duplicate effects | spike passed; runner `Wait` state is a row (job::test_wait_then_done) | implementing | Approval records are Phase D |
+| X20 | Approval waits survive worker restart without duplicate effects | job::test_wait_then_done, job::test_sigkill_after_effect..., act::test_stale_worker_already_past_the_boundary[*] | implementing | Approvals are records, so waiting is not held in a worker; an automatic "wait for approval then execute" job is not built (execution is requested explicitly after approval) |
 | X21 | Restored backups do not reactivate expired grants or replay effects (D 13) | none | planned | |
 | X22 | Evidence deletion and legal-hold races follow policy (D 13) | none | planned | |
 
@@ -149,7 +152,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | AUTHZ-08 | Emergency access: time-bound, reason, notification, retrospective review | `assign_role(emergency=True)` | cases::test_tenant_admin_delegation_rules | implementing | Review workflow and notification delivery planned |
 | AUTHZ-09 | Administration grants no evidence, risk or approval authority; operators get no tenant access | role catalogue; installation roles outside tenants | X08 tests | verified | |
 | AUTHZ-10 | Delegation limits bound risk acceptance and action approval | `delegation_limits`, `_delegation_limit` | cases::test_risk_acceptance_limits... | implementing | Action approval limits are Phase D |
-| AUTHZ-11 | High-impact decisions prohibit self-approval by default | CASE-15 guards | CASE-15 tests | implementing | Approvals and policy publishing pending |
+| AUTHZ-11 | High-impact decisions prohibit self-approval by default | CASE-15 guards; proposer cannot approve (service + trigger); risk independence (service + CHECK) | act::test_proposer_cannot_approve_in_service_or_database, risk2::test_high_impact_needs_someone_other_than_the_requester, ::test_database_backstop_for_independence | verified for actions and risk acceptance | Policy publishing is Phase C |
 | AUTHZ-12 | Workload principals with job-scoped service grants (tools, subjects, expiry, budget) | none | none | planned | Phase C |
 | AUTHZ-13 | No authority caching across requests; revocation effective on next request | per-transaction loading | cases::test_permission_scope_and_revocation | verified | |
 | AUTHZ-14 | Production OIDC SSO integration (e.g. Entra ID, Keycloak) | JWKS URI support | none | planned | Development issuer only so far |
@@ -197,7 +200,7 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | API-04 | Structured errors: code, safe message, correlation ID, retryability | exception handlers | api::test_conflicts_and_structured_errors | verified | |
 | API-05 | Cursor pagination | `/cases` cursor | api::test_pagination | verified | Other list endpoints pending |
 | API-06 | Long-running work returns 202 and a job reference | none | none | planned | |
-| API-07 | External-effect commands need idempotency keys with stored request digest and outcome | none | none | planned | Phase D |
+| API-07 | External-effect commands need idempotency keys with stored request digest and outcome | `axiom/idempotency.py`, `axiom.idempotency_keys`; required on execution requests | act::test_idempotency_key_replays_and_rejects_reuse_with_different_arguments, ::test_idempotency_keys_are_scoped_per_principal, act_api::test_action_journey_with_idempotent_execution | verified | Expired-key cleanup not built |
 | API-08 | Versioned contracts and generated OpenAPI under contracts/ | OpenAPI served at /api/v1/openapi.json | manual check (200) | implementing | Not exported or diff-checked yet |
 | API-09 | Permission denial distinct from dependency failure; hidden records return 404 | error mapping | api::test_cross_tenant_access_through_api_is_denied | verified | |
 
@@ -265,16 +268,16 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 
 | ID | Requirement | Status | Notes |
 |---|---|---|---|
-| ACT-01 | Canonical proposals with payload digest, effect class, preconditions, owner, rollback, verification criteria | planned | |
-| ACT-02 | Approvals bound to proposal version, digest, tenant, resources, expiry, max uses | implementing | Experiment only |
-| ACT-03 | Recheck authority, revocation, approval validity and resource version before the effect | planned | |
-| ACT-04 | Durable intent with stable external operation identity before the effect | implementing | Experiment only |
-| ACT-05 | Provider idempotency keys where available | planned | |
-| ACT-06 | Reconcile unknown outcomes; operator intervention when unidentifiable | implementing | Experiment only |
-| ACT-07 | Transactional approval reservation; timeout never restores single-use approval blindly | planned | |
-| ACT-08 | Ticket, pull request and production mutation permissions are distinct; production mutation disabled by default | planned | |
-| ACT-09 | External ticket closure does not close the case | implementing | See A09 |
-| ACT-10 | Material changes invalidate approval | implementing | Experiment only |
+| ACT-01 | Canonical proposals with payload digest, effect class, preconditions, owner, rollback, verification criteria | verified | act::test_digest_is_computed_by_the_database..., ::test_payload_validation_and_disabled_effect_classes |
+| ACT-02 | Approvals bound to proposal version, digest, tenant, resources, expiry, max uses | verified | See B07 |
+| ACT-03 | Recheck authority, revocation, approval validity and resource version before the effect | verified | act::test_revocation..., ::test_approver_losing_membership..., ::test_material_change_after_approval_denies; mutation checks 2026-10-22 |
+| ACT-04 | Durable intent with stable external operation identity before the effect | verified | `external_operation_id` per execution; intent marked executing before the call; act::test_two_jobs_racing... |
+| ACT-05 | Provider idempotency keys where available | verified (fake provider) | The gate uses them when declared (act::test_lost_ack_with_provider_idempotency..., stale-worker variants). Jira is not known to offer them, so jira_style declares none |
+| ACT-06 | Reconcile unknown outcomes; operator intervention when unidentifiable | verified | act::test_lost_ack_with_lagging_search..., ::test_unprocessed_and_connect_failures..., ::test_operator_actions_are_audited... |
+| ACT-07 | Transactional approval reservation; timeout never restores single-use approval blindly | verified | act::test_concurrent_reservations..., ::test_reservation_accounting_is_guarded..., ::test_a_use_is_never_returned_once_the_effect_may_have_been_attempted |
+| ACT-08 | Ticket, pull request and production mutation permissions are distinct; production mutation disabled by default | implementing | Distinct effect classes; production.change and pull_request.create disabled (act::test_payload_validation_and_disabled_effect_classes). Per-class approval permissions beyond action.approve are not split yet |
+| ACT-09 | External ticket closure does not close the case | implementing | Ticket creation does not move the case (act::test_execution_creates_one_verified_ticket_and_does_not_touch_the_case); inbound ticket status sync is not built |
+| ACT-10 | Material changes invalidate approval | verified | Payload change needs a new version and approval (A08); priority or scope change or closure denies at execution (act::test_material_change_after_approval_denies, using fault injection because no priority command exists yet) |
 
 ## 12. Verification, risk and reassessment (S 10) 
 
@@ -286,8 +289,8 @@ Last updated: 2026-10-22 (Phase B checkpoint).
 | VER-04 | Verification worker collecting outcome evidence with scoped credentials | planned | Currently recorded by a human verifier |
 | VER-05 | Retired asset closure distinct and not counted as a fix | implementing | Closure verified; reporting pending |
 | RISK-01 | Acceptance with owner, scope, rationale, compensating controls, expiry, delegation limits | verified | cases::test_risk_acceptance... |
-| RISK-02 | Request/authorise/renew flow | planned | R9 interim single step |
-| RISK-03 | Durable expiry scheduling plus reconciliation sweep | implementing | Sweep function verified; scheduler process pending |
+| RISK-02 | Request/authorise/renew flow | verified | risk2::* (independence, stale requests, renewal chain, reassessment notices, lapse), act_api::test_risk_request_and_authorise_over_http. Thresholds are defaults (D-RISK-1) |
+| RISK-03 | Durable expiry scheduling plus reconciliation sweep | verified | Hourly per-tenant sweep job (ingjob::test_risk_expiry_sweep...); expiry, reassessment and lapse (risk2::*) |
 | RISK-04 | Accepted exposure remains in reports | planned | |
 
 ## 13. Reporting and GRC (S 11) - Phase D
@@ -324,7 +327,7 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | INT-12 | Azure Resource Graph | context | **fixture-tested** (synthetic pages, local fake API) | Azure subscription and workload identity for sandbox validation |
 | INT-13 | AWS Security Hub | scanner/context | planned | AWS account |
 | INT-14 | AWS resource inventory (e.g. AWS Config) | context | planned | AWS account |
-| INT-15 | Jira | workflow | planned | Jira Cloud site |
+| INT-15 | Jira | workflow | fixture-tested (Jira-style fake only) | Shapes from Atlassian REST v3 docs; never run against a Jira site; sandbox validation needs a Jira Cloud site |
 | INT-16 | ServiceNow | workflow | planned | ServiceNow developer instance |
 | INT-17 | GitHub (issues, pull requests) | workflow | planned | GitHub org/app |
 | INT-18 | Structured business inventory import | context | planned | Schema to be defined |
@@ -336,18 +339,18 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | ID | Requirement | Status | Notes |
 |---|---|---|---|
 | ARC-01 | Modular application with separately deployable workers and identities | implementing | API module and relay done; workers pending |
-| ARC-02 | Durable workflow engine selected through an experiment and ADR | implementing | ADR 0006 accepted (PostgreSQL-backed); runner built for single-effect jobs; metrics, ops UI and CI kill suite remain (ADR 0006 conditions) |
+| ARC-02 | Durable workflow engine selected through an experiment and ADR | implementing | ADR 0006 accepted; runner with metrics, operations API and CI script; hosted CI never run; no operations UI; multi-step workflows not built |
 | ARC-03 | Domain logic independent of scanner, cloud and model vendors | implementing | Holds for current code |
 | ARC-04 | Pinned dependencies and reproducible builds | verified | uv.lock with cooldown; images pinned by digest; Docker build succeeded |
 | ARC-05 | React and TypeScript frontend supporting real journeys | planned | |
 | ARC-06 | PostgreSQL relational edges first; graph DB only with measured need | implementing | |
 | ARC-07 | PostgreSQL search first; vector search optional and non-authoritative | planned | |
-| OPS-01 | Metrics and traces | planned | |
+| OPS-01 | Metrics and traces | implementing | Job runner metrics (API + worker Prometheus endpoint); no traces, no API metrics |
 | OPS-02 | Connector freshness alerts | planned | |
-| OPS-03 | Worker health | planned | |
+| OPS-03 | Worker health | implementing | Worker counters and job metrics; no liveness endpoint or alerting |
 | OPS-04 | Model cost monitoring | planned | |
 | OPS-05 | Operator access to security events and audit without tenant evidence | planned | |
-| OPS-06 | Backup and restore procedures with drills (A15) | planned | |
+| OPS-06 | Backup and restore procedures with drills (A15) | implementing | Restore detection drills (logical same-OID restore, physical snapshot rollback, pg_dump/pg_restore) and operator acknowledgement; no backup procedure or RPO/RTO drill |
 | OPS-07 | Disaster recovery exercises | planned | |
 | OPS-08 | Secret rotation | planned | |
 | OPS-09 | Encryption in transit and at rest | planned | Compose profile has no TLS |
@@ -355,13 +358,13 @@ Commercial connectors are blocked for sandbox validation until licensed test acc
 | OPS-11 | Data classification and residency defined before sending code or evidence to models | planned | |
 | OPS-12 | Upgrade compatibility across schema, API, workflow histories, connectors | implementing | Migration ledger in place |
 | DEP-01 | Docker images package components | verified | `docker build` succeeded; non-root user |
-| DEP-02 | Compose starts the complete functional platform | implementing | API, PostgreSQL, S3 storage, init and job worker verified; UI pending |
+| DEP-02 | Compose starts the complete functional platform | implementing | API, PostgreSQL, S3 storage, init and job worker (with restore witness volume) verified; UI pending |
 | DEP-03 | Insecure development defaults refused in production | verified | unit::test_production_refuses_development_shortcuts |
 | DEP-04 | Helm with external PostgreSQL, object storage, IdP, workflow services; restricted workloads; backups | planned | |
 | DEP-05 | AKS reference deployment with portable interfaces | planned | |
 | DEP-06 | Workload identity, network policies, restricted service accounts, limits, health checks | implementing | Compose hardening (read-only, cap_drop, internal network); Kubernetes pending |
 | DEP-07 | Signed and pinned images | implementing | Pinned; signing planned |
-| DEP-08 | Continuous integration running unit, DB, isolation and lint gates | planned | |
+| DEP-08 | Continuous integration running unit, DB, isolation and lint gates | implementing | `scripts/ci/run.sh` (executed locally) and `.github/workflows/ci.yml` (never run on a hosted service; actions not SHA-pinned). No linter configured; byte-compilation and a tracked-file secret scan instead |
 | DEP-09 | Disposable execution with explicit egress and no ambient credentials before any untrusted code capability | planned | Capability stays disabled |
 
 ## 16. User journeys (P 9)

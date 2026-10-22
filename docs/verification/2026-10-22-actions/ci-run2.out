@@ -1,0 +1,38 @@
+
+##### dependencies (locked) (07:37:40Z)
+Checked 39 packages in 0.27ms
+PASS dependencies
+
+##### byte-compile (07:37:40Z)
+PASS compile
+
+##### secret scan (tracked files) (07:37:40Z)
+PASS secret-scan
+PASS no-env-files
+
+##### foundation verification (fresh cluster + SeaweedFS + full suite) (07:37:40Z)
+PASSED tests/unit/test_rules.py::test_verification_outcome[failed-complete-True-True-failed]
+PASSED tests/unit/test_rules.py::test_verification_outcome[failed-complete-False-True-inconclusive]
+============ 199 passed, 1 skipped, 1 warning in 110.17s (0:01:50) =============
+PASS foundation
+
+##### restore drill: physical snapshot rollback (07:39:58Z)
+.                                                                        [100%]
+1 passed in 4.43s
+PASS restore-drill
+
+##### compose fresh-install smoke (image rebuilt) (07:40:03Z)
+ok   fresh install: migrations applied, api healthy
+ok   no token -> 401
+ok   evidence upload -> verified -> download via S3 (SeaweedFS)
+ok   digest mismatch -> rejected
+ok   case create, start-investigation, stale version -> 409
+ok   consultant in other tenant -> 404; non-member tenant selection -> 403
+ok   case events linked to audit rows: 2
+ok   Trivy import via API + job-worker: completed complete 30; cases visible: 30
+ok   re-running init: migrations 'applied: none', seed 'already seeded'
+SMOKE PASS (axiom-smoke-074003)
+PASS compose-smoke
+
+CI PASS (/home/dev/axiom/.var/ci/actions-checkpoint)
+ci exit=0

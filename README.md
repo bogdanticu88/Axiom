@@ -5,8 +5,10 @@ investigate with deterministic checks and constrained AI, prioritise by versione
 remediation, verify outcomes against the affected deployment, and report from recorded evidence. Supports a shared
 multi-client installation and dedicated single-enterprise installations from one codebase.
 
-**Status: foundation checkpoint (Phase A, partly complete).** See `docs/IMPLEMENTATION_STATUS.md`. Nothing here is
-production-ready. Authentication is development token authentication only; no connectors exist yet.
+**Status: Phase A foundation (incomplete), Phase B core, Phase D action protocol and two-step risk acceptance; see
+`docs/IMPLEMENTATION_STATUS.md`.** Nothing here is production-ready. Authentication is development token
+authentication only. Connectors are at most **fixture-tested** (Trivy, SARIF, Tenable, Azure Resource Graph, and a
+Jira-style ticket integration tested only against a local fake); none has been validated against a live service.
 
 ## Documents
 * Design inputs: `docs/Axiom-Specification.md`, `...-Implementation-Plan.md`, `...-Data-and-Access-Design.md`
@@ -17,12 +19,14 @@ production-ready. Authentication is development token authentication only; no co
 
 ## Layout
 ```
-backend/axiom/          API, auth, access control, domains (cases, evidence, assets, tenancy), migrations
+backend/axiom/          API, auth, access control, domains (cases, risk, actions, evidence, assets, tenancy),
+                           ingestion and adapters, job runner (axiom.jobs), integrations, migrations
 db/provision_roles.sql     cluster-level role provisioning (run once per cluster)
-deployments/compose/       single-host install (PostgreSQL, SeaweedFS S3, init jobs, API)
+deployments/compose/       single-host install (PostgreSQL, SeaweedFS S3, init jobs, API, job worker)
 scripts/dev/test-db.sh     disposable PostgreSQL cluster for tests
 scripts/verify/            full verification and Compose smoke test
-tests/                     unit and PostgreSQL-backed integration tests
+scripts/ci/run.sh          the CI pipeline (also called by .github/workflows/ci.yml, which has never run)
+tests/                     unit, PostgreSQL-backed integration tests, opt-in restore drills (tests/drills)
 experiments/               workflow-engine experiments (not product code)
 docs/design-inputs/        supplied foundation code kept for reference
 ```
@@ -34,7 +38,11 @@ uv sync --frozen
 scripts/dev/test-db.sh start            # disposable cluster on 127.0.0.1:55432, writes .env.test
 uv run pytest tests -q                  # unit + PostgreSQL tests (S3 tests skip without an endpoint)
 scripts/verify/foundation.sh            # full verification on a separate fresh cluster incl. S3 (needs Docker)
+scripts/ci/run.sh                       # foundation + physical restore drill + Compose smoke (rebuilds the image)
 ```
+Background work (ingestion runs, action executions, risk sweeps) runs in `python -m axiom.workers.jobs`. Set
+`AXIOM_RESTORE_WITNESS` (`dir:/path` or `s3:bucket/prefix`, outside the database's backup domain) so restored or rolled
+back databases are detected before any external effect is repeated (ADR 0010); production refuses to start without it.
 
 ## Compose (single host, synthetic data)
 ```

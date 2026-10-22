@@ -1,0 +1,28 @@
+
+##### dependencies (locked) (07:29:02Z)
+Checked 39 packages in 0.49ms
+PASS dependencies
+
+##### byte-compile (07:29:02Z)
+PASS compile
+
+##### secret scan (tracked files) (07:29:03Z)
+PASS secret-scan
+PASS no-env-files
+
+##### foundation verification (fresh cluster + SeaweedFS + full suite) (07:29:04Z)
+PASSED tests/unit/test_rules.py::test_verification_outcome[failed-complete-True-True-failed]
+PASSED tests/unit/test_rules.py::test_verification_outcome[failed-complete-False-True-inconclusive]
+======= 2 failed, 197 passed, 1 skipped, 1 warning in 115.00s (0:01:55) ========
+FAIL foundation (exit 1)
+
+##### restore drill: physical snapshot rollback (07:36:04Z)
+FAILED tests/drills/test_physical_snapshot.py::test_storage_snapshot_rollback_is_caught_only_by_the_witness
+1 failed in 0.59s
+FAIL restore-drill (exit 1)
+
+##### compose fresh-install smoke (image rebuilt) (07:36:05Z)
+FAIL compose-smoke (exit 1)
+
+CI FAIL: foundation restore-drill compose-smoke (/home/dev/axiom/.var/ci/actions-checkpoint)
+ci exit=1
