@@ -1,4 +1,5 @@
-"""Generic job worker (ADR 0006): ingestion runs, action executions, scheduled risk-expiry sweeps.
+"""Generic job worker (ADR 0006): ingestion runs, action executions, verification checks (ADR 0014),
+scheduled sweeps.
 
   python -m axiom.workers.jobs --once
   python -m axiom.workers.jobs --interval 5
@@ -30,6 +31,7 @@ from ..investigation.runner import InvestigationHandler
 from ..ingestion.pipeline import IngestionService
 from ..ingestion.sync import SyncService
 from ..jobs import Schedule, Worker, WorkerConfig
+from ..verification.worker import VerificationCheckHandler
 
 log = logging.getLogger("axiom.workers.jobs")
 
@@ -42,11 +44,13 @@ def build_worker(db: Database, ingestion: IngestionService, sync: SyncService, *
                  config: WorkerConfig | None = None, risk_sweep_interval: int = RISK_SWEEP_INTERVAL_SECONDS,
                  action_handler: ActionExecuteHandler | None = None, witness=None,
                  ticket_sync: TicketSyncHandler | None = None,
-                 investigation: InvestigationHandler | None = None) -> Worker:
+                 investigation: InvestigationHandler | None = None,
+                 verification: VerificationCheckHandler | None = None) -> Worker:
     return Worker(db, [IngestionRunHandler(ingestion, sync), RiskExpirySweepHandler(),
                        action_handler or ActionExecuteHandler(), ticket_sync or TicketSyncHandler(), SlaSweepHandler(),
                        OwnershipSweepHandler(), OverrideExpiryHandler(),
-                       investigation or InvestigationHandler(store=ingestion.store)],
+                       investigation or InvestigationHandler(store=ingestion.store),
+                       verification or VerificationCheckHandler(sync.evidence, secrets=sync.secrets)],
                   worker_id=worker_id, config=config,
                   schedules=[Schedule(RISK_SWEEP, 1, risk_sweep_interval),
                              Schedule(SLA_SWEEP, 1, SLA_SWEEP_INTERVAL_SECONDS),

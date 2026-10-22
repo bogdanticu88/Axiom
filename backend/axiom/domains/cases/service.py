@@ -111,8 +111,14 @@ class CaseService:
                  FROM axiom.decisions d WHERE d.case_id = %s ORDER BY d.recorded_at, d.id""", (case_id,)))
         closures = list(self.conn.execute(
             "SELECT * FROM axiom.closure_records WHERE case_id = %s ORDER BY case_event_sequence", (case_id,)))
+        # recorder_kind comes from the identity records; observation is the worker's provenance (ADR 0014), absent
+        # for results a person recorded
         verifications = list(self.conn.execute(
-            "SELECT * FROM axiom.verification_runs WHERE case_id = %s ORDER BY recorded_at", (case_id,)))
+            """SELECT r.*, axiom_auth.principal_kind(r.recorded_by) AS recorder_kind,
+                      to_jsonb(o) - 'tenant_id' AS observation
+                 FROM axiom.verification_runs r
+                 LEFT JOIN axiom.verification_observations o ON o.tenant_id = r.tenant_id AND o.verification_run_id = r.id
+                WHERE r.case_id = %s ORDER BY r.recorded_at""", (case_id,)))
         return {"case": case, "events": events, "decisions": decisions, "closures": closures,
                 "verifications": verifications}
 
@@ -313,11 +319,24 @@ class CaseService:
                  evidence_id, self.ctx.principal_id, decision_id))
             return {"remediation_report_id": str(report_id)}
 
-        return self._apply(case, expected_version, _Plan(
+        updated = self._apply(case, expected_version, _Plan(
             to_workflow=Workflow.VERIFYING, event_type="case.change_reported",
             decision_kind="remediation_report", decision_outcome="change_reported", rationale=rationale,
             authority=authority, evidence=evidence, dependents=dependents,
             payload={"target_asset_version_id": str(target_asset_version_id)}))
+        self._request_automated_check(case, report_id)
+        return updated
+
+    def _request_automated_check(self, case: dict, report_id: UUID) -> None:
+        """Queue the verification worker (ADR 0014) when an active check endpoint covers the case scope. The job
+        carries identifiers only; the worker decides with its own, current authority when it runs."""
+        from ...jobs import enqueue
+        from ...verification.routing import KIND, covering_connection
+        if covering_connection(self.conn, self.authz, case["scope_id"]) is None:
+            return
+        enqueue(self.conn, self.ctx, kind=KIND, version=1, dedupe_key=f"verification:{report_id}",
+                payload={"case_id": str(case["id"]), "remediation_report_id": str(report_id)},
+                aggregate=("finding_case", case["id"]), max_attempts=4)
 
     def withdraw_remediation(self, case_id: UUID, expected_version: int, *, rationale: str,
                              deployment_state: str | None = None, evidence: Sequence[EvidenceRef] = (),

@@ -82,6 +82,36 @@ class Provisioner:
                         {"slug": slug, "root_scope_id": str(scope_id), "system_principal_id": str(system_id)})
         return TenantBootstrap(tenant_id, scope_id, system_id)
 
+    def create_verification_identity(self, tenant_id: UUID, scope_id: UUID | None = None) -> UUID:
+        """Create the tenant's verification identity (ADR 0014): a workload principal, separate from the system
+        principal, bound to the verification_worker role at ``scope_id`` (default: the tenant root). Refuses when the
+        tenant already has one. Its authority is withdrawn like any other: revoke the binding or suspend the
+        membership."""
+        principal_id = uuid.uuid4()
+        with self._connect() as conn:
+            tenant = conn.execute("SELECT slug, verification_principal_id FROM axiom.tenants WHERE id = %s FOR UPDATE",
+                                  (tenant_id,)).fetchone()
+            if tenant is None:
+                raise RuntimeError("tenant not found")
+            if tenant["verification_principal_id"] is not None:
+                raise RuntimeError("tenant already has a verification identity")
+            if scope_id is None:
+                scope_id = conn.execute("SELECT id FROM axiom.scopes WHERE tenant_id = %s AND kind = 'tenant_root'",
+                                        (tenant_id,)).fetchone()["id"]
+            conn.execute("INSERT INTO axiom.principals(id, kind, display_name, status) VALUES (%s, 'workload', %s, 'active')",
+                         (principal_id, f"verification:{tenant['slug']}"))
+            conn.execute("INSERT INTO axiom.memberships(tenant_id, id, principal_id, status) VALUES (%s, %s, %s, 'active')",
+                         (tenant_id, uuid.uuid4(), principal_id))
+            binding_id = uuid.uuid4()
+            conn.execute(
+                """INSERT INTO axiom.role_bindings(tenant_id, id, principal_id, role_id, scope_id, granted_by, reason)
+                   VALUES (%s, %s, %s, 'verification_worker', %s, NULL, 'tenant verification identity')""",
+                (tenant_id, binding_id, principal_id, scope_id))
+            conn.execute("UPDATE axiom.tenants SET verification_principal_id = %s WHERE id = %s", (principal_id, tenant_id))
+            self._audit(conn, tenant_id, "tenant.verification_identity", "principal", principal_id,
+                        {"binding_id": str(binding_id), "scope_id": str(scope_id)})
+        return principal_id
+
     def create_scope(self, tenant_id: UUID, parent_id: UUID, kind: str, name: str) -> UUID:
         scope_id = uuid.uuid4()
         with self._connect() as conn:
@@ -211,6 +241,9 @@ def main(argv: list[str] | None = None) -> int:
     rol.add_argument("--role", required=True)
     rol.add_argument("--scope", required=True)
     rol.add_argument("--reason", required=True)
+    ver = sub.add_parser("create-verification-identity")
+    ver.add_argument("--tenant", required=True)
+    ver.add_argument("--scope")
     st = sub.add_parser("recovery-status")
     st.add_argument("--witness-dir")
     ack = sub.add_parser("acknowledge-recovery")
@@ -229,6 +262,9 @@ def main(argv: list[str] | None = None) -> int:
         out = {"principal_id": str(p.create_principal(args.name, provider_id=provider, subject=args.subject))}
     elif args.command == "add-member":
         out = {"membership_id": str(p.add_membership(UUID(args.tenant), UUID(args.principal)))}
+    elif args.command == "create-verification-identity":
+        out = {"principal_id": str(p.create_verification_identity(
+            UUID(args.tenant), UUID(args.scope) if args.scope else None))}
     elif args.command in ("recovery-status", "acknowledge-recovery"):
         from .jobs.witness import FileWitness
         witness = FileWitness(args.witness_dir, "operator-acknowledgement") if args.witness_dir else None

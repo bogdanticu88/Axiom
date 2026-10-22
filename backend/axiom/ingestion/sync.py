@@ -37,6 +37,8 @@ from .pipeline import IngestionService, RunState
 API_ADAPTERS = {"tenable_vm": "scanner", "azure_resource_graph": "context"}
 # Workflow connections are used by the action protocol, never synchronised (fixture-tested only).
 WORKFLOW_ADAPTERS = {"jira_style": "workflow", "servicenow": "workflow", "github_issues": "workflow"}
+# Check endpoints answer the verification worker (axiom.verification, ADR 0014); fixture-tested only.
+VERIFICATION_ADAPTERS = {"verification_check": "evidence"}
 
 
 class SecretResolver(Protocol):
@@ -82,9 +84,11 @@ class SyncService:
     # ------------------------------------------------------------------ configuration
     def create_connection(self, ctx: TenantContext, *, adapter: str, scope_id: UUID, display_name: str,
                           base_url: str | None, credential_ref: str | None, config: dict) -> dict:
-        kinds = {**API_ADAPTERS, **WORKFLOW_ADAPTERS}
+        kinds = {**API_ADAPTERS, **WORKFLOW_ADAPTERS, **VERIFICATION_ADAPTERS}
         if adapter not in kinds:
             raise ValidationFailed(f"adapter {adapter} cannot be configured as a connection")
+        if adapter in VERIFICATION_ADAPTERS and not base_url:
+            raise ValidationFailed("a verification check connection needs a base URL")
         if base_url and not base_url.startswith("https://"):
             raise ValidationFailed("connections must use HTTPS")
         with self.db.tenant_tx(ctx) as conn:

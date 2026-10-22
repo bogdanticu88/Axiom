@@ -47,6 +47,15 @@ WORKFLOW = [
 ]
 
 
+# The platform's own check-endpoint contract for the verification worker (ADR 0014); no external product
+# implements it.
+VERIFICATION = [
+    AdapterInfo("verification_check", "1", "evidence", ("axiom-check/1",), ("check_original_condition",),
+                SupportLevel.FIXTURE_TESTED, "local TLS fixture endpoint only; axiom-check/1 is the platform's own "
+                "contract; no scanner or check service implements it yet"),
+]
+
+
 def parser(name: str) -> Parser:
     try:
         return PARSERS[name]
@@ -55,7 +64,7 @@ def parser(name: str) -> Parser:
 
 
 def catalogue() -> list[dict]:
-    rows = [p.info for p in PARSERS.values()] + WORKFLOW + PLANNED
+    rows = [p.info for p in PARSERS.values()] + WORKFLOW + VERIFICATION + PLANNED
     return [{"name": i.name, "kind": i.adapter_kind, "version": i.version, "formats": list(i.formats),
              "operations": list(i.operations), "support_level": i.support_level.value,
              "validation_notes": i.validation_notes} for i in rows]
