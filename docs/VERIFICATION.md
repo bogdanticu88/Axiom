@@ -702,3 +702,43 @@ Final: 18 of 18 caught, each by the test written for that control. Sanity after 
 was promoted.
 
 **5. Evaluation:** unchanged; no model called; review pending.
+
+### Run 21: after checkpoint 8, closing review and demonstration (2026-10-22 ~20:00Z to 21:00Z)
+
+Records: `docs/verification/2026-10-22-after-checkpoint8/`. Tested commit for every result below:
+`185af5b98fcb3eac46b52c736ffd2ecd58702877` (tree `90c22e34…`, executable inputs `sha256:43307896…`). After it, only
+this record and the files in that directory were added.
+
+**1. Destination pinning without system DNS** (`141d04a`, `mutation-checks-round4.log`). Two TLS servers on
+127.0.0.1 and 127.0.0.2, same port, same certificate for `localhost`; a controlled resolver maps the name to the
+allowed address. The validated server receives the request; the other receives none; the observation records
+127.0.0.2. Removing the pinning is caught by "contacted an address the policy never checked"; removing the TLS
+server name is caught because the validated server receives nothing (the handshake is checked against the address).
+The checkpoint-8 limit for W3 (caught only because the unpinned name did not resolve) no longer applies.
+
+**2. Principal disablement, suspension and expiry** (`ee98742`, `principal-status-reproduction.md`, ADR 0012
+amendment 5). Reproduced violation of data design section 12 step 2: a disabled verification identity kept
+recording results, and an approval by a since-disabled approver still executed. Fixed in the application check and
+in `axiom.holds_permission` (migration 0020), without new locks. Suspension and expiry already applied at the next
+request. None of the three waits for a command that has passed its check; a job in flight at suspension stays
+leased (observed) and is not cancelled (TEN-16, still implementing).
+
+**3. Defect found by the demonstration** (`3327c9d`): the API rejected the `verification_check` adapter the
+installation guide tells operators to use. Fixed with a regression test that fails without the fix.
+
+**4. Demonstration** (`demo/results.json`, run with `scripts/demo/run.sh` at the tested commit). Real Trivy 0.76.1
+scans of two local services built with Jinja2 3.1.2; both imported (complete coverage) and bound to the digests Docker
+reported for the running containers. Orders case `CVE-2024-22195`: investigation with the deterministic fake model,
+approval in Chromium by a second person, ticket in the tracker fake, rebuild with Jinja2 3.1.6 and redeploy, worker
+verification `passed` (rule `condition_absent`) on the redeployed digest, closed in Chromium. Controls on the unchanged
+service: A (change reported against the running vulnerable deployment) `failed`, rule `condition_present`; B (fixed
+image pushed, not deployed) `inconclusive`, rule `different_deployment`. Screenshots are delivered outside the
+repository. Trivy database updated 2026-10-22T19:14Z.
+
+**5. Tests.** Local full suite at the tested commit: 655 passed, 12 skipped (S3 opt-ins without an endpoint, the
+physical drill, the real-provider test, the demonstration). Clean-clone CI (`ci-185af5b.log`): every stage passed;
+**664 passed, 3 skipped** (physical drill, run as its own stage: 1 passed; real-provider test, never run;
+demonstration, run separately as above); restore drill; Compose smoke `SMOKE PASS`.
+
+**6. Register:** counts unchanged (149 verified, 19 of them fixture or fake only). TEN-16 stays implementing; INT-21
+stays fixture-tested.

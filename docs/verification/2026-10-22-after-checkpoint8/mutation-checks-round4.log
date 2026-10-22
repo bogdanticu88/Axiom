@@ -1,0 +1,21 @@
+Round 4 (after the checkpoint-8 tag): destination pinning without system DNS.
+Harness: ../2026-10-22-checkpoint8/mutation-harness.py (entries W3 and W3b). Caches purged; restored files compared
+byte for byte; targeted test rerun after each restore.
+
+W3 weakened: connection not pinned to the checked address
+   property: the request goes to the address that was checked
+   verdict: CAUGHT (1 failed in 2.57s)
+   failed: test_the_validated_address_is_the_address_contacted
+      first assertion: AssertionError: contacted an address the policy never checked
+sanity: all targeted tests on the restored tree: rc=0 (1 passed in 2.47s)
+
+(one attempt to add W3b failed before running: a syntax error in the harness entry; corrected and rerun below)
+
+W3b weakened: TLS checked against the address instead of the configured name
+   property: TLS validates the configured hostname while connecting to the validated address
+   verdict: CAUGHT (1 failed in 2.62s)
+   failed: test_the_validated_address_is_the_address_contacted
+      first assertion: AssertionError: assert 0 == 1
+      (the validated server received no request: the handshake was checked against 127.0.0.2, which the
+       certificate does not name, so the request was never sent)
+sanity: all targeted tests on the restored tree: rc=0 (1 passed in 2.49s)

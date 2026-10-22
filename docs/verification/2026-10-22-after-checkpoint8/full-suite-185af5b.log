@@ -1,0 +1,30 @@
+s....................................................................... [ 10%]
+...................................................s.................... [ 21%]
+........................................................................ [ 32%]
+...................................................................s.... [ 43%]
+..................sssssssss............................................. [ 53%]
+........................................................................ [ 64%]
+........................................................................ [ 75%]
+........................................................................ [ 86%]
+........................................................................ [ 97%]
+...................                                                      [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastapi/testclient.py:1
+  <repo>/.venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/drills/test_physical_snapshot.py:49: set AXIOM_RUN_DRILLS=1
+SKIPPED [1] tests/integration/test_demo_remediation.py:127: demonstration: run scripts/demo/run.sh
+SKIPPED [1] tests/integration/test_real_provider_optin.py:33: real-provider test is opt-in (AXIOM_TEST_REAL_MODEL=1, AXIOM_TEST_ANTHROPIC_MODEL, ANTHROPIC_API_KEY)
+SKIPPED [1] tests/integration/test_s3_store.py:29: AXIOM_TEST_S3_ENDPOINT / AXIOM_TEST_S3_BUCKET not set
+SKIPPED [1] tests/integration/test_s3_store.py:40: AXIOM_TEST_S3_ENDPOINT / AXIOM_TEST_S3_BUCKET not set
+SKIPPED [1] tests/integration/test_s3_witness.py:36: AXIOM_TEST_S3_ENDPOINT / AXIOM_TEST_S3_BUCKET not set
+SKIPPED [1] tests/integration/test_s3_witness.py:50: AXIOM_TEST_S3_ENDPOINT / AXIOM_TEST_S3_BUCKET not set
+SKIPPED [1] tests/integration/test_s3_witness.py:83: AXIOM_TEST_S3_ENDPOINT / AXIOM_TEST_S3_BUCKET not set
+SKIPPED [1] tests/integration/test_s3_witness.py:103: AXIOM_TEST_S3_ENDPOINT / AXIOM_TEST_S3_BUCKET not set
+SKIPPED [1] tests/integration/test_s3_witness.py:133: restricted identities not configured
+SKIPPED [1] tests/integration/test_s3_witness.py:148: AXIOM_TEST_S3_ENDPOINT / AXIOM_TEST_S3_BUCKET not set
+SKIPPED [1] tests/integration/test_s3_witness.py:165: AXIOM_TEST_S3_ENDPOINT / AXIOM_TEST_S3_BUCKET not set
+655 passed, 12 skipped, 1 warning in 534.04s (0:08:54)
