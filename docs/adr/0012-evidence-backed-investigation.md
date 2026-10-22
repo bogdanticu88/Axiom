@@ -395,3 +395,28 @@ database-verified session or token proofs, or tenant-dedicated installations. No
 required yet; a tenant that needs it should get a dedicated installation. The runtime credential should be treated as
 equivalent to administrator access to every tenant: stored as a mounted secret, reachable only by the API and worker,
 and rotated if either is suspected compromised.
+
+### The revocation boundary: which operations take part (checkpoint 8)
+Taking part: every command that checks authority with `Authorizer` inside its own transaction (case, risk, action,
+evidence, investigation requests, tenancy, policy and report commands). The bindings and the membership it read stay
+share-locked until that transaction ends. Withdrawals that wait for it: revoking a binding, suspending a membership,
+and shortening a membership's validity. A command that fails or rolls back after its check releases the locks at
+once and commits nothing (tests in `tests/integration/test_revocation_boundary.py`). A binding cannot be moved to
+another scope or role, and scopes cannot be re-parented, by the runtime role, so authority cannot shift around the
+lock that way.
+
+Not taking part, by design or limitation:
+* **Disabling a principal** (provisioning identity) is not blocked by an open command, and the authority check reads
+  bindings and memberships, not the principal's status. The open command may commit; the next request fails
+  authentication (tested).
+* **Suspending a tenant** is not locked either. Row-level security checks the tenant's status on every statement, so
+  statements after the suspension fail, but a commit already in progress completes.
+* **Time-based expiry** of a binding or membership is evaluated when the check runs.
+* **Changes to what a role grants** are migrations, not runtime operations.
+* **System sweeps** that need no permission (risk expiry, SLA timers) do not rely on anyone's authority.
+* **Action execution** re-checks the approver's and requester's authority in the execution transaction, before the
+  external effect. A revocation after the effect has started cannot undo it; the effect gate records it.
+* **The verification worker** checks authority before calling the check endpoint and again in the transaction that
+  records the result. No lock is held during the network request. A revocation that commits during the request makes
+  the commit-phase check fail, so nothing is recorded; a revocation that starts after that check waits for the commit
+  (ADR 0014; tested).
