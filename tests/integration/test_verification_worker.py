@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 import psycopg
 import pytest
 
-from axiom.access import PermissionDenied
+from axiom.access import Authorizer, PermissionDenied
 from axiom.db import TenantContext
 from axiom.ingestion.sync import SyncService
 from axiom.jobs import Worker, WorkerConfig
@@ -23,10 +23,11 @@ from axiom.provisioning import Provisioner
 from axiom.secretrefs import SecretRefResolver
 from axiom.verification import checks
 from axiom.verification import worker as vworker
-from axiom.verification.routing import KIND
+from axiom.verification.routing import KIND, covering_connection
 from axiom.verification.worker import VerificationCheckHandler
 
 from . import check_target
+from .test_api import as_, client  # noqa: F401
 from .test_cases import DIGEST_NEW, DIGEST_OLD, advance_to_verification, scenario  # noqa: F401
 
 pytestmark = pytest.mark.db
@@ -503,3 +504,20 @@ def test_the_provisioning_cli_creates_the_identity(dbinfo, world, admin_conn, ca
                              (world.b.id,)).fetchone()
     assert (str(row["verification_principal_id"]), row["kind"], row["role_id"], row["scope_id"]) == (
         pid, "workload", "verification_worker", world.b.project)
+
+
+def test_an_operator_can_configure_a_check_endpoint_through_the_api(world, dbinfo, as_, client, db, ctx_for,  # noqa: F811
+                                                                    admin_conn):
+    """The installation guide tells operators to create a verification_check connection; the API must accept it
+    (found by the remediation demonstration, where the API refused the adapter name)."""
+    Provisioner(dbinfo.admin_cli_dsn).bootstrap_role(world.a.id, world["admin"], "policy_admin", world.a.root, "test")
+    body = {"adapter": "verification_check", "scope_id": str(world.a.project), "display_name": "check service",
+            "base_url": "https://checks.example.invalid", "credential_ref": "secretref:env/CHECK_TOKEN", "config": {}}
+    r = client.post("/api/v1/connections", headers=as_("admin"), json=body)
+    assert r.status_code == 201, r.text
+    with db.tenant_tx(ctx_for("admin")) as conn:
+        found = covering_connection(conn, Authorizer(conn, ctx_for("admin")), world.a.project)
+    assert str(found["id"]) == r.json()["id"]
+    refused = client.post("/api/v1/connections", headers=as_("admin"), json={**body, "base_url": "http://plain.invalid"})
+    assert refused.status_code == 422
+    assert client.post("/api/v1/connections", headers=as_("analyst"), json=body).status_code == 403

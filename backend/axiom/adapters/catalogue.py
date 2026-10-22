@@ -50,9 +50,10 @@ WORKFLOW = [
 # The platform's own check-endpoint contract for the verification worker (ADR 0014); no external product
 # implements it.
 VERIFICATION = [
-    AdapterInfo("verification_check", "1", "evidence", ("axiom-check/1",), ("check_original_condition",),
-                SupportLevel.FIXTURE_TESTED, "local TLS fixture endpoint only; axiom-check/1 is the platform's own "
-                "contract; no scanner or check service implements it yet"),
+    AdapterInfo("verification_check", "1", "evidence", ("axiom-check/2",), ("check_original_condition",),
+                SupportLevel.FIXTURE_TESTED, "tested against a local TLS fixture and the local demonstration check "
+                "service (scripts/demo, a Trivy rescan); axiom-check/2 is the platform's own contract and no "
+                "external product implements it"),
 ]
 
 

@@ -176,7 +176,8 @@ class RequestImport(Body):
 
 
 class CreateConnection(Body):
-    adapter: Literal["tenable_vm", "azure_resource_graph", "jira_style", "servicenow", "github_issues"]
+    adapter: Literal["tenable_vm", "azure_resource_graph", "jira_style", "servicenow", "github_issues",
+                     "verification_check"]
     scope_id: UUID
     display_name: str = Field(min_length=1, max_length=200)
     base_url: str | None = Field(default=None, max_length=500)
