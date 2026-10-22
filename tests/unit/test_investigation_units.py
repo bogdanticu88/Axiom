@@ -198,7 +198,8 @@ def test_schema_accepts_a_fenced_object():
     ("password=CorrectHorseBattery", "key_value_secret"),
     ("ghp_" + "a" * 36, "github_token"),
     ("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N", "jwt"),
-])
+], ids=["aws_access_key", "private_key", "bearer", "url_credentials", "key_value_secret", "github_token",
+        "jwt"])                                       # explicit IDs: never echo the fake secrets into test logs
 def test_redaction(secret, kind):
     out, n = redact(f"context {secret} more")
     assert n >= 1 and f"[REDACTED:{kind}]" in out
