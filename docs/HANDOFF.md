@@ -48,7 +48,8 @@ The foundation-era gap list has been superseded.
   authorises replay (migration 0010). S3 tested against SeaweedFS only; production storage assumptions in ADR 0010.
 * Phase D tracking: inbound ticket polling, SLA timers (defaults D-SLA-1), immutable exposure snapshots, JSON/CSV
   exports (migration 0011). ServiceNow and GitHub Issues ticket adapters: fixture-tested only.
-* GitHub Actions pinned to verified commit hashes (docs/ci-action-pins.md); hosted CI still never run.
+* GitHub Actions pinned to verified commit hashes (docs/ci-action-pins.md). (Later: hosted CI first ran on the
+  publication pushes and failed; see the correction at the top of docs/VERIFICATION.md and run 23.)
 
 ## State after checkpoint 3 (policies, ownership, SLA v2, reporting depth, journey)
 * Migration 0012 and ADR 0011: versioned policies (priority, ownership, SLA, freshness) with independent publishing;
@@ -230,7 +231,10 @@ The foundation-era gap list has been superseded.
    product), validated in a sandbox; cancel a suspended tenant's waiting work (TEN-16).
 4. Identity-candidate screens; an accessibility audit; a second browser.
 5. With authorisation: the real-provider test and real-model evaluation arm.
-6. Hosted CI and sandbox validation once a remote and accounts are authorised.
+6. Sandbox validation once accounts are authorised. Hosted CI runs on GitHub Actions for pushes to main and pull
+   requests.
+7. (Done: the API now refuses timestamps without a UTC offset, ADR 0015. Asset versions recorded by hand before
+   that may hold an ambiguous `observed_at` that cannot be identified.)
 
 ## Commands
 ```

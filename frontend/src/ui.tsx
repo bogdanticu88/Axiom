@@ -70,6 +70,17 @@ export function basisLabel(basis: string) {
   return <Badge kind="info">{basis}</Badge>;
 }
 
+// A datetime-local input holds wall-clock time in the browser's zone, with no offset. Defaults are written in that
+// zone, and values are sent to the API as UTC instants ("...Z"); the API refuses timestamps without an offset.
+export function localInputInDays(days: number): string {
+  const d = new Date(Date.now() + days * 86400_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+export function instantFromLocalInput(local: string): string | null {
+  return local ? new Date(local).toISOString() : null;
+}
+
 export function fmt(t?: string | null) {
   if (!t) return "—";
   const d = new Date(t);

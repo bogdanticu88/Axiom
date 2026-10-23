@@ -3,11 +3,8 @@
 // case, and a refusal comes back as an explained error.
 import { useState } from "react";
 import { post, useGet } from "../api";
-import { Badge, Field, Loaded, Section, fmt, short, useCommand } from "../ui";
+import { Badge, Field, Loaded, Section, fmt, short, useCommand, instantFromLocalInput, localInputInDays } from "../ui";
 
-function inDays(days: number) {
-  return new Date(Date.now() + days * 86400_000).toISOString().slice(0, 16);
-}
 
 function statusBadge(s: string) {
   const k = s === "active" || s === "authorised" ? "ok" : s === "pending" ? "info"
@@ -18,7 +15,7 @@ function statusBadge(s: string) {
 export function Risk({ c, onChange }: { c: any; onChange: () => void }) {
   const [risk, reload] = useGet<any>(`/cases/${c.id}/risk`, [c.record_version]);
   const cmd = useCommand(() => { reload(); onChange(); });
-  const [expires, setExpires] = useState(inDays(30));
+  const [expires, setExpires] = useState(localInputInDays(30));
   const [rationale, setRationale] = useState("");
   const [controls, setControls] = useState("");
   return (
@@ -89,9 +86,9 @@ export function Risk({ c, onChange }: { c: any; onChange: () => void }) {
       </Section>
       <Section title="Request acceptance">
         <form onSubmit={(e) => { e.preventDefault(); cmd.run(() => post(`/cases/${c.id}/risk-acceptance-requests`, {
-          expected_version: c.record_version, expires_at: new Date(expires).toISOString(), rationale,
+          expected_version: c.record_version, expires_at: instantFromLocalInput(expires), rationale,
           compensating_controls: controls || null }), "Request recorded."); }}>
-          <Field label="Accept until"><input type="datetime-local" data-testid="risk-expires" value={expires}
+          <Field label="Accept until (your local time)"><input type="datetime-local" data-testid="risk-expires" value={expires}
             onChange={(e) => setExpires(e.target.value)} /></Field>
           <Field label="Why the risk can be accepted"><textarea data-testid="risk-rationale" value={rationale}
             onChange={(e) => setRationale(e.target.value)} required /></Field>

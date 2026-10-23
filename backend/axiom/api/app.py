@@ -197,6 +197,8 @@ def create_app(settings: Settings, *, db: Database | None = None, store: ObjectS
             try:
                 ts, cid = base64.urlsafe_b64decode(cursor.encode()).decode().split("|")
                 after = (datetime.fromisoformat(ts), UUID(cid))
+                if after[0].tzinfo is None:           # cursors are issued with an offset; anything else is not ours
+                    raise ValueError("cursor time has no UTC offset")
             except ValueError as exc:
                 raise ValidationFailed("invalid cursor") from exc
         items = cases(ctx, lambda c: c.list(workflow=workflow, limit=limit, after=after))

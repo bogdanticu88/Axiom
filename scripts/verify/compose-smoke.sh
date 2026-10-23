@@ -32,7 +32,11 @@ if [ "${BUILD:-0}" = "1" ]; then
   args=(--network host -t axiom-backend:dev)
   [ -n "${BUILD_CA:-}" ] && args+=(--secret "id=ca,src=$BUILD_CA")
   [ -n "${HTTPS_PROXY:-}" ] && args+=(--build-arg "HTTPS_PROXY=$HTTPS_PROXY")
-  docker build "${args[@]}" "$ROOT" >/dev/null 2>&1 || { echo "image build failed"; exit 1; }
+  buildlog=$(mktemp)
+  if ! docker build "${args[@]}" "$ROOT" >"$buildlog" 2>&1; then
+    echo "image build failed; last lines of the build output:"; tail -40 "$buildlog"; rm -f "$buildlog"; exit 1
+  fi
+  rm -f "$buildlog"
   echo "image built: $(docker image inspect axiom-backend:dev --format '{{.Id}}')"
 fi
 dc() { docker compose -p "$P" -f "$CDIR/compose.yaml" --env-file "$ENVF" "$@"; }
@@ -104,7 +108,9 @@ done
 [ "$(dc ps keycloak --format '{{.Health}}')" = "healthy" ] || fail "keycloak not healthy"
 dc logs idp-init --no-color | grep '"alice"' >/dev/null || fail "idp-init did not link alice"
 UIOUT=$(AXIOM_DEMO_PASSWORD="$DEMO_PASSWORD" uv run --frozen python "$ROOT/scripts/verify/compose_ui_check.py" \
-  "http://127.0.0.1:$PORT" 2>&1) || { echo "$UIOUT" | tail -20; fail "UI check"; }
+  "http://127.0.0.1:$PORT" 2>&1) || { echo "$UIOUT" | grep -v '^ok ' | tail -80
+                                      echo "--- api and job-worker logs"; dc logs --no-color api job-worker | tail -60
+                                      fail "UI check"; }
 echo "$UIOUT" | grep '^ok '
 UICASE=$(echo "$UIOUT" | sed -n 's/^CASE //p')
 WHO=$(dc exec -T postgres psql -U postgres -d axiom -tAc "SELECT p.display_name || ' ' || p.kind FROM axiom.decisions d JOIN axiom.principals p ON p.id = d.actor_principal_id WHERE d.case_id = '$UICASE' AND d.kind = 'investigation_start'")

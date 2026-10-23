@@ -1,0 +1,108 @@
+
+##### input manifest (exact committed tree) (00:54:12Z)
+commit:            832bf5df1ac391a2da8b76f44c320d3380e8b17a
+tree:              4e21e59055782463f72fc5f1a3084c684fe2641f
+executable inputs: sha256:2e83771e8ff8e5e6f2012a0ac37c840dfeb836331e6e411642ed8580dbf8cdbc over 'git ls-tree -r HEAD -- backend db scripts .github deployments tests evaluation frontend pyproject.toml uv.lock Dockerfile .dockerignore'
+tracked files:     409 total, 230 in executable-input paths
+migrations:        20 files
+pinned by the tree:
+  uv.lock sha256:  96d737f48613384f7f70a0931ca6eebc7b0ebeb8b0c9c95370b1ef09899275ed
+  image:          mirror.gcr.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+  image:          mirror.gcr.io/library/node:22.20.0-slim@sha256:b21fe589dfbe5cc39365d0544b9be3f1f33f55f3c86c87a76ff65a02f8f5848e
+  image:          public.ecr.aws/docker/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+  image:          public.ecr.aws/docker/library/python:3.13-slim@sha256:cf50a4f6ac4f026458b08d5222023d700ac806410dff5e9ca8728fa44f2b850f
+  image:          quay.io/keycloak/keycloak:26.4.2@sha256:3617b09bb4b7510a8d8d9b9fc5707399e2d70688dbcc2f8fb013a144829be1b9
+  action:         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+  action:         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+  action:         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+NOT pinned by the tree (runner environment, recorded here for this run):
+  python:          Python 3.13.16
+  uv:              uv 0.11.32 (x86_64-unknown-linux-gnu)
+  postgres:        postgres (PostgreSQL) 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+  docker:          Docker version 29.9.1, build dfc520d
+  pip-installed uv inside the image build: uv==0.11.32 (version pinned, hash not pinned)
+excluded from reproducibility claims: .var/ (logs, clusters), uploaded evidence, object-store contents, .env files
+PASS input-manifest
+
+##### dependencies (locked) (00:54:13Z)
+  ╰─▶ invalid peer certificate: UnknownIssuer
+
+hint: Consider enabling use of system TLS certificates with the `--system-certs` command-line flag
+FAIL dependencies (exit 1)
+
+##### byte-compile (00:54:13Z)
+FAIL compile (exit 1)
+
+##### secret scan (tracked files) (00:54:13Z)
+PASS secret-scan
+PASS no-env-files
+
+##### requirements register (every row has a recognised status) (00:54:13Z)
+17. Evaluation (S 16, P 10, B)                             verified=0 implementing=5 implemented_unverified=0 planned=0 blocked=1 rows=6
+
+Requirements: verified 149 (of which 19 only against fakes or fixtures) + implementing 68 + implemented_unverified 2 + planned 42 + blocked 1 = 262 rows
+Integration catalogue: fixture-tested 8, planned 13 = 21 rows
+PASS register
+
+##### GitHub Actions pins (full commit hashes, verified against the official repositories) (00:54:13Z)
+ok   actions/checkout v7.0.1 3d3c42e5aac5ba805825da76410c181273ba90b1
+ok   actions/setup-python v7.0.0 5fda3b95a4ea91299a34e894583c3862153e4b97
+ok   actions/upload-artifact v7.0.2 cf430e030ddbb5b0abf93d22962f4752f3646cd9
+PASS action-pins
+
+##### analyst UI (locked npm install, typecheck, production build) (00:54:13Z)
+dist/index.html                   0.39 kB │ gzip:  0.26 kB
+dist/assets/index-D1i01POv.css    5.45 kB │ gzip:  1.78 kB
+dist/assets/index-BsYsr8eb.js   235.94 kB │ gzip: 70.78 kB
+✓ built in 870ms
+PASS ui-build
+
+##### foundation verification (fresh cluster + SeaweedFS + full suite, incl. evaluation harness) (00:54:17Z)
+  ├─▶ client error (Connect)
+  ├─▶ error sending request for url (https://pypi.org/simple/hatchling/)
+  ├─▶ client error (Connect)
+FAIL foundation (exit 1)
+
+##### evaluation report (from this run's harness results) (00:55:22Z)
+Traceback (most recent call last):
+  File "/var/tmp/axiom-ci-832bf5d/evaluation/report.py", line 118, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/var/tmp/axiom-ci-832bf5d/evaluation/report.py", line 44, in main
+    rows = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/lib/python3.13/pathlib/_local.py", line 546, in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/pathlib/_abc.py", line 632, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/pathlib/_local.py", line 537, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/var/tmp/axiom-ci-832bf5d-out/eval/results.jsonl'
+grep: /var/tmp/axiom-ci-832bf5d-out/eval/report.md: No such file or directory
+FAIL evaluation-report (exit 1)
+wrote 23 files to /var/tmp/axiom-ci-832bf5d-out/eval-review-package; scenarios without evidence: ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'H10']
+FAIL evaluation-review-package (exit 1)
+
+##### restore drill: physical snapshot rollback (00:55:22Z)
+
+hint: Consider enabling use of system TLS certificates with the `--system-certs` command-line flag
+FAIL restore-drill (exit 1)
+
+##### compose fresh-install smoke (image rebuilt) (00:55:22Z)
+ok   fresh install: migrations applied, api healthy
+ok   no token -> 401
+ok   evidence upload -> verified -> download via S3 (SeaweedFS)
+ok   digest mismatch -> rejected
+ok   case create, start-investigation, stale version -> 409
+ok   consultant in other tenant -> 404; non-member tenant selection -> 403
+ok   case events linked to audit rows: 2
+ok   Trivy import via API + job-worker: completed complete 30; cases visible: 30
+ok   re-running init: migrations 'applied: none', seed 'already seeded'
+SMOKE FAIL: UI check
+FAIL compose-smoke (exit 1)
+
+CI FAIL: dependencies compile foundation evaluation-report evaluation-review-package restore-drill compose-smoke (/var/tmp/axiom-ci-832bf5d-out)
+exit 1

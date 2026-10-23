@@ -47,16 +47,28 @@ def run_worker(db, world, fake):
 def test_action_journey_with_idempotent_execution(client, as_, world, setup, db):  # noqa: F811
     case, connection = setup
     analyst, approver = as_("analyst"), as_("approver")
-    r = client.post("/api/v1/action-proposals", headers={**analyst, "Idempotency-Key": "prop-0001"}, json={
-        "case_id": case["id"], "effect_class": "ticket.create", "connection_id": connection["id"],
-        "payload": PAYLOAD, "verification_criteria": "ticket exists", "expires_at": iso(days=5)})
+    expires = (datetime.now(timezone.utc) + timedelta(days=5)).replace(microsecond=0)
+    body = {"case_id": case["id"], "effect_class": "ticket.create", "connection_id": connection["id"],
+            "payload": PAYLOAD, "verification_criteria": "ticket exists"}
+    r = client.post("/api/v1/action-proposals", headers={**analyst, "Idempotency-Key": "prop-0001"},
+                    json={**body, "expires_at": expires.isoformat()})
     assert r.status_code == 201, r.text
+    assert r.headers["Idempotent-Replayed"] == "false"
     proposal = r.json()
-    again = client.post("/api/v1/action-proposals", headers={**analyst, "Idempotency-Key": "prop-0001"}, json={
-        "case_id": case["id"], "effect_class": "ticket.create", "connection_id": connection["id"],
-        "payload": PAYLOAD, "verification_criteria": "ticket exists", "expires_at": proposal["version"]["expires_at"]})
-    # same key, different expires_at text -> different arguments -> rejected
-    assert again.status_code == 422 and again.json()["error"]["code"] == "idempotency_key_reused"
+    # the same instant written with another offset is the same argument: the stored response is replayed
+    bucharest = expires.astimezone(timezone(timedelta(hours=3))).isoformat()
+    assert bucharest != expires.isoformat()
+    again = client.post("/api/v1/action-proposals", headers={**analyst, "Idempotency-Key": "prop-0001"},
+                        json={**body, "expires_at": bucharest})
+    assert again.status_code == 201, again.text
+    assert again.headers["Idempotent-Replayed"] == "true" and again.json() == proposal
+    # a different expiry with the same key is a different request: rejected, nothing created
+    later = client.post("/api/v1/action-proposals", headers={**analyst, "Idempotency-Key": "prop-0001"},
+                        json={**body, "expires_at": (expires + timedelta(hours=1)).isoformat()})
+    assert later.status_code == 422 and later.json()["error"]["code"] == "idempotency_key_reused"
+    with db.tenant_tx(TenantContext(world.a.id, world["analyst"], "human", "t")) as conn:
+        assert conn.execute("SELECT count(*) AS n FROM axiom.action_proposals WHERE case_id = %s",
+                            (case["id"],)).fetchone()["n"] == 1
     r = client.post(f"/api/v1/action-proposals/{proposal['id']}/versions/1/decisions", headers=approver,
                     json={"decision": "approved", "rationale": "fine", "max_uses": 1})
     assert r.status_code == 201, r.text

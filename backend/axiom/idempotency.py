@@ -2,7 +2,9 @@
 
 Uniqueness is (tenant, principal, endpoint, key). The request digest covers the endpoint's path parameters and
 body, so the same key with different arguments or on a different resource is rejected (422
-``idempotency_key_reused``).
+``idempotency_key_reused``). Arguments are compared by meaning, not spelling: the API converts every instant to UTC
+before the digest (ADR 0015), so a retry that writes the same instant with another offset replays the stored
+response. ``canonical`` gives direct callers the same form.
 
 The key row is inserted first, inside the same transaction as the command:
 * a concurrent request with the same key blocks on the primary key until the first commits, then replays its
@@ -17,10 +19,12 @@ import hashlib
 import json
 import re
 from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
+from pydantic import TypeAdapter
 
 from .db import TenantContext
 from .errors import ValidationFailed
@@ -33,8 +37,24 @@ class IdempotencyKeyReused(ValidationFailed):
     code = "idempotency_key_reused"
 
 
+_ENCODE_INSTANT = TypeAdapter(datetime)
+
+
+def canonical(value: Any) -> Any:
+    """Timezone-aware datetimes become UTC strings in the form the API's JSON encoding gives them ("...Z"), so a
+    digest computed here equals the API's for the same instant; containers are walked; everything else is left
+    alone."""
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return _ENCODE_INSTANT.dump_python(value.astimezone(timezone.utc), mode="json")
+    if isinstance(value, dict):
+        return {k: canonical(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [canonical(v) for v in value]
+    return value
+
+
 def request_digest(endpoint: str, params: dict[str, Any], body: Any) -> str:
-    doc = json.dumps({"endpoint": endpoint, "params": params, "body": body}, sort_keys=True,
+    doc = json.dumps({"endpoint": endpoint, "params": params, "body": canonical(body)}, sort_keys=True,
                      separators=(",", ":"), default=str)
     return hashlib.sha256(doc.encode()).hexdigest()
 

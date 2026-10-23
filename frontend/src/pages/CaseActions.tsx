@@ -2,22 +2,16 @@
 // verification and closure.
 import { useState } from "react";
 import { newKey, post, useGet } from "../api";
-import { Badge, Field, Loaded, Section, fmt, short, supportLabel, useCommand } from "../ui";
+import { Badge, Field, Loaded, Section, fmt, short, supportLabel, useCommand, instantFromLocalInput, localInputInDays } from "../ui";
 import { priorityBadge } from "./Cases";
 
-function inDays(days: number) {
-  return new Date(Date.now() + days * 86400_000).toISOString().slice(0, 16);
-}
-function iso(local: string) {
-  return local ? new Date(local).toISOString() : null;
-}
 
 export function Priority({ c, onChange }: { c: any; onChange: () => void }) {
   const [p, reload] = useGet<any>(`/cases/${c.id}/priority`, [c.record_version]);
   const cmd = useCommand(() => { reload(); onChange(); });
   const [rationale, setRationale] = useState("");
   const [level, setLevel] = useState("high");
-  const [expires, setExpires] = useState(inDays(30));
+  const [expires, setExpires] = useState(localInputInDays(30));
   return (
     <>
       <Section title="Priority rationale">
@@ -69,12 +63,12 @@ export function Priority({ c, onChange }: { c: any; onChange: () => void }) {
           <Field label="Override to">
             <select data-testid="override-level" value={level} onChange={(e) => setLevel(e.target.value)}>
               {["urgent", "high", "medium", "low"].map((l) => <option key={l}>{l}</option>)}</select></Field>
-          <Field label="Override expires (max 365 days)">
+          <Field label="Override expires (your local time, max 365 days)">
             <input type="datetime-local" data-testid="override-expires" value={expires}
                    onChange={(e) => setExpires(e.target.value)} /></Field>
           <button data-testid="override" disabled={cmd.busy || !rationale} onClick={() => cmd.run(() =>
             post(`/cases/${c.id}/commands/override-priority`, { expected_version: c.record_version, rationale,
-              priority: level, expires_at: iso(expires) }), "Override recorded.")}>Override</button>
+              priority: level, expires_at: instantFromLocalInput(expires) }), "Override recorded.")}>Override</button>
         </div>
         {cmd.status}
       </Section>

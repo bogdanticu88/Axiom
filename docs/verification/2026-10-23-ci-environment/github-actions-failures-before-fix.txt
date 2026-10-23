@@ -1,0 +1,17 @@
+GitHub Actions run 39834318064 (push of bc2a6aa, 2026-10-22 18:46Z): foundation stage failed
+FAILED tests/integration/test_actions_api.py::test_action_journey_with_idempotent_execution - assert (201 == 422)
+======= 1 failed, 582 passed, 2 skipped, 1 warning in 423.19s (0:07:03) ========
+            "payload": PAYLOAD, "verification_criteria": "ticket exists", "expires_at": proposal["version"]["expires_at"]})
+        # same key, different expires_at text -> different arguments -> rejected
+>       assert again.status_code == 422 and again.json()["error"]["code"] == "idempotency_key_reused"
+E       assert (201 == 422)
+E        +  where 201 = <Response [201 Created]>.status_code
+
+tests/integration/test_actions_api.py:59: AssertionError
+=============================== warnings summary ===============================
+.venv/lib/python3.13/site-packages/fastapi/testclient.py:1
+
+GitHub Actions run 39875133750 (push of 8c0b483, 2026-10-22 23:57Z): foundation stage failed
+FAILED tests/integration/test_actions_api.py::test_action_journey_with_idempotent_execution - assert (201 == 422)
+FAILED tests/integration/test_tls_deployment.py::test_browser_sign_in_over_tls_with_secure_cookies_csrf_logout_and_replay - playwright._impl._errors.Error: APIRequestContext.post: unable to verify the first certificate
+======= 2 failed, 664 passed, 3 skipped, 1 warning in 579.85s (0:09:39) ========

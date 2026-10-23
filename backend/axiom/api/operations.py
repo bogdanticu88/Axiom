@@ -36,6 +36,9 @@ def register(api: APIRouter, database: Database, Ctx, store=None, settings=None)
                 raise ValidationFailed("Idempotency-Key header is required for this command",
                                        code="idempotency_key_required")
             return JSONResponse(status_code=status, content=tx(ctx, fn))
+        # Instants in the body were already converted to UTC by the request schema (ADR 0015), so the encoded body
+        # is the same for every spelling of an instant, and for a UTC request it is byte-for-byte what earlier
+        # versions digested: keys stored before the change with Z or +00:00 still replay.
         digest = idempotency.request_digest(endpoint, {k: str(v) for k, v in params.items()},
                                             jsonable_encoder(body))
         with database.tenant_tx(ctx) as conn:

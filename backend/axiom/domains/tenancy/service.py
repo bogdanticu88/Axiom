@@ -47,6 +47,8 @@ class TenancyService:
         if role is None:
             raise NotFound("role not found", code="role_not_found")
         now = self.authz.now()
+        if valid_until is not None and (valid_until.tzinfo is None or valid_until.utcoffset() is None):
+            raise ValidationFailed("valid_until must carry a UTC offset")
         if valid_until is not None and valid_until <= now:
             raise ValidationFailed("valid_until must be in the future")
         if emergency and (valid_until is None or valid_until > now + MAX_EMERGENCY):
