@@ -7,6 +7,26 @@ Commit hashes in the run records refer to the original development repository. T
 project was renamed to Axiom, so those hashes do not exist here; use the checkpoint tags instead. Paths in archived logs
 were normalised (the build host's home directory reads `/home/dev/`).
 
+## Correction (2026-10-23): local CI passes that depended on the workspace
+
+The "clean-clone CI PASS" results of runs 13 to 22 were produced in this workspace with its environment inherited by
+the CI script. Two settings in that environment hid test defects that GitHub Actions exposed on its first runs
+(`bc2a6aa` and `8c0b483`):
+
+* **Time zone.** The workspace runs in Europe/Bucharest, and the test PostgreSQL clusters were initialised with that
+  zone. `test_actions_api::test_action_journey_with_idempotent_execution` (since run 13) reused an idempotency key
+  with the expiry echoed back by the server. Rendered in +03:00 it differed in spelling from the UTC value first
+  sent, so the request was rejected as the test expected; under UTC it matched and was replayed, and the test
+  failed. The test was asserting an application defect: the digest compared timestamps by spelling.
+* **Node trust settings.** `NODE_OPTIONS=--use-openssl-ca` (with `SSL_CERT_FILE` and `NODE_EXTRA_CA_CERTS`) made
+  Playwright's Node-based request client trust the TLS test's local CA. Without it, the CSRF checks in
+  `test_tls_deployment::test_browser_sign_in_over_tls_…` (since run 20) failed with "unable to verify the first
+  certificate".
+
+The historical entries below are kept as they were recorded. Read their CI results as "passed in this workspace's
+environment" (Europe/Bucharest, inherited certificate settings), not as environment-independent results. Both
+defects are fixed and the results re-established with a declared environment in run 23.
+
 ## Environment (recorded by run 1)
 Linux container; Python 3.13.16; uv 0.11.32; PostgreSQL 16.15 server binaries (Ubuntu build) for test clusters;
 Docker 29.9.1; Docker Compose v5.6.0. Locked packages: fastapi 0.143.0, psycopg 3.3.6, psycopg-pool 3.3.3,
@@ -210,6 +230,9 @@ archive's own copy of this file stops at run 10.)
 * Not covered: database-server crash with the product runner (only in the experiment), load, CI.
 
 ### Run 13: action protocol, two-step risk acceptance, job operations, restore witness, CI (2026-10-22 ~06:00Z to 07:45Z)
+
+> Correction (2026-10-23): this run's CI result depended on the workspace environment; see the correction at the top of this file.
+
 Bugs found by the new tests while writing them (all fixed before the recorded runs):
 * **Intent creation race**: two jobs creating the intent for one operation key at once both found no row; the second
   insert failed with a unique violation. Now `INSERT ... ON CONFLICT DO NOTHING` then re-read under lock
@@ -251,6 +274,9 @@ Not covered: any live tracker (the Jira-style integration is fixture-tested only
 load beyond the 4 x 12 concurrency test; point-in-time recovery.
 
 ### Run 14: R7, per-class permissions, witness hardening, Phase D tracking, workflow adapters (2026-10-22 ~07:50Z to 08:15Z)
+
+> Correction (2026-10-23): this run's CI result depended on the workspace environment; see the correction at the top of this file.
+
 Problems found while building (fixed before the recorded run):
 * Design flaw in my own witness: one overwritten record per worker could be **lowered** by a second instance sharing
   a worker ID. Replaced by write-once records (`<watermark>-<worker>`); the high-water mark is the largest name listed.
@@ -291,6 +317,9 @@ deployments, Dockerfile, .github, pyproject.toml and uv.lock at run time (sorted
 Not covered: any live tracker; the witness on a production object store; hosted CI; load; point-in-time recovery.
 
 ### Run 15: policies, ownership, SLA v2, reporting depth, witness pruning audit, journey (2026-10-22 ~08:40Z to 09:02Z)
+
+> Correction (2026-10-23): this run's CI result depended on the workspace environment; see the correction at the top of this file.
+
 **Tested object: the exact committed tree.** CI ran on a fresh `git clone` of commit
 `4a3069ac903b2f7b991c70c72c0c3df95a52e85b` (tree `06603b6504afaef8414f68e1e353aecd2f99928c`). The new first stage,
 `scripts/ci/input-manifest.sh`, refused nothing: the clone had no modified or untracked files, and no ignored files
@@ -372,6 +401,9 @@ Not covered:
 * any UI.
 
 ### Run 16: Phase C evidence-backed investigation, evaluation harness, review fixes (2026-10-22 ~09:10Z to 10:10Z)
+
+> Correction (2026-10-23): this run's CI result depended on the workspace environment; see the correction at the top of this file.
+
 **Tested object: the exact committed tree.** The first CI attempt ran on a clean clone of `c96cf14` and **failed** on
 the secret scan, which correctly flagged a literal private-key header in a redaction unit test (fake value). Every
 other stage passed in that attempt: 401 passed, 2 skipped. The log is
@@ -462,6 +494,9 @@ Not covered:
 * load.
 
 ### Run 17: analyst UI, enterprise sign-in, override expiry and preview, claim-check precision (2026-10-22 ~10:30Z to 12:07Z)
+
+> Correction (2026-10-23): this run's CI result depended on the workspace environment; see the correction at the top of this file.
+
 **Tested object: the exact committed tree.** The first CI attempt on a clean clone of `3d093ea` **failed** the secret scan: the checkpoint-4 foundation log, committed after that checkpoint's CI run and
 never scanned, contained synthetic secrets that pytest had echoed into test IDs. Commit `3e95d46` gives the test
 explicit IDs and replaces the four affected ID lines in the archived log with markers (original digest in
@@ -526,6 +561,9 @@ browsers other than Chromium; browser tests of the approval, verification and re
 scanners and trackers; hosted CI; load.
 
 ### Run 18: checkpoint 6, finishing and verifying the existing workflow (2026-10-22 ~13:20Z to 14:40Z)
+
+> Correction (2026-10-23): this run's CI result depended on the workspace environment; see the correction at the top of this file.
+
 
 **1. Starting point (checkpoint 5), checked rather than assumed.** `docs/verification/2026-10-22-checkpoint6/starting-point-check.md`:
 * the delivered checkpoint-5 files match `SHA256SUMS`; the bundle clones and `checkpoint-5` points at
@@ -602,6 +640,9 @@ language model or reasoning quality.** Independent review: **pending**.
 
 ### Run 19: checkpoint 7, assurance of the authority and sign-in changes; verification worker (2026-10-22 ~15:48Z to 16:55Z)
 
+> Correction (2026-10-23): this run's CI result depended on the workspace environment; see the correction at the top of this file.
+
+
 **1. Baseline (before any change)** — `docs/verification/2026-10-22-checkpoint7/baseline.md`, `baseline-ci.log`:
 * the checkpoint-6 tag points at `1eed24c28e3240eaf92a5efa29ca443f06fad02a`; the six delivered checkpoint-6 files
   match `SHA256SUMS`; the checkpoint-5 files are unchanged;
@@ -675,6 +716,9 @@ endpoint added), 13 planned.
 
 ### Run 20: checkpoint 8, trust boundaries (2026-10-22 ~18:50Z to 19:40Z)
 
+> Correction (2026-10-23): this run's CI result depended on the workspace environment; see the correction at the top of this file.
+
+
 **1. Baseline** (`docs/verification/2026-10-22-checkpoint8/baseline.md`): checkpoint-7 tag, manifest, checksums and
 artifact contents verified in the private history and in the published Axiom history; the commits after each CI
 commit change records only (plus a comment-only commit whose Python syntax trees are unchanged, and README text).
@@ -707,6 +751,9 @@ was promoted.
 **5. Evaluation:** unchanged; no model called; review pending.
 
 ### Run 21: after checkpoint 8, closing review and demonstration (2026-10-22 ~20:00Z to 21:00Z)
+
+> Correction (2026-10-23): this run's CI result depended on the workspace environment; see the correction at the top of this file.
+
 
 Records: `docs/verification/2026-10-22-after-checkpoint8/`. Tested commit for every result below:
 `185af5b98fcb3eac46b52c736ffd2ecd58702877` (tree `90c22e34…`, executable inputs `sha256:43307896…`). After it, only
@@ -748,6 +795,9 @@ stays fixture-tested.
 
 ### Run 22: publication preparation (2026-10-22 ~23:05Z to 23:17Z)
 
+> Correction (2026-10-23): this run's CI result depended on the workspace environment; see the correction at the top of this file.
+
+
 Records: `docs/verification/2026-10-23-publication/`. Tested commit: `b2d2ae15c7b6abf7f9057dfc44a5fd2dd3a8eca5`
 (tree `2a336e26…`, executable inputs `sha256:e713895c…`). After it, only this record and that directory were added.
 
@@ -771,3 +821,48 @@ original bytes. The original checksum list of that delivery was restored after h
 packages carry images inside archives only.
 
 **5. Register:** counts unchanged.
+
+### Run 23: environment-independent CI and the first hosted CI failures (2026-10-23 ~00:50Z to 01:45Z)
+
+Records: `docs/verification/2026-10-23-ci-environment/`. Tested commit: `832bf5df1ac391a2da8b76f44c320d3380e8b17a`
+(tree `4e21e590…`, executable inputs `sha256:2e83771e…`), branch `fix/ci-environment-independence`.
+
+**1. Hosted CI before the fix** (`github-actions-failures-before-fix.txt`). GitHub Actions ran for the first time on
+the pushes of `bc2a6aa` and `8c0b483`; both failed the foundation stage, every other stage passed. `bc2a6aa`: 1 failed
+(the idempotency test). `8c0b483`: 2 failed (the idempotency test and the TLS browser test). Both reproduced locally
+under `TZ=UTC` and without `NODE_OPTIONS` respectively. See the correction at the top of this file.
+
+**2. Application defect fixed** (`b3daefb`). The idempotency request digest hashed timestamps as written, so the same
+expiry with a different offset was a "different request". The contract (data design section 9: "same key with
+different payload is a conflict") is about the payload's meaning. Timestamps are now digested as UTC instants. The API
+test states both cases: the same instant with a +03:00 offset replays the stored response (`Idempotent-Replayed:
+true`, identical body), and a different expiry with the same key is rejected with `idempotency_key_reused` and creates
+nothing. Without the fix it fails in both time zones (no longer depending on the database's rendering). Unit tests
+cover the digest. Retries of keys stored before the change with a non-UTC offset no longer match and are rejected.
+
+**3. Test defect fixed** (`832bf5d`). The TLS browser test's two CSRF requests used Playwright's Node-based
+`page.request`, whose trust came from inherited settings. They now use the test's httpx client, built with exactly the
+local CA and host-name checking on, carrying the browser's cookies. A new test shows that client rejects a wrong host
+name and an unrelated CA. The browser itself still trusts the server through the pinned key, as before.
+
+**4. Affected tests** under `TZ=UTC` and `TZ=Europe/Bucharest` (with matching `PGTZ`), with `NODE_OPTIONS`,
+`NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE` and the other CA variables removed: idempotency tests 10 passed in each; TLS
+deployment tests 10 passed in each.
+
+**5. Clean-environment CI** on fresh clones with `env -i` and only the variables in `declared-environment.env`
+(PATH, HOME, LANG, TZ, the Playwright browser location, `BUILD_CA` for image builds behind this workspace's proxy,
+`UV_SYSTEM_CERTS=1` so uv trusts the system store, which includes that proxy's CA):
+* attempt 1 failed at dependency installation (uv did not trust the proxy CA; `UV_SYSTEM_CERTS` added);
+* attempt 2 lost the Docker daemon midway (the workspace stops it after two hours), failing every Docker-backed test;
+* **UTC: CI PASS**, 670 passed, 3 skipped (physical drill, run as its own stage: 1 passed; real-provider test, never
+  run; demonstration, opt-in), restore drill, Compose smoke `SMOKE PASS` (`ci-832bf5d-utc.log`);
+* **Europe/Bucharest: CI PASS**, same counts and stages (`ci-832bf5d-europe-bucharest.log`).
+
+**6. Application defect found, not fixed.** The API accepts timestamps without an offset (for example
+`"2026-10-27T20:00:00"`). They are stored as the database session's local time, which is the server's configured
+time zone: in Europe/Bucharest that is 18:00 UTC, in UTC 20:00 UTC. Rejecting such values, or fixing the session
+time zone, changes the API contract and is left for a decision (HANDOFF, next tasks).
+
+The GitHub Actions result for the pull request is recorded in the pull request, not here, because this record is part
+of what it tests.
+
