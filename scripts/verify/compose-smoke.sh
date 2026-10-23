@@ -32,7 +32,11 @@ if [ "${BUILD:-0}" = "1" ]; then
   args=(--network host -t axiom-backend:dev)
   [ -n "${BUILD_CA:-}" ] && args+=(--secret "id=ca,src=$BUILD_CA")
   [ -n "${HTTPS_PROXY:-}" ] && args+=(--build-arg "HTTPS_PROXY=$HTTPS_PROXY")
-  docker build "${args[@]}" "$ROOT" >/dev/null 2>&1 || { echo "image build failed"; exit 1; }
+  buildlog=$(mktemp)
+  if ! docker build "${args[@]}" "$ROOT" >"$buildlog" 2>&1; then
+    echo "image build failed; last lines of the build output:"; tail -40 "$buildlog"; rm -f "$buildlog"; exit 1
+  fi
+  rm -f "$buildlog"
   echo "image built: $(docker image inspect axiom-backend:dev --format '{{.Id}}')"
 fi
 dc() { docker compose -p "$P" -f "$CDIR/compose.yaml" --env-file "$ENVF" "$@"; }
