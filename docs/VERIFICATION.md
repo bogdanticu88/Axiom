@@ -936,6 +936,8 @@ control A failed (`condition_present`); control B inconclusive (`different_deplo
 a check that they carry no metadata chunks (`docs/demo/PROVENANCE.md`).
 
 GitHub Actions on the first head of the documentation pull request (`8cfe42e`, run 39955949204): every stage passed
-except the Compose smoke, where `docker compose up` failed after sixteen seconds with its output discarded. The
-change was documentation only. Recorded as the third unexplained smoke-stage failure (docs/IMPLEMENTATION_STATUS.md).
+except the Compose smoke, where `docker compose up` failed after sixteen seconds with its output discarded. The commit
+changed only documentation and screenshots relative to `a05c01f`, whose run passed; the next commit, which added only
+these failure records, passed. That is evidence, not a cause: the cause is unknown. Recorded as the third unexplained
+smoke-stage failure (docs/IMPLEMENTATION_STATUS.md).
 

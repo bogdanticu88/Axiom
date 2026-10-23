@@ -56,8 +56,8 @@ result, but showing a consequence they do not describe is.
 
 ### Reporting
 For each finding: the capability used, the steps or a failing test, the claim it breaks and where that claim is
-written. Record findings outside the author's control first (an issue, or a dated file under `docs/reviews/`, a folder that does not exist yet), then
-the author responds. A finding is closed only by a test that fails before the fix and passes after it, or by a
+written. Record findings outside the author's control first (an issue, or a dated file in a proposed `docs/reviews/`
+folder, which does not exist yet and would be created with the first review), then the author responds. A finding is closed only by a test that fails before the fix and passes after it, or by a
 correction to the claim.
 
 ## Track 2: evaluation labels
@@ -65,7 +65,8 @@ correction to the claim.
 **Goal:** judge, without seeing the author's answers, whether each scenario's evidence supports the author's labels.
 
 * **Instructions:** `evaluation/REVIEW-PROCEDURE.md` (who may review, the blind and sealed materials, the steps, the
-  comparison tool). Follow it as written; this section only summarises.
+  comparison tool). Follow it as written; this section only summarises. The folder it names for stored reviews,
+  `evaluation/reviews/`, is proposed and does not exist yet; the first review creates it.
 * **Evidence access:** a reviewer receives only `blind/<case>/evidence.json` and `worksheet.csv` from the package
   built by `evaluation/export_review.py`. The author's labels (`sealed/`) and the pipeline's output are opened only
   after the reviewer's judgements are complete and their digest has been recorded.

@@ -78,8 +78,9 @@ stage passing:
 * run 39884012334 (commit `5bff45c`): the image build failed after two seconds; its output was discarded;
 * run 39946416834 (commit `063347b`): the browser check timed out waiting for "Investigation started."; the page state
   and API log were not captured;
-* run 39955949204 (commit `8cfe42e`, documentation only): `docker compose up` failed sixteen seconds into the stage;
-  its output is discarded and no container logs existed yet.
+* run 39955949204 (commit `8cfe42e`): `docker compose up` failed sixteen seconds into the stage; its output is
+  discarded and no container logs existed yet. That commit changed only documentation and screenshots relative to a
+  passing `main`; this narrows where to look but does not establish that the change played no part.
 
 None could be rerun from here. The runs after the first two, on commits that changed only diagnostics, passed. The
 smoke test prints the build output, the page state and the API and job-worker logs on failure (verification runs 23
