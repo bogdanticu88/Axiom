@@ -948,3 +948,27 @@ renders that message inside a section that is removed once the reloaded case is 
 the reload. Not fixed in this change. Run 39946416834 had the same symptom without diagnostics and is not confirmed to
 share the cause.
 
+
+### Run 28: the start-investigation confirmation (2026-10-23)
+
+The browser-check failure of run 39969148347 was traced to the application. After a successful start the page reloads
+the case; the "Start investigation" section, shown only while the case is `received`, is then removed, and the
+confirmation "Investigation started." was rendered inside it. The confirmation was therefore gone every time the
+reload finished: unstable feedback for a user, and a race for the check that waited for it.
+
+* **Shown before the fix:** a new browser test
+  (`tests/integration/test_analyst_ui.py::test_start_investigation_records_the_decision_and_its_confirmation_stays`)
+  waits until the page shows the reloaded case as `investigating`, then asserts that the confirmation is visible, that
+  the decision is recorded for alice with the case `investigating`, and that a fresh page load still shows
+  `investigating`. Against the unchanged UI it failed four times out of four, on the confirmation.
+* **Fix:** the command's result (confirmation or refusal) is rendered outside the conditional section. The same test
+  then passed three times out of three; the three browser test files passed together (15 tests).
+* **Smoke browser check:** it now waits for the durable outcome first (the reloaded case shows `investigating`), then
+  for the confirmation as a `status` element, then loads the page again and checks the workflow. The smoke script's
+  existing server-side check, that the decision was recorded as alice's human principal, is unchanged. No sleep was
+  added and no timeout changed.
+* **Local clean CI** (declared environment, UTC) at `2389664`: CI PASS, foundation 693 passed and 3 skipped, Compose
+  smoke passed with the new check. That run rebuilt the image but used base images already on this machine, so it was
+  not a cold install.
+
+Run 39946416834 had the same symptom without diagnostics. It is consistent with this cause but not confirmed by it.
