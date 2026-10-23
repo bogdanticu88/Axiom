@@ -83,10 +83,16 @@ shown only while the case is `received`; after success the page reloads the case
 disappears. The check passes only if it sees the message before the reload completes. This is a race between the
 check and the UI, not a server failure; it is not fixed yet.
 
+**Cause established for another, by the build output added in run 23:** run 39975479973 (merge commit `305b0fc` on
+`main`). The image build failed about two seconds into the stage because `public.ecr.aws` answered the request for
+the pinned Python base image's manifest with HTTP 429 (Too Many Requests): the registry refused the pull. Nothing in
+Axiom caused it, and the build has no retry; a later run is needed to show `main` green again.
+
 **Cause not established:**
 * run 39946416834 (commit `063347b`): the same symptom (timeout waiting for "Investigation started."), but the page
   state and API log were not captured, so it is consistent with the race above without being confirmed by it;
-* run 39884012334 (commit `5bff45c`): the image build failed after two seconds; its output was discarded;
+* run 39884012334 (commit `5bff45c`): the image build failed after two seconds; its output was discarded. The timing
+  matches the rate-limited pull above, but without the output that is not confirmed;
 * run 39955949204 (commit `8cfe42e`): `docker compose up` failed sixteen seconds into the stage; its output is
   discarded and no container logs existed yet. That commit changed only documentation and screenshots relative to a
   passing `main`; this narrows where to look but does not establish that the change played no part.

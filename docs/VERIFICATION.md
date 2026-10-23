@@ -962,3 +962,8 @@ that printed a secret (exit 1, secret redacted), an unexpected failing command (
 Docker failing during collection (exit 1 preserved) and Docker hanging during collection (exit 1, collection stopped
 by its limit). A normal run passed. The browser-check race found in run 39969148347 is not addressed here.
 
+GitHub Actions on `main` after merging pull request 2 (`305b0fc`, run 39975479973): every stage passed except the
+Compose smoke, whose image build failed because `public.ecr.aws` returned HTTP 429 (Too Many Requests) for the pinned
+`python:3.13-slim` manifest. Established from the build output the smoke test has printed since run 23. External
+rate limiting; not retried, and no change made to work around it.
+
