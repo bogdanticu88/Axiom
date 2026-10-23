@@ -232,8 +232,10 @@ export function Assessment({ c, onChange }: { c: any; onChange: () => void }) {
           <button data-testid="start-case-investigation" disabled={start.busy} onClick={() => start.run(() =>
             post(`/cases/${c.id}/commands/start-investigation`, { expected_version: version,
               rationale: "investigation started from the UI" }), "Investigation started.")}>Move to investigating</button>
-          {start.status}
         </Section>)}
+      {/* Outside the section above: that section is removed once the reloaded case is investigating, and the result
+          of the command (confirmation or refusal) must stay visible after the reload. */}
+      {start.status}
       <Section title="Record assessment (human decision)">
         {c.workflow !== "investigating" ? <div className="state" data-state="empty">Assessments are recorded while the
           case is investigating (now: {c.workflow}).</div> : (
