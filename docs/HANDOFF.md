@@ -233,8 +233,8 @@ The foundation-era gap list has been superseded.
 5. With authorisation: the real-provider test and real-model evaluation arm.
 6. Sandbox validation once accounts are authorised. Hosted CI runs on GitHub Actions for pushes to main and pull
    requests.
-7. Decide how the API treats timestamps without a UTC offset (today they are read in the database session's time
-   zone; see run 23).
+7. (Done: the API now refuses timestamps without a UTC offset, ADR 0015. Asset versions recorded by hand before
+   that may hold an ambiguous `observed_at` that cannot be identified.)
 
 ## Commands
 ```
