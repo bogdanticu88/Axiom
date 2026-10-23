@@ -36,8 +36,9 @@ def register(api: APIRouter, database: Database, Ctx, store=None, settings=None)
                 raise ValidationFailed("Idempotency-Key header is required for this command",
                                        code="idempotency_key_required")
             return JSONResponse(status_code=status, content=tx(ctx, fn))
+        parsed = body.model_dump(mode="python") if hasattr(body, "model_dump") else body
         digest = idempotency.request_digest(endpoint, {k: str(v) for k, v in params.items()},
-                                            jsonable_encoder(body))
+                                            jsonable_encoder(idempotency.canonical(parsed)))
         with database.tenant_tx(ctx) as conn:
             authz = Authorizer(conn, ctx)
             code, payload, replayed = idempotency.run(conn, ctx, endpoint=endpoint, key=key, digest=digest,

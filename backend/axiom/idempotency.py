@@ -2,7 +2,8 @@
 
 Uniqueness is (tenant, principal, endpoint, key). The request digest covers the endpoint's path parameters and
 body, so the same key with different arguments or on a different resource is rejected (422
-``idempotency_key_reused``).
+``idempotency_key_reused``). Arguments are compared by meaning, not spelling: a timestamp is digested as the
+instant it names, in UTC, so a retry that writes the same instant with another offset replays the stored response.
 
 The key row is inserted first, inside the same transaction as the command:
 * a concurrent request with the same key blocks on the primary key until the first commits, then replays its
@@ -17,6 +18,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import Any
 
 import psycopg
@@ -33,8 +35,19 @@ class IdempotencyKeyReused(ValidationFailed):
     code = "idempotency_key_reused"
 
 
+def canonical(value: Any) -> Any:
+    """Timezone-aware datetimes become UTC ISO strings; containers are walked; everything else is left alone."""
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value.astimezone(timezone.utc).isoformat()
+    if isinstance(value, dict):
+        return {k: canonical(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [canonical(v) for v in value]
+    return value
+
+
 def request_digest(endpoint: str, params: dict[str, Any], body: Any) -> str:
-    doc = json.dumps({"endpoint": endpoint, "params": params, "body": body}, sort_keys=True,
+    doc = json.dumps({"endpoint": endpoint, "params": params, "body": canonical(body)}, sort_keys=True,
                      separators=(",", ":"), default=str)
     return hashlib.sha256(doc.encode()).hexdigest()
 
