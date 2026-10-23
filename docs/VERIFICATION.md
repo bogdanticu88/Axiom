@@ -967,3 +967,8 @@ Compose smoke, whose image build failed because `public.ecr.aws` returned HTTP 4
 `python:3.13-slim` manifest. Established from the build output the smoke test has printed since run 23. External
 rate limiting; not retried, and no change made to work around it.
 
+GitHub Actions on pull request 3 at `9de264a` (run 39977205040): every stage passed except the Compose smoke. The image
+build succeeded; `docker compose up` failed while pulling the pinned `public.ecr.aws` PostgreSQL image, with
+`toomanyrequests: Rate exceeded`. Established from the `compose up` output that the new diagnostics preserved and
+printed; the container and log sections were empty because nothing had started. The test failed with exit 1. Not
+retried, and no change made to work around it.

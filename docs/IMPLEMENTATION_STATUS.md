@@ -88,13 +88,20 @@ check and the UI, not a server failure; it is not fixed yet.
 the pinned Python base image's manifest with HTTP 429 (Too Many Requests): the registry refused the pull. Nothing in
 Axiom caused it, and the build has no retry; a later run is needed to show `main` green again.
 
+**Cause established for a third, by the diagnostics added in run 27:** run 39977205040 (pull request 3, commit
+`9de264a`). The image build passed; `docker compose up` then failed while pulling the pinned PostgreSQL image for
+`postgres` and `db-init`, with `toomanyrequests: Rate exceeded` from the registry. No container had been created, so
+the collected state and logs were empty. Rate limiting by the registry again; not retried.
+
 **Cause not established:**
 * run 39946416834 (commit `063347b`): the same symptom (timeout waiting for "Investigation started."), but the page
   state and API log were not captured, so it is consistent with the race above without being confirmed by it;
 * run 39884012334 (commit `5bff45c`): the image build failed after two seconds; its output was discarded. The timing
   matches the rate-limited pull above, but without the output that is not confirmed;
 * run 39955949204 (commit `8cfe42e`): `docker compose up` failed sixteen seconds into the stage; its output is
-  discarded and no container logs existed yet. That commit changed only documentation and screenshots relative to a
+  discarded and no container logs existed yet. A later `compose up` failure was a registry rate limit during image
+  pulls (run 39977205040 above), so this one is consistent with that, but its own output is gone and that is not
+  confirmed. That commit changed only documentation and screenshots relative to a
   passing `main`; this narrows where to look but does not establish that the change played no part.
 
 None could be rerun from here. On failure the smoke test now prints the build output, the `docker compose up` output,
