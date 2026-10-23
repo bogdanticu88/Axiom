@@ -1,0 +1,173 @@
+project axiom-smoke-142555
+ok   fresh install: migrations applied, api healthy
+ok   no token -> 401
+ok   evidence upload -> verified -> download via S3 (SeaweedFS)
+ok   digest mismatch -> rejected
+ok   case create, start-investigation, stale version -> 409
+ok   consultant in other tenant -> 404; non-member tenant selection -> 403
+ok   case events linked to audit rows: 2
+ok   Trivy import via API + job-worker: completed complete 30; cases visible: 30
+ok   re-running init: migrations 'applied: none', seed 'already seeded'
+browser check output:
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+   Building axiom @ file://<harness copy>
+      Built axiom @ file://<harness copy>
+Uninstalled 1 package in 1ms
+Installed 1 package in 0.45ms
+ok   UI served (controlled failure harness)
+page shows password <redacted> and token <redacted-token>
+controlled browser failure
+SMOKE FAIL: UI check
+--- diagnostics for project axiom-smoke-142555 (bounded, secrets redacted)
+--- containers
+service      STATE     STATUS                      IMAGE
+app-init     exited    Exited (0) 1 second ago     axiom-backend:dev
+db-init      exited    Exited (0) 3 seconds ago    public.ecr.aws/docker/library/postgres:16.15
+api          running   Up 27 seconds (healthy)     axiom-backend:dev
+keycloak     running   Up 28 seconds (healthy)     quay.io/keycloak/keycloak:26.4.2
+idp-init     exited    Exited (0) 28 seconds ago   axiom-backend:dev
+job-worker   running   Up 29 seconds               axiom-backend:dev
+postgres     running   Up 39 seconds (healthy)     public.ecr.aws/docker/library/postgres:16.15
+objects      running   Up 39 seconds               mirror.gcr.io/chrislusf/seaweedfs:4.48
+--- container state and the last health-check results
+app-init: state=exited exit=0 oom=false health=unhealthy error=
+db-init: state=exited exit=0 oom=false health=none error=
+api: state=running exit=0 oom=false health=healthy error=
+  check exit 0: 
+keycloak: state=running exit=0 oom=false health=healthy error=
+  check exit 1: /bin/sh: connect: Connection refused
+/bin/sh: line 1: /dev/tcp/127.0.0.1/9000: Connection refused
+  check exit 0: 
+idp-init: state=exited exit=0 oom=false health=unhealthy error=
+job-worker: state=running exit=0 oom=false health=none error=
+postgres: state=running exit=0 oom=false health=healthy error=
+  check exit 0: /var/run/postgresql:5432 - accepting connections
+  check exit 0: /var/run/postgresql:5432 - accepting connections
+  check exit 0: /var/run/postgresql:5432 - accepting connections
+objects: state=running exit=0 oom=false health=none error=
+--- service logs (last lines each)
+## postgres
+postgres-1  | selecting default time zone ... Etc/UTC
+postgres-1  | creating configuration files ... ok
+postgres-1  | running bootstrap script ... ok
+postgres-1  | performing post-bootstrap initialization ... ok
+postgres-1  | initdb: warning: enabling "trust" authentication for local connections
+postgres-1  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+postgres-1  | syncing data to disk ... ok
+postgres-1  | 
+postgres-1  | 
+postgres-1  | Success. You can now start the database server using:
+postgres-1  | 
+postgres-1  |     pg_ctl -D /var/lib/postgresql/data -l logfile start
+postgres-1  | 
+postgres-1  | waiting for server to start....2026-10-23 14:25:57.283 UTC [46] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1  | 2026-10-23 14:25:57.284 UTC [46] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-10-23 14:25:57.286 UTC [49] LOG:  database system was shut down at 2026-10-23 14:25:57 UTC
+postgres-1  | 2026-10-23 14:25:57.290 UTC [46] LOG:  database system is ready to accept connections
+postgres-1  |  done
+postgres-1  | server started
+postgres-1  | 
+postgres-1  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+postgres-1  | 
+postgres-1  | waiting for server to shut down...2026-10-23 14:25:57.398 UTC [46] LOG:  received fast shutdown request
+postgres-1  | .2026-10-23 14:25:57.399 UTC [46] LOG:  aborting any active transactions
+postgres-1  | 2026-10-23 14:25:57.401 UTC [46] LOG:  background worker "logical replication launcher" (PID 52) exited with exit code 1
+postgres-1  | 2026-10-23 14:25:57.402 UTC [47] LOG:  shutting down
+postgres-1  | 2026-10-23 14:25:57.403 UTC [47] LOG:  checkpoint starting: shutdown immediate
+postgres-1  | 2026-10-23 14:25:57.406 UTC [47] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.004 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/14F2AE8, redo lsn=0/14F2AE8
+postgres-1  | 2026-10-23 14:25:57.411 UTC [46] LOG:  database system is shut down
+postgres-1  |  done
+postgres-1  | server stopped
+postgres-1  | 
+postgres-1  | PostgreSQL init process complete; ready for start up.
+postgres-1  | 
+postgres-1  | 2026-10-23 14:25:57.515 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+postgres-1  | 2026-10-23 14:25:57.515 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+postgres-1  | 2026-10-23 14:25:57.515 UTC [1] LOG:  could not create IPv6 socket for address "::": Address family not supported by protocol
+postgres-1  | 2026-10-23 14:25:57.516 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+postgres-1  | 2026-10-23 14:25:57.518 UTC [60] LOG:  database system was shut down at 2026-10-23 14:25:57 UTC
+postgres-1  | 2026-10-23 14:25:57.520 UTC [1] LOG:  database system is ready to accept connections
+## db-init
+db-init-1  | db-init complete
+## app-init
+app-init-1  | applied: none
+app-init-1  | {
+app-init-1  |   "status": "already seeded"
+app-init-1  | }
+app-init-1  | bucket ready
+app-init-1  | app-init complete
+## idp-init
+idp-init-1  | realm written for http://127.0.0.1:18010
+idp-init-1  | {
+idp-init-1  |   "provider_id": "aff992e1-d8d4-427f-8bb6-82116f10fc8a",
+idp-init-1  |   "issuer": "http://127.0.0.1:18011/realms/axiom",
+idp-init-1  |   "linked": {
+idp-init-1  |     "alice": "b69defa9-08f4-4041-a189-fe902235b95d",
+idp-init-1  |     "carol": "c34aeb3b-09d9-458c-ba3e-6e73113b2742",
+idp-init-1  |     "bob": "0236be52-f915-468a-a782-2c15e9b6d43c",
+idp-init-1  |     "dave": "2c58c844-05ea-4c65-a9c3-fcf7f00a40c8",
+idp-init-1  |     "erin": "86714e2f-7cef-455c-a14d-52791bfcb57f",
+idp-init-1  |     "admin": "7c422f16-0da9-4a25-885d-82642e4da157",
+idp-init-1  |     "audrey": "c4f842a9-76aa-428f-aea0-3faef43a0e3d",
+idp-init-1  |     "consult": "330fa8bd-4841-46d2-9ef6-d18fac1fd550"
+idp-init-1  |   }
+idp-init-1  | }
+## keycloak
+keycloak-1  | Updating the configuration and installing your custom providers, if any. Please wait.
+keycloak-1  | 2026-10-23 14:26:17,710 INFO  [io.quarkus.deployment.QuarkusAugmentor] (main) Quarkus augmentation completed in 7771ms
+keycloak-1  | Running the server in development mode. DO NOT use this configuration in production.
+keycloak-1  | 2026-10-23 14:26:19,535 INFO  [org.keycloak.url.HostnameV2ProviderFactory] (main) If hostname is specified, hostname-strict is effectively ignored
+keycloak-1  | 2026-10-23 14:26:21,553 INFO  [org.hibernate.orm.jdbc.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 32)
+keycloak-1  | 2026-10-23 14:26:22,407 INFO  [org.keycloak.quarkus.runtime.storage.database.liquibase.QuarkusJpaUpdaterProvider] (main) Initializing database schema. Using changelog META-INF/jpa-changelog-master.xml
+keycloak-1  | 2026-10-23 14:26:25,751 INFO  [org.infinispan.CONTAINER] (main) Virtual threads support enabled
+keycloak-1  | 2026-10-23 14:26:26,012 INFO  [org.infinispan.CONTAINER] (main) ISPN000556: Starting user marshaller 'org.infinispan.commons.marshall.ImmutableProtoStreamMarshaller'
+keycloak-1  | 2026-10-23 14:26:26,547 INFO  [org.keycloak.connections.infinispan.DefaultInfinispanConnectionProviderFactory] (main) Node name: node_262964, Site name: null
+keycloak-1  | 2026-10-23 14:26:26,847 INFO  [org.keycloak.exportimport.dir.DirImportProvider] (main) Importing from directory /opt/keycloak/bin/../data/import
+keycloak-1  | 2026-10-23 14:26:27,084 INFO  [org.keycloak.services] (main) KC-SERVICES0050: Initializing master realm
+keycloak-1  | 2026-10-23 14:26:29,295 INFO  [org.keycloak.exportimport.singlefile.SingleFileImportProvider] (main) Full importing from file /opt/keycloak/bin/../data/import/realm.json
+keycloak-1  | 2026-10-23 14:26:31,162 INFO  [org.keycloak.exportimport.util.ImportUtils] (main) Realm 'axiom' imported
+keycloak-1  | 2026-10-23 14:26:31,162 INFO  [org.keycloak.services] (main) KC-SERVICES0030: Full model import requested. Strategy: IGNORE_EXISTING
+keycloak-1  | 2026-10-23 14:26:31,164 INFO  [org.keycloak.services] (main) KC-SERVICES0032: Import finished successfully
+keycloak-1  | 2026-10-23 14:26:31,379 INFO  [io.quarkus] (main) Keycloak 26.4.2 on JVM (powered by Quarkus 3.27.0) started in 13.533s. Listening on: http://0.0.0.0:8080. Management interface listening on http://0.0.0.0:9000.
+keycloak-1  | 2026-10-23 14:26:31,380 INFO  [io.quarkus] (main) Profile dev activated. 
+keycloak-1  | 2026-10-23 14:26:31,380 INFO  [io.quarkus] (main) Installed features: [agroal, cdi, hibernate-orm, jdbc-h2, keycloak, narayana-jta, opentelemetry, reactive-routes, rest, rest-jackson, smallrye-context-propagation, smallrye-health, vertx]
+## api
+api-1  | INFO:botocore.credentials:Found credentials in environment variables.
+api-1  | INFO:     Started server process [1]
+api-1  | INFO:     Waiting for application startup.
+api-1  | INFO:     Application startup complete.
+api-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+api-1  | INFO:     127.0.0.1:44150 - "GET /api/v1/health/ready HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.1:39588 - "GET /api/v1/cases HTTP/1.1" 401 Unauthorized
+api-1  | INFO:     172.18.0.1:39602 - "POST /api/v1/evidence HTTP/1.1" 201 Created
+api-1  | INFO:     172.18.0.1:39610 - "PUT /api/v1/evidence/8576b703-5c71-4ba3-ba18-8efb64823fb2/content HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.1:39626 - "POST /api/v1/evidence/8576b703-5c71-4ba3-ba18-8efb64823fb2/finalise HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.1:39634 - "GET /api/v1/evidence/8576b703-5c71-4ba3-ba18-8efb64823fb2/content?purpose=smoke HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.1:39638 - "POST /api/v1/evidence HTTP/1.1" 201 Created
+api-1  | INFO:     172.18.0.1:39652 - "PUT /api/v1/evidence/f0df1818-a37c-4855-888a-6cd3c141e3bd/content HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.1:39658 - "POST /api/v1/evidence/f0df1818-a37c-4855-888a-6cd3c141e3bd/finalise HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.1:39668 - "POST /api/v1/cases HTTP/1.1" 201 Created
+api-1  | INFO:     172.18.0.1:39684 - "POST /api/v1/cases/a66efd11-2030-472e-8006-202e82a386b6/commands/start-investigation HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.1:39700 - "POST /api/v1/cases/a66efd11-2030-472e-8006-202e82a386b6/commands/start-investigation HTTP/1.1" 409 Conflict
+api-1  | INFO:     172.18.0.1:39712 - "GET /api/v1/cases/a66efd11-2030-472e-8006-202e82a386b6 HTTP/1.1" 404 Not Found
+api-1  | INFO:     172.18.0.1:39720 - "GET /api/v1/cases HTTP/1.1" 403 Forbidden
+api-1  | INFO:     172.18.0.1:39730 - "POST /api/v1/evidence HTTP/1.1" 201 Created
+api-1  | INFO:     172.18.0.1:39738 - "PUT /api/v1/evidence/c366d439-0cab-4ae9-9543-47e54cc6c53a/content HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.1:39740 - "POST /api/v1/evidence/c366d439-0cab-4ae9-9543-47e54cc6c53a/finalise HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.1:39746 - "POST /api/v1/imports HTTP/1.1" 202 Accepted
+api-1  | INFO:     172.18.0.1:39754 - "GET /api/v1/ingestion-runs/78154201-1600-423a-a5ed-f758e1661175 HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.1:39762 - "GET /api/v1/ingestion-runs/78154201-1600-423a-a5ed-f758e1661175 HTTP/1.1" 200 OK
+api-1  | INFO:     172.18.0.1:39768 - "GET /api/v1/cases?limit=200 HTTP/1.1" 200 OK
+## job-worker
+job-worker-1  | INFO:botocore.credentials:Found credentials in environment variables.
+## objects
+objects-1  | I1023 14:26:27.538606 store.go:343 add volume 7 on disk ID 0
+objects-1  | I1023 14:26:27.538752 volume_grpc_client_to_master.go:303 volume server 172.19.0.2:8080 adds volume 7
+objects-1  | I1023 14:26:27.541108 volume_growth.go:395 Created Volume 7 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1  | I1023 14:26:27.541188 volume_growth.go:408 Registered Volume 7 on topo:DefaultDataCenter:DefaultRack:172.19.0.2:8080
+objects-1  | I1023 14:26:28.626113 disk.go:119 disk status: dir:"/data"  all:270553174016  used:261029543936  free:9523630080  percent_free:3.5200586  percent_used:96.47994
+objects-1  | I1023 14:26:29.850245 lock_ring_manager.go:159 LockRing: broadcasting ring update for group "" version 1792765589850208852: [172.19.0.2:8888.18888]
+objects-1  | I1023 14:26:29.850583 masterclient.go:346 LockRing: s3@172.19.0.2:18333 received ring update v1792765589850208852: [172.19.0.2:8888.18888]
+objects-1  | I1023 14:26:29.850665 masterclient.go:346 LockRing: filer@172.19.0.2:8888 received ring update v1792765589850208852: [172.19.0.2:8888.18888]
+objects-1  | I1023 14:26:29.850699 filer.go:181 LockRing: applying master ring update v1792765589850208852: [172.19.0.2:8888]
+objects-1  | I1023 14:26:33.626193 disk.go:119 disk status: dir:"/data"  all:270553174016  used:261031149568  free:9522024448  percent_free:3.519465  percent_used:96.48054

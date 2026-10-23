@@ -1,0 +1,12 @@
+project axiom-smoke-142936
+ok   fresh install: migrations applied, api healthy
+SMOKE FAIL: controlled failure while Docker hangs
+--- diagnostics for project axiom-smoke-142936 (bounded, secrets redacted)
+--- containers
+--- container state and the last health-check results
+--- service logs (last lines each)
+## postgres
+## db-init
+## app-init
+## idp-init
+(diagnostics time limit reached)

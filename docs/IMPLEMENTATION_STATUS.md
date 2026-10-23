@@ -91,8 +91,10 @@ check and the UI, not a server failure; it is not fixed yet.
   discarded and no container logs existed yet. That commit changed only documentation and screenshots relative to a
   passing `main`; this narrows where to look but does not establish that the change played no part.
 
-None could be rerun from here. The smoke test prints the build output, the page state and the API and job-worker logs
-on failure (verification runs 23 and 25), but not yet the output of `docker compose up`.
+None could be rerun from here. On failure the smoke test now prints the build output, the `docker compose up` output,
+every container's state, exit code and health results, the last lines of each service's log, and the page state of
+the browser check, bounded and with its own secrets redacted (verification runs 23, 25 and 27). The browser-check race
+above is not fixed by that change.
 
 ### Statements this supersedes
 Historical records are kept as written. These statements in them are no longer correct:

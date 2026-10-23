@@ -1,0 +1,24 @@
+project axiom-smoke-142823
+ok   fresh install: migrations applied, api healthy
+SMOKE FAIL: controlled failure while diagnostics cannot reach Docker
+--- diagnostics for project axiom-smoke-142823 (bounded, secrets redacted)
+--- containers
+docker unavailable (controlled)
+--- container state and the last health-check results
+--- service logs (last lines each)
+## postgres
+docker unavailable (controlled)
+## db-init
+docker unavailable (controlled)
+## app-init
+docker unavailable (controlled)
+## idp-init
+docker unavailable (controlled)
+## keycloak
+docker unavailable (controlled)
+## api
+docker unavailable (controlled)
+## job-worker
+docker unavailable (controlled)
+## objects
+docker unavailable (controlled)

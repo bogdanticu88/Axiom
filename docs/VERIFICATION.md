@@ -948,3 +948,17 @@ renders that message inside a section that is removed once the reloaded case is 
 the reload. Not fixed in this change. Run 39946416834 had the same symptom without diagnostics and is not confirmed to
 share the cause.
 
+### Run 27: Compose smoke diagnostics (2026-10-23)
+
+Records: `docs/verification/2026-10-23-smoke-diagnostics/`. The smoke script now collects, on any failure, the
+`docker compose up` output, container states, exit codes, OOM flags, health status and the last health-check results,
+and the last lines of each service's log. An ERR trap reports unexpected failures with their line and keeps their exit
+status. Collection is bounded (per-command limits, about two minutes overall, 400 lines) and cannot change the exit
+status; generated secrets and token-shaped strings are replaced before printing, and the rendered Compose
+configuration and container environments are never printed. No retry, timeout increase or skipped check was added.
+
+Controlled failures (see the records' README): a held host port (exit 1, bind error shown), a failing browser check
+that printed a secret (exit 1, secret redacted), an unexpected failing command (exit 7 preserved, line reported),
+Docker failing during collection (exit 1 preserved) and Docker hanging during collection (exit 1, collection stopped
+by its limit). A normal run passed. The browser-check race found in run 39969148347 is not addressed here.
+
