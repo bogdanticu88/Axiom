@@ -48,13 +48,21 @@ Responses are unchanged: the database renders timestamps with the session's offs
 unambiguous.
 
 ## Idempotency keys created before normalisation
-Keys are kept for 7 days. A retry after the upgrade of a request first sent before it:
-* with `Z` or `+00:00`: matches and replays, as before;
-* with another offset: no longer matches the stored digest and is rejected with `idempotency_key_reused`; nothing is
-  created twice;
-* without an offset: is refused by validation before the key is looked at.
+Keys are kept for 7 days. Whether a retry after the upgrade replays depends on how the instant was spelled in the
+**original** request, because that is what the stored digest covers. Earlier versions digested the body as FastAPI
+encodes it, which writes a UTC instant as `...Z` and keeps any other offset as sent. The API now converts every instant
+to UTC before encoding, so every equivalent retry produces the `...Z` form.
 
-This fails safe; a client that sees the rejection should send the command with a new key.
+| Original request stored with | Retry with `Z` | Retry with `+00:00` | Retry with `+03:00` | Retry with `+0300` | Retry without offset |
+|---|---|---|---|---|---|
+| `Z` | replays | replays | replays | replays | refused (422 validation) |
+| `+00:00` | replays | replays | replays | replays | refused (422 validation) |
+| a nonzero offset, e.g. `+03:00` | rejected | rejected | rejected, even with the identical text | rejected | refused (422 validation) |
+| no offset | rejected | rejected | rejected | rejected | refused (422 validation) |
+
+"Rejected" means `422 idempotency_key_reused`: nothing is created twice, and the client must send the command again
+with a new key. The retry's own offset does not decide the outcome; the original spelling does. The table is checked
+by `tests/unit/test_idempotency_legacy_keys.py`, which recomputes the stored digest exactly as the earlier code did.
 
 ## Records accepted before the correction
 Behaviour of the code before the correction, per path:

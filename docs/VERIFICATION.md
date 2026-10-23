@@ -902,3 +902,21 @@ restore drill, Compose smoke `SMOKE PASS` (`ci-7b9d50b-utc.log`); **Europe/Bucha
 
 **Unresolved:** the Compose smoke image build that failed after two seconds on GitHub Actions (run 39884012334,
 commit `5bff45c`) without output. The smoke test now prints build output on failure; it has not recurred.
+
+### Run 25: final review of pull request 1 (2026-10-23)
+
+**Legacy idempotency keys.** A compatibility check (`tests/unit/test_idempotency_legacy_keys.py`, which recomputes the
+digest exactly as the code at `8c0b483` did) found that the normalised digest of `b3daefb` wrote UTC as `+00:00`,
+while the earlier encoding wrote `...Z`. Run 23's statement "retries of keys stored before the change with a non-UTC
+offset no longer match" was therefore incomplete for the commits it tested: keys first sent with `Z` or `+00:00`
+would not have matched either. Fixed: the API digests the schema-normalised body as before. Matrix (ADR 0015): keys
+first sent with `Z` or `+00:00` replay for every equivalent retry; keys first sent with a nonzero offset or without
+one are rejected (`idempotency_key_reused`) whatever the retry's spelling; retries without an offset are refused by
+validation.
+
+**Diff review** of `8c0b483..` the final head: code changes are limited to the request schema, the list cursor, the
+digest, two service checks, the UI's expiry helpers and the smoke script's build output; the rest is tests,
+documentation and verification records. No unintended change found.
+
+The historical-data limitation (ADR 0015) and the CI corrections (runs 13 to 23) stand as recorded.
+
