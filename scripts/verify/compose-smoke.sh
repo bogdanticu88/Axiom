@@ -40,9 +40,72 @@ if [ "${BUILD:-0}" = "1" ]; then
   echo "image built: $(docker image inspect axiom-backend:dev --format '{{.Id}}')"
 fi
 dc() { docker compose -p "$P" -f "$CDIR/compose.yaml" --env-file "$ENVF" "$@"; }
-fail() { echo "SMOKE FAIL: $*"; dc logs --no-color | tail -40; exit 1; }
+
+# --- failure diagnostics. Best effort and bounded: every command has a time limit, output is truncated, and nothing
+# here can change the exit status of the failure being reported. Output passes through redact(), which replaces every
+# secret this script generated (all values in $ENVF) and anything shaped like a bearer token. The rendered Compose
+# configuration and container environments are never printed, because they contain those secrets.
+redact() {
+  python3 -c '
+import re, sys
+secrets = [l.split("=", 1)[1].strip() for l in open(sys.argv[1]) if "=" in l]
+secrets = sorted({s for s in secrets if len(s) >= 8}, key=len, reverse=True)
+jwt = re.compile(r"eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*")
+for line in sys.stdin:
+    for s in secrets:
+        line = line.replace(s, "<redacted>")
+    sys.stdout.write(jwt.sub("<redacted-token>", line))' "$ENVF" 2>/dev/null || echo "(redaction failed; output withheld)"
+}
+diagnose() {
+  (
+    set +e
+    end=$((SECONDS + 120))                        # overall limit, on top of each command's own limit
+    left() { [ "$SECONDS" -lt "$end" ] || { echo "(diagnostics time limit reached)"; return 1; }; }
+    echo "--- diagnostics for project $P (bounded, secrets redacted)"
+    echo "--- containers"
+    timeout 20 docker ps -a --filter "label=com.docker.compose.project=$P" \
+      --format 'table {{.Label "com.docker.compose.service"}}\t{{.State}}\t{{.Status}}\t{{.Image}}' 2>&1 | head -30
+    echo "--- container state and the last health-check results"
+    for c in $(timeout 20 docker ps -aq --filter "label=com.docker.compose.project=$P" 2>/dev/null | head -20); do
+      left || break
+      timeout 10 docker inspect --format \
+        '{{index .Config.Labels "com.docker.compose.service"}}: state={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} error={{printf "%.200s" .State.Error}}' \
+        "$c" 2>&1 | cut -c1-300
+      timeout 10 docker inspect --format '{{if .State.Health}}{{range .State.Health.Log}}  check exit {{.ExitCode}}: {{printf "%.200s" .Output}}{{"\n"}}{{end}}{{end}}' \
+        "$c" 2>/dev/null | grep -v '^$' | tail -3
+    done
+    echo "--- service logs (last lines each)"
+    for svc in postgres db-init app-init idp-init keycloak api job-worker objects; do
+      left || break
+      n=40; [ "$svc" = objects ] && n=10
+      echo "## $svc"
+      timeout 20 docker compose -p "$P" -f "$CDIR/compose.yaml" --env-file "$ENVF" logs --no-color --tail "$n" "$svc" 2>&1 \
+        | cut -c1-400 | tail -"$n"
+    done
+  ) 2>&1 | redact | head -400
+  return 0
+}
+fail() {
+  echo "SMOKE FAIL: $*"
+  diagnose || true
+  exit 1
+}
+# An unexpected failing command (set -e) would otherwise end the script with no message at all.
+on_error() {
+  local rc=$? line=$1
+  trap - ERR
+  echo "SMOKE FAIL: unexpected exit $rc at line $line: $(sed -n "${line}p" "$0" | cut -c1-160 | redact)"
+  diagnose || true
+  exit "$rc"
+}
+trap 'on_error $LINENO' ERR
 echo "project $P"
-dc up -d --no-build >/dev/null 2>&1 || fail "compose up"
+UPLOG=$(mktemp)
+if ! dc up -d --no-build >"$UPLOG" 2>&1; then
+  echo "docker compose up failed; its output:"; redact <"$UPLOG" | tail -60; rm -f "$UPLOG"
+  fail "compose up"
+fi
+rm -f "$UPLOG"
 for i in $(seq 1 60); do
   [ "$(dc ps api --format '{{.Health}}')" = "healthy" ] && break; sleep 2
 done
@@ -108,8 +171,7 @@ done
 [ "$(dc ps keycloak --format '{{.Health}}')" = "healthy" ] || fail "keycloak not healthy"
 dc logs idp-init --no-color | grep '"alice"' >/dev/null || fail "idp-init did not link alice"
 UIOUT=$(AXIOM_DEMO_PASSWORD="$DEMO_PASSWORD" uv run --frozen python "$ROOT/scripts/verify/compose_ui_check.py" \
-  "http://127.0.0.1:$PORT" 2>&1) || { echo "$UIOUT" | grep -v '^ok ' | tail -80
-                                      echo "--- api and job-worker logs"; dc logs --no-color api job-worker | tail -60
+  "http://127.0.0.1:$PORT" 2>&1) || { echo "browser check output:"; echo "$UIOUT" | redact | tail -80
                                       fail "UI check"; }
 echo "$UIOUT" | grep '^ok '
 UICASE=$(echo "$UIOUT" | sed -n 's/^CASE //p')
