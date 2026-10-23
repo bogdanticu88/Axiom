@@ -5,14 +5,13 @@ investigate with deterministic checks and constrained AI, prioritise by versione
 remediation, verify outcomes against the affected deployment, and report from recorded evidence. Supports a shared
 multi-client installation and dedicated single-enterprise installations from one codebase.
 
-**Status: work in progress; nothing here is production-ready.** Built and tested so far: the foundation (tenant
-isolation, database roles, evidence storage, the case workflow), ingestion, a durable job runner, the action and
-approval protocol, risk acceptance, policies, ownership, SLA clocks, reporting, evidence-backed investigation against a
-**deterministic fake model** (no language model has been called), an analyst UI, OIDC sign-in tested **only against a
-local Keycloak**, and a verification worker tested **only against local endpoints** (a test fixture and the
-demonstration check service). Connectors are at most **fixture-tested**; none has been validated against a live
-service. Details: `docs/IMPLEMENTATION_STATUS.md`. A local end-to-end demonstration, from a real Trivy scan to a
-verified closure with two negative controls, is described in `docs/DEMO.md`.
+**Status: work in progress; nothing here is production-ready.** The current state, with what is tested, what is
+fixture-only, what is untested and the known limits, is in one place: `docs/IMPLEMENTATION_STATUS.md`, section
+"Current status". In short: the foundation (tenant isolation, database roles, evidence storage, the case workflow),
+ingestion, a durable job runner, the action and approval protocol, risk acceptance, policies, ownership, SLA clocks,
+reporting and an analyst UI are built and tested; investigation runs only against a **deterministic fake model** (no
+language model has been called); sign-in is tested **only against a local Keycloak**; integrations are at most
+**fixture-tested**; the verification worker has been tested **only against local endpoints**.
 
 ## Why Axiom exists
 
@@ -45,14 +44,62 @@ Some of this is design intent that has not been shown to work in practice yet:
 * **AI usefulness is unmeasured.** No language model has been called. The investigation path runs against a
   deterministic fake. The claim checks are record checks (does the cited evidence exist, is it fresh, does it
   belong to this deployment); they do not judge whether a claim is semantically correct or relevant.
-* **Nothing has met a real system.** Scanner and context connectors, ticket integrations and the verification
-  worker are tested against fixtures and local fakes only. Sign-in has been tested against a local Keycloak only.
+* **Nothing has met a real system.** Scanner and context connectors and ticket integrations are tested against
+  fixtures and local fakes only. The verification worker has been tested against a test fixture and against the local
+  demonstration service below. Sign-in has been tested against a local Keycloak only.
 * **It is not production-ready.** It has not been deployed behind a real proxy, run at scale, or reviewed by an
   independent party. The evaluation labels were written by the author and still await independent review.
 
 The documents under `docs/` record what was tested, how, and what was not.
 
+## The demonstration: one finding from scan to verified closure
+
+`docs/DEMO.md` walks one vulnerability through the whole workflow on one machine, and `scripts/demo/run.sh`
+reproduces it in a few minutes (Docker, the test database, a local Keycloak and Chromium; no model, no hosted
+tracker, no external service once images and the scanner database are cached). Two small services are built with
+Jinja2 3.1.2, which has published advisories, and run from a local registry.
+
+1. **Scan.** Trivy scans the image each service is running.
+2. **Import and bind.** The reports go through the import API; each finding is bound to the image digest Docker reports
+   for the running container.
+3. **Investigate and prioritise.** An investigation runs through the model gateway with the deterministic fake; a
+   second analyst reviews its claims; priority comes from a published policy.
+4. **Approve and remediate.** A ticket proposal is approved in the browser by someone other than the proposer, then
+   created in a local fake tracker. One service is rebuilt with Jinja2 3.1.6 and redeployed.
+5. **Verify.** The verification worker asks a local check service, which rescans the running container with Trivy.
+6. **Close and export.** A person closes the case in the browser; the case history and an auditor's evidence package
+   are exported.
+
+Two controls go through the same verification on the service that is never fixed: a change reported against the
+unchanged deployment **fails**, and a fixed image that was built but not deployed is **inconclusive**.
+
+| Part | Real or stand-in |
+|---|---|
+| Trivy scans, the image builds, the registry and the running containers | real, local; Trivy 0.76.1 with a cached database that changes daily |
+| Axiom: API, database, workers, policies, verification worker, UI | real, from this repository |
+| Investigation model | **deterministic fake**; no language model is called, and the UI labels it as a fake |
+| Ticket tracker | **local fake**, in the test process |
+| Check service that rescans the deployment | demonstration code in `scripts/demo`, not a supported component |
+
+**What a verification pass means here.** The check service reports that, in a Trivy scan of the image the container
+is running at that moment, the same vulnerability is no longer listed for the same package. Axiom accepts a pass only if
+the answer is bound to this request, names the reported deployment, is recent, and covers every condition. It does not
+show the vulnerable code was reachable or that other replicas were fixed, and it cannot detect a dishonest check
+service: the result is the service's claim (docs/DEMO.md, "Who controls the endpoint"). Closing the case is still a
+person's decision.
+
+| | |
+|---|---|
+| ![Investigation run labelled as a fake model, with reviewed claims](docs/demo/01-investigation-with-the-fake-model.png) | ![Ticket proposal approved in the browser by a second person](docs/demo/02-approval-recorded-in-the-ui.png) |
+| Investigation with the fake model; a second analyst reviewed each claim. | Approval by someone other than the proposer; the tracker is a local fake. |
+| ![Verification worker pass on the redeployed digest](docs/demo/03-worker-verification-passed.png) | ![Control A: verification failed on the unchanged deployment](docs/demo/05-control-A-not-passed.png) |
+| The worker's pass for the redeployed digest, waiting for a person to close. | Control A: the same check fails on the deployment that was not changed. |
+
+Screenshots from the run at `a05c01f` (provenance and checksums: `docs/demo/PROVENANCE.md`).
+
 ## Documents
+* Start here: `docs/IMPLEMENTATION_STATUS.md` (current status), `docs/DEMO.md` (reproduction),
+  `docs/INDEPENDENT-REVIEW.md` (how to review the trust boundaries and the evaluation labels)
 * Design inputs: `docs/Axiom-Specification.md`, `...-Implementation-Plan.md`, `...-Data-and-Access-Design.md`
 * Review of the supplied foundation: `docs/REVIEW-2026-10-22.md`
 * Tracking: `docs/REQUIREMENTS.md`, `docs/IMPLEMENTATION_STATUS.md`, `docs/DECISIONS.md` and `docs/adr/`,
@@ -67,7 +114,8 @@ db/provision_roles.sql     cluster-level role provisioning (run once per cluster
 deployments/compose/       single-host install (PostgreSQL, SeaweedFS S3, init jobs, API, job worker)
 scripts/dev/test-db.sh     disposable PostgreSQL cluster for tests
 scripts/verify/            full verification and Compose smoke test
-scripts/ci/run.sh          the CI pipeline (also called by .github/workflows/ci.yml, which has never run)
+scripts/ci/run.sh          the CI pipeline (also run by .github/workflows/ci.yml on pull requests and main)
+scripts/demo/              the local end-to-end demonstration (docs/DEMO.md)
 tests/                     unit, PostgreSQL-backed integration tests, opt-in restore drills (tests/drills)
 experiments/               workflow-engine experiments (not product code)
 docs/design-inputs/        supplied foundation code kept for reference

@@ -78,6 +78,11 @@ The run at commit `185af5b98fcb3eac46b52c736ffd2ecd58702877` (verification run 2
 | Control B | CVE-2024-34064 on reports-api, fixed image pushed but not deployed: `inconclusive`, `different_deployment` |
 | Digests | orders-api before `sha256:6fac686f…`, after `sha256:014fada1…`; reports-api `sha256:1b656a1c…` throughout; full values in `results.json` |
 
+Later runs with the same scanner image and database: `b2d2ae1` (run 22) and `a05c01f` (2026-10-23, records in
+`docs/verification/2026-10-23-demo-main/`, screenshots in `docs/demo/`). Each reached the same outcomes: the
+demonstrated case passed and was closed, control A failed (`condition_present`), control B was inconclusive
+(`different_deployment`). Digests differ per run.
+
 ## The steps
 
 1. **Scan.** Trivy scans the image each service container is running, by registry digest.

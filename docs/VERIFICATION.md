@@ -927,3 +927,11 @@ and the button's code are unchanged since `bc0fddf`, whose run passed; the same 
 Europe/Bucharest CI of `3f8aaea` and in three further local runs. Unresolved, like the image build failure of run
 39884012334; the UI check now prints the page's state and the API and job-worker logs on failure.
 
+### Run 26: demonstration on main for the documentation (2026-10-23 12:41Z to 12:43Z)
+
+`scripts/demo/run.sh` at `a05c01f7cf81b1bfd162c302cbe1177254bd11f6` (main after pull request 1), Trivy 0.76.1 with
+the database of 2026-10-22T19:14:47Z. Demonstrated case passed (`condition_absent`) and was closed in the browser;
+control A failed (`condition_present`); control B inconclusive (`different_deployment`). Records:
+`docs/verification/2026-10-23-demo-main/`. Four of its screenshots are in `docs/demo/`, unedited, with checksums and
+a check that they carry no metadata chunks (`docs/demo/PROVENANCE.md`).
+
