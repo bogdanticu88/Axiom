@@ -72,20 +72,27 @@ passed; the opt-in real-provider test, never run; the opt-in demonstration). The
 * **Evaluation:** labels are the author's and unreviewed; there is no held-out set (evaluation/EXPOSURE.md).
 * The demonstration depends on the daily Trivy database; a later run can fail honestly (docs/DEMO.md).
 
-### Unresolved intermittent CI failures
-Three one-off failures on GitHub Actions, each in a different step of the Compose smoke stage, with every other
-stage passing:
+### Intermittent CI failures
+One-off failures on GitHub Actions, each in the Compose smoke stage, with every other stage passing.
+
+**Cause established for one, by its diagnostics:** run 39969148347 (commit `8bc0ac1`). The browser check waits for the
+message "Investigation started." after starting an investigation. The API log shows the command succeeded (200), and
+the page, when captured, showed the case as `investigating` and no status message at all. In the UI
+(`frontend/src/pages/CaseEvidence.tsx`), that message is rendered inside the "Start investigation" section, which is
+shown only while the case is `received`; after success the page reloads the case and the section, with its message,
+disappears. The check passes only if it sees the message before the reload completes. This is a race between the
+check and the UI, not a server failure; it is not fixed yet.
+
+**Cause not established:**
+* run 39946416834 (commit `063347b`): the same symptom (timeout waiting for "Investigation started."), but the page
+  state and API log were not captured, so it is consistent with the race above without being confirmed by it;
 * run 39884012334 (commit `5bff45c`): the image build failed after two seconds; its output was discarded;
-* run 39946416834 (commit `063347b`): the browser check timed out waiting for "Investigation started."; the page state
-  and API log were not captured;
 * run 39955949204 (commit `8cfe42e`): `docker compose up` failed sixteen seconds into the stage; its output is
   discarded and no container logs existed yet. That commit changed only documentation and screenshots relative to a
   passing `main`; this narrows where to look but does not establish that the change played no part.
 
-None could be rerun from here. The runs after the first two, on commits that changed only diagnostics, passed. The
-smoke test prints the build output, the page state and the API and job-worker logs on failure (verification runs 23
-and 25), but not yet the output of `docker compose up`. The cause of all three is unknown; none has been reproduced
-locally.
+None could be rerun from here. The smoke test prints the build output, the page state and the API and job-worker logs
+on failure (verification runs 23 and 25), but not yet the output of `docker compose up`.
 
 ### Statements this supersedes
 Historical records are kept as written. These statements in them are no longer correct:

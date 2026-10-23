@@ -941,3 +941,10 @@ changed only documentation and screenshots relative to `a05c01f`, whose run pass
 these failure records, passed. That is evidence, not a cause: the cause is unknown. Recorded as the third unexplained
 smoke-stage failure (docs/IMPLEMENTATION_STATUS.md).
 
+GitHub Actions on `8bc0ac1` (run 39969148347): every stage passed except the Compose smoke's browser check, which
+timed out waiting for "Investigation started.". The diagnostics added in run 25 established the mechanism: the API
+returned 200 for the command, the captured page showed the case `investigating` and no status element, and the UI
+renders that message inside a section that is removed once the reloaded case is no longer `received`. The check races
+the reload. Not fixed in this change. Run 39946416834 had the same symptom without diagnostics and is not confirmed to
+share the cause.
+
