@@ -1,0 +1,26 @@
+[    0.2s] project axiom-smoke-172120
+[   30.0s] ok   fresh install: migrations applied, api healthy
+[   30.0s] SMOKE FAIL: controlled failure while Docker fails
+[   30.0s] --- diagnostics for project axiom-smoke-172120 (bounded, redacted)
+[   30.0s] --- containers
+[   30.0s] docker: simulated failure
+[   30.0s] --- container state and the last health-check results
+[   30.0s] --- service logs (last lines each)
+[   30.0s] ## postgres
+[   30.0s] docker: simulated failure
+[   30.0s] ## db-init
+[   30.0s] docker: simulated failure
+[   30.0s] ## app-init
+[   30.0s] docker: simulated failure
+[   30.0s] ## idp-init
+[   30.0s] docker: simulated failure
+[   30.0s] ## keycloak
+[   30.0s] docker: simulated failure
+[   30.0s] ## api
+[   30.0s] docker: simulated failure
+[   30.0s] ## job-worker
+[   30.0s] docker: simulated failure
+[   30.0s] ## objects
+[   30.1s] docker: simulated failure
+[   51.0s] exit status 1
+[   51.0s] (stream closed)

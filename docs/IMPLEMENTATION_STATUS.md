@@ -83,16 +83,60 @@ shown only while the case is `received`; after success the page reloads the case
 disappears. The check passes only if it sees the message before the reload completes. This is a race between the
 check and the UI, not a server failure; it is not fixed yet.
 
+**Cause established for another, by the build output added in run 23:** run 39975479973 (merge commit `305b0fc` on
+`main`). The image build failed about two seconds into the stage because `public.ecr.aws` answered the request for
+the pinned Python base image's manifest with HTTP 429 (Too Many Requests): the registry refused the request. Whether
+this run's own requests counted towards the limit is not known. The build has no retry; a later run is needed to show
+`main` green again.
+
+**Cause established for a third, by the diagnostics added in run 27:** run 39977205040 (pull request 3, commit
+`9de264a`). The image build passed; `docker compose up` then failed while pulling the pinned PostgreSQL image for
+`postgres` and `db-init`, with `toomanyrequests: Rate exceeded` from the registry. No container had been created, so
+the collected state and logs were empty. Rate limiting by the registry again; not retried. Run 39980128200 (commit
+`d9a5069`) was refused the same way during the image build: HTTP 429, "toomanyrequests: Data limit exceeded", for the
+Python base image.
+
 **Cause not established:**
 * run 39946416834 (commit `063347b`): the same symptom (timeout waiting for "Investigation started."), but the page
   state and API log were not captured, so it is consistent with the race above without being confirmed by it;
-* run 39884012334 (commit `5bff45c`): the image build failed after two seconds; its output was discarded;
+* run 39884012334 (commit `5bff45c`): the image build failed after two seconds; its output was discarded. The timing
+  matches the rate-limited pull above, but without the output that is not confirmed;
 * run 39955949204 (commit `8cfe42e`): `docker compose up` failed sixteen seconds into the stage; its output is
-  discarded and no container logs existed yet. That commit changed only documentation and screenshots relative to a
+  discarded and no container logs existed yet. A later `compose up` failure was a registry rate limit during image
+  pulls (run 39977205040 above), so this one is consistent with that, but its own output is gone and that is not
+  confirmed. That commit changed only documentation and screenshots relative to a
   passing `main`; this narrows where to look but does not establish that the change played no part.
 
-None could be rerun from here. The smoke test prints the build output, the page state and the API and job-worker logs
-on failure (verification runs 23 and 25), but not yet the output of `docker compose up`.
+None could be rerun from here. On failure the smoke test now prints the build output, the `docker compose up` output,
+every container's state, exit code and health results, the last lines of each service's log, and the page state of
+the browser check. Collection ends within 120 s and cleanup within 70 s, and the output passes through a filter for
+the generated secrets and known secret shapes, which is not a guarantee (verification runs 23, 25 and 27). The
+browser-check race above is not fixed by that change.
+
+### Registry throttling (assessed; nothing changed yet)
+* **What was refused:** three runs between 15:07 and 15:40 UTC on 2026-10-23, all by `public.ecr.aws`: the Python base
+  image's manifest twice (HTTP 429; once "Data limit exceeded") and the PostgreSQL image once ("Rate exceeded"). None
+  of the thirteen earlier runs shows a refusal, but one of them (39884012334) failed its build with the output
+  discarded, so for that one it is unknown.
+* **Pulls per run:** a GitHub runner starts with no images and the workflow caches none, so every run pulls everything,
+  and every smoke run is a cold install. From `public.ecr.aws`: `python:3.13-slim` (both build stages; BuildKit
+  resolves it once) and `postgres:16.15` (two Compose services; the failing log shows Compose starting two pulls of
+  it at once). Elsewhere: Docker Hub for the Dockerfile syntax image, `mirror.gcr.io` for Node, SeaweedFS and
+  others, `quay.io` for Keycloak (pulled by the foundation tests and reused by the smoke).
+* **Duplicate runs:** none found. Sixteen runs in 22 hours, one per pushed commit (`pull_request`, plus `push` to
+  `main` only), no re-runs; two overlapped (15:07 and 15:08).
+* **Quotas:** AWS documents unauthenticated ECR Public pulls at 1 per second and 500 GB of data per month, neither
+  adjustable, and 10 per second for authenticated pulls. This project's own traffic from that registry is under 1 GB per run (the two
+  images take 0.8 GB unpacked here; the download is smaller), so sixteen runs are far below 500 GB, so "Data limit exceeded" suggests the quota is shared with other traffic
+  from the runner's address. That is an inference, not established.
+* **Local runs here** use images already on this machine. They are cached runs and say nothing about pulls.
+
+Smallest mitigation proposed, not implemented: before `docker compose up`, pull each distinct image once, one at a
+time, by its pinned digest, and report which one failed. That removes the second, simultaneous request for the
+PostgreSQL image, keeps every registry and digest as they are, and keeps the smoke a cold install. It cannot prevent a
+data-limit refusal. If refusals continue, the choices are authenticated pulls (a CI credential), another registry for
+the two images (the same digests would need to be confirmed there), or caching images between runs, which would make
+those smoke runs cached rather than cold and would need to be labelled as such.
 
 ### Statements this supersedes
 Historical records are kept as written. These statements in them are no longer correct:

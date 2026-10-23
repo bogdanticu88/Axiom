@@ -6,11 +6,31 @@
 #   BUILD=1 scripts/verify/compose-smoke.sh    # rebuild the image first
 #
 # Behind a TLS-intercepting proxy set BUILD_CA=/path/to/ca.pem for the build secret.
+#
+# On failure the script prints what it can about the failure (see diagnose below), then removes the project. Time
+# limits for that part, each including the grace period between SIGTERM and SIGKILL for commands that overrun:
+#   diagnostics  DIAG_LIMIT seconds in total (default 120)
+#   cleanup      CLEANUP_LIMIT + CLEANUP_GRACE seconds (default 60 + 10) for 'docker compose down -v'
+# so collection and cleanup after a failure take at most 190 seconds by default, whatever state Docker is in (plus
+# the moment the output filter needs to finish). The exit status is always that of
+# the original failure; a cleanup that does not finish is reported, not turned into another status.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 CDIR="$ROOT/deployments/compose"
 P="axiom-smoke-$(date -u +%H%M%S)"
-ENVF="$(mktemp)"; trap 'docker compose -p "$P" -f "$CDIR/compose.yaml" --env-file "$ENVF" down -v >/dev/null 2>&1; rm -f "$ENVF"' EXIT
+DIAG_LIMIT=${DIAG_LIMIT:-120}
+KILL_GRACE=5
+CLEANUP_LIMIT=${CLEANUP_LIMIT:-60}
+CLEANUP_GRACE=10
+ENVF="$(mktemp)"; buildlog=""; UPLOG=""
+cleanup() {
+  if ! timeout -k "$CLEANUP_GRACE" "$CLEANUP_LIMIT" \
+      docker compose -p "$P" -f "$CDIR/compose.yaml" --env-file "$ENVF" down -v >/dev/null 2>&1; then
+    echo "cleanup: 'docker compose down -v' failed or did not finish within ${CLEANUP_LIMIT} s; project $P may remain"
+  fi
+  rm -f "$ENVF" "$buildlog" "$UPLOG"
+}
+trap cleanup EXIT
 PORT=${PORT:-18010}
 IDP_PORT=${IDP_PORT:-18011}
 gen() { python3 -c 'import secrets;print(secrets.token_hex(16))'; }
@@ -28,21 +48,91 @@ AXIOM_IDP_PORT=$IDP_PORT
 AXIOM_OIDC_CLIENT_SECRET=$(gen)
 AXIOM_DEMO_PASSWORD=$DEMO_PASSWORD
 E
+# Everything printed about a failure passes through redact() (scripts/verify/smoke_redact.py): the secrets this script
+# generated (all values in $ENVF), token shapes, Authorization header values, user information in URLs and private key
+# blocks are replaced. It is a filter for known shapes, not a guarantee; see that file. The rendered Compose
+# configuration and container environments are never printed, because they contain those secrets.
+redact() {
+  python3 "$ROOT/scripts/verify/smoke_redact.py" "$ENVF" 2>/dev/null || echo "(redaction failed; output withheld)"
+}
 if [ "${BUILD:-0}" = "1" ]; then
   args=(--network host -t axiom-backend:dev)
   [ -n "${BUILD_CA:-}" ] && args+=(--secret "id=ca,src=$BUILD_CA")
   [ -n "${HTTPS_PROXY:-}" ] && args+=(--build-arg "HTTPS_PROXY=$HTTPS_PROXY")
   buildlog=$(mktemp)
   if ! docker build "${args[@]}" "$ROOT" >"$buildlog" 2>&1; then
-    echo "image build failed; last lines of the build output:"; tail -40 "$buildlog"; rm -f "$buildlog"; exit 1
+    echo "image build failed; last lines of the build output:"; tail -40 "$buildlog" | redact; exit 1
   fi
   rm -f "$buildlog"
   echo "image built: $(docker image inspect axiom-backend:dev --format '{{.Id}}')"
 fi
 dc() { docker compose -p "$P" -f "$CDIR/compose.yaml" --env-file "$ENVF" "$@"; }
-fail() { echo "SMOKE FAIL: $*"; dc logs --no-color | tail -40; exit 1; }
+
+# --- failure diagnostics. Best effort: output is truncated and redacted, and nothing here can change the exit status
+# of the failure being reported. Time: every command runs under bounded(), which limits it to its own allowance or to
+# what is left of DIAG_LIMIT, whichever is less, and kills it KILL_GRACE seconds after SIGTERM if it is still running.
+# 'timeout' signals the command's whole process group, so helpers the Docker CLI starts are stopped with it.
+diagnose() {
+  (
+    set +e
+    end=$((SECONDS + DIAG_LIMIT))
+    # one second of slack for the whole-second resolution of SECONDS
+    rest() { echo $(( end - SECONDS - KILL_GRACE - 1 )); }
+    bounded() {
+      local want=$1 r; shift
+      r=$(rest); [ "$r" -ge 1 ] || return 124
+      [ "$want" -lt "$r" ] && r=$want
+      timeout -k "$KILL_GRACE" "$r" "$@"
+    }
+    said=""
+    left() { [ "$(rest)" -ge 1 ] && return 0; [ -n "$said" ] || echo "(diagnostics time limit reached)"; said=1; return 1; }
+    echo "--- diagnostics for project $P (bounded, redacted)"
+    echo "--- containers"
+    bounded 20 docker ps -a --filter "label=com.docker.compose.project=$P" \
+      --format 'table {{.Label "com.docker.compose.service"}}\t{{.State}}\t{{.Status}}\t{{.Image}}' 2>&1 | head -30
+    echo "--- container state and the last health-check results"
+    left && for c in $(bounded 20 docker ps -aq --filter "label=com.docker.compose.project=$P" 2>/dev/null | head -20); do
+      left || break
+      bounded 10 docker inspect --format \
+        '{{index .Config.Labels "com.docker.compose.service"}}: state={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} error={{printf "%.200s" .State.Error}}' \
+        "$c" 2>&1 | cut -c1-300
+      left || break
+      bounded 10 docker inspect --format '{{if .State.Health}}{{range .State.Health.Log}}  check exit {{.ExitCode}}: {{printf "%.200s" .Output}}{{"\n"}}{{end}}{{end}}' \
+        "$c" 2>/dev/null | grep -v '^$' | tail -3
+    done
+    echo "--- service logs (last lines each)"
+    left && for svc in postgres db-init app-init idp-init keycloak api job-worker objects; do
+      left || break
+      n=40; [ "$svc" = objects ] && n=10
+      echo "## $svc"
+      bounded 20 docker compose -p "$P" -f "$CDIR/compose.yaml" --env-file "$ENVF" logs --no-color --tail "$n" "$svc" 2>&1 \
+        | cut -c1-400 | tail -"$n"
+    done
+    left || true                                  # says so once if the limit cut collection short
+  ) 2>&1 | redact | stdbuf -oL head -400              # line-buffered, so lines appear as they are collected
+  return 0
+}
+fail() {
+  echo "SMOKE FAIL: $(printf '%s' "$*" | redact)"
+  diagnose || true
+  exit 1
+}
+# An unexpected failing command (set -e) would otherwise end the script with no message at all.
+on_error() {
+  local rc=$? line=$1
+  trap - ERR
+  echo "SMOKE FAIL: unexpected exit $rc at line $line: $(sed -n "${line}p" "$0" | cut -c1-160 | redact)"
+  diagnose || true
+  exit "$rc"
+}
+trap 'on_error $LINENO' ERR
 echo "project $P"
-dc up -d --no-build >/dev/null 2>&1 || fail "compose up"
+UPLOG=$(mktemp)
+if ! dc up -d --no-build >"$UPLOG" 2>&1; then
+  echo "docker compose up failed; its output:"; tail -60 "$UPLOG" | redact
+  fail "compose up"
+fi
+rm -f "$UPLOG"
 for i in $(seq 1 60); do
   [ "$(dc ps api --format '{{.Health}}')" = "healthy" ] && break; sleep 2
 done
@@ -108,10 +198,9 @@ done
 [ "$(dc ps keycloak --format '{{.Health}}')" = "healthy" ] || fail "keycloak not healthy"
 dc logs idp-init --no-color | grep '"alice"' >/dev/null || fail "idp-init did not link alice"
 UIOUT=$(AXIOM_DEMO_PASSWORD="$DEMO_PASSWORD" uv run --frozen python "$ROOT/scripts/verify/compose_ui_check.py" \
-  "http://127.0.0.1:$PORT" 2>&1) || { echo "$UIOUT" | grep -v '^ok ' | tail -80
-                                      echo "--- api and job-worker logs"; dc logs --no-color api job-worker | tail -60
+  "http://127.0.0.1:$PORT" 2>&1) || { echo "browser check output:"; echo "$UIOUT" | redact | tail -80
                                       fail "UI check"; }
-echo "$UIOUT" | grep '^ok '
+echo "$UIOUT" | grep '^ok ' | redact
 UICASE=$(echo "$UIOUT" | sed -n 's/^CASE //p')
 WHO=$(dc exec -T postgres psql -U postgres -d axiom -tAc "SELECT p.display_name || ' ' || p.kind FROM axiom.decisions d JOIN axiom.principals p ON p.id = d.actor_principal_id WHERE d.case_id = '$UICASE' AND d.kind = 'investigation_start'")
 [ "$WHO" = "alice human" ] || fail "UI decision recorded for '$WHO'"

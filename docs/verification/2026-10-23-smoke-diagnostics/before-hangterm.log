@@ -1,0 +1,10 @@
+[    0.2s] project axiom-smoke-170842
+[   30.2s] ok   fresh install: migrations applied, api healthy
+[   30.2s] SMOKE FAIL: controlled failure while Docker hangs and ignores SIGTERM
+[  150.2s] --- diagnostics for project axiom-smoke-170842 (bounded, secrets redacted)
+[  150.2s] --- containers
+[  150.2s] --- container state and the last health-check results
+[  150.2s] --- service logs (last lines each)
+[  150.2s] (diagnostics time limit reached)
+[  171.4s] exit status 1
+[  171.4s] (stream closed)
