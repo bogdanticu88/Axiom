@@ -920,3 +920,10 @@ documentation and verification records. No unintended change found.
 
 The historical-data limitation (ADR 0015) and the CI corrections (runs 13 to 23) stand as recorded.
 
+**GitHub Actions on the review head** (`063347b`, run 39946416834): foundation passed (692 passed, 3 skipped); the
+Compose smoke failed in its UI check, which waited 30 s for "Investigation started." after starting an investigation
+in the browser. Neither the page state nor the API log was captured, so the cause is not established. The UI check
+and the button's code are unchanged since `bc0fddf`, whose run passed; the same smoke test passed in the local
+Europe/Bucharest CI of `3f8aaea` and in three further local runs. Unresolved, like the image build failure of run
+39884012334; the UI check now prints the page's state and the API and job-worker logs on failure.
+
