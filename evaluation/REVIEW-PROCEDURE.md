@@ -44,7 +44,7 @@ Agreement between a reviewer and the author shows the labels are defensible. It 
 does not turn the deterministic fake's agreement into evidence of model quality, and does not turn the
 security-boundary counts (misbehaving fakes rejected or downgraded) into reasoning quality.
 
-## Outstanding (checked at checkpoints 7 and 8, 2026-10-22)
+## Outstanding (checked at checkpoints 7 and 8, 2026-10-22, and again on 2026-10-23)
 Nothing below has been done; no review was started, simulated or recorded. `cases.json` is unchanged since
 eval-cases@4 (D1 to D6 `dev`, H1 to H10 `regression`, `review_status` pending), and no prompt, validator or fake rule
 was changed for evaluation at checkpoints 7 or 8. No language model has been called.

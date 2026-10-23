@@ -1,6 +1,8 @@
 # Handoff
 
 ## Current checkpoint
+* Current status: docs/IMPLEMENTATION_STATUS.md, section "Current status" (the single entry point; it lists what the
+  history below supersedes). Reproduction: docs/DEMO.md. Review tracks: docs/INDEPENDENT-REVIEW.md.
 * Latest checkpoint: see "Checkpoint record" at the end of this file (a commit cannot contain its own hash).
 * Branch: `main`, published at https://github.com/bogdanticu88/Axiom. Each checkpoint was also kept as a git bundle
   and a source archive.

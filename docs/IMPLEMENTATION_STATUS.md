@@ -1,7 +1,121 @@
 # Implementation status
 
-Last updated: 2026-10-22, after checkpoint 8 (disabled principals refused at the authority check, check endpoints configurable through the API, local end-to-end demonstration in docs/DEMO.md). Checkpoint 8: database identity boundary stated and tested, revocation edges, verification worker as an untrusted-input boundary, documented deployment tested over local TLS.
-Requirement-level detail is in REQUIREMENTS.md.
+This is the single entry point for the current state. "Current status" below describes `main` at
+`a05c01f7cf81b1bfd162c302cbe1177254bd11f6` (2026-10-23, the merge of pull request 1). The sections after it are the
+detailed status by area from the review of 2026-10-22, kept as written except where marked; where they disagree with
+"Current status", "Current status" wins. Requirement-level detail is in REQUIREMENTS.md.
+
+## Current status
+
+### Implemented and tested
+Exercised by tests that were run. The latest full run on `main` is GitHub Actions run 39950928655 at `a05c01f`:
+every stage passed, 692 tests passed and 3 were skipped (the physical restore drill, which runs as its own stage and
+passed; the opt-in real-provider test, never run; the opt-in demonstration). These counts describe that run only.
+
+* Tenant isolation: application authorisation, composite tenant-aware foreign keys, forced row-level security,
+  transaction-bound tenant context; runtime roles own no tables and are neither superuser nor BYPASSRLS (ADR 0002,
+  0003).
+* Authority: scoped role bindings with expiry and revocation; disabled principals, suspended tenants and expired
+  bindings refused at the next request; a revocation that commits after a command's check waits for that command
+  (ADR 0012 amendments 3 to 5).
+* Case workflow with optimistic concurrency, database guards, append-only decisions, events and audit (ADR 0004).
+* Evidence storage with digests, classification-aware reads and tamper detection (ADR 0005).
+* Ingestion with fenced, resumable imports, coverage, quarantine and replay safety (ADR 0009).
+* Durable job runner, action proposals with human approval bound to the exact payload, idempotency keys, effect gate
+  and reconciliation (ADR 0006, 0010).
+* Two-step risk acceptance, versioned policies, ownership routing, SLA clocks, as-of reports and auditor evidence
+  packages (ADR 0011).
+* Investigation runs over frozen evidence snapshots, with claim checks and human claim review (ADR 0012), against the
+  deterministic fake only.
+* Verification worker with destination policy, pinned connections, request-bound responses and redacted credentials
+  (ADR 0014).
+* API timestamps must name an instant; offset-free values are refused (ADR 0015).
+* Analyst UI for the covered screens, in Chromium; OIDC sign-in against a local Keycloak, including behind a local TLS
+  proxy in production mode (ADR 0013).
+* Compose single-host install (development profile), checked by the Compose smoke test with a real browser.
+* The local end-to-end demonstration (docs/DEMO.md). Latest recorded run: `a05c01f`, 2026-10-23,
+  `docs/verification/2026-10-23-demo-main/`.
+
+### Tested only against fixtures, fakes or local services
+* Scanner and context sources: Trivy and SARIF with recorded real output; Tenable and Azure Resource Graph with
+  synthetic data and local fakes. None validated against a live service.
+* Ticket integrations (Jira-style, ServiceNow-style, GitHub Issues): local fakes only.
+* Investigation: the deterministic fake model only. No language model has been called.
+* Verification worker: a TLS test fixture and the local demonstration check service (`scripts/demo`), which is not a
+  supported component.
+* Sign-in: a local Keycloak; TLS: a local nginx with a throwaway CA.
+* S3 storage and the restore witness: SeaweedFS.
+
+### Not tested
+* Any hosted identity provider (for example Microsoft Entra ID), a public CA or a real reverse proxy deployment.
+* Any language model, any real check service, any live scanner, tracker or cloud API.
+* Load, scale and long-running operation; backup and restore of a real installation.
+* Browsers other than Chromium; an accessibility audit; usability testing.
+* Independent review of the trust boundaries or of the evaluation labels (docs/INDEPENDENT-REVIEW.md).
+
+### Known limitations
+* **The shared application database credential has cross-tenant authority.** One runtime login serves every tenant;
+  whoever holds it can read and change any tenant's data, act as any user and attribute audit records to anyone. It
+  cannot rewrite recorded history. Tenants that need stronger separation need a dedicated installation (ADR 0012
+  amendment 4, docs/DEPLOYMENT-TRUST-BOUNDARY.md).
+* **A check endpoint can report false results.** Axiom binds each answer to the request, asset and reported
+  deployment, but cannot prove it true; a dishonest endpoint can cause a false pass or a false failure (docs/DEMO.md).
+* **Timestamps accepted before ADR 0015.** Asset versions recorded by hand before the correction may hold an
+  `observed_at` that was read in the server's time zone. Such records cannot be identified from Axiom's records, and
+  nothing has been reinterpreted. Idempotency keys stored before the change replay only if first sent with `Z` or
+  `+00:00` (ADR 0015, compatibility matrix).
+* **Tenant suspension does not cancel work.** A running job is left `running` until the tenant is reactivated; the
+  tested recovery procedure is in docs/INSTALL-COMPOSE.md (requirement TEN-16, implementing).
+* **Disabling a principal does not stop a command that has already passed its check** (ADR 0012 amendment 5).
+* Retried or crashed verification steps can leave stored evidence that nothing cites.
+* `axiom.holds_permission` in the database duplicates the application's authority evaluation.
+* **Evaluation:** labels are the author's and unreviewed; there is no held-out set (evaluation/EXPOSURE.md).
+* The demonstration depends on the daily Trivy database; a later run can fail honestly (docs/DEMO.md).
+
+### Intermittent CI failures
+One-off failures on GitHub Actions, each in the Compose smoke stage, with every other stage passing.
+
+**Cause established for one, by its diagnostics:** run 39969148347 (commit `8bc0ac1`). The browser check waits for the
+message "Investigation started." after starting an investigation. The API log shows the command succeeded (200), and
+the page, when captured, showed the case as `investigating` and no status message at all. In the UI
+(`frontend/src/pages/CaseEvidence.tsx`), that message is rendered inside the "Start investigation" section, which is
+shown only while the case is `received`; after success the page reloads the case and the section, with its message,
+disappears. The check passes only if it sees the message before the reload completes. This is a race between the
+check and the UI, not a server failure; it is not fixed yet.
+
+**Cause not established:**
+* run 39946416834 (commit `063347b`): the same symptom (timeout waiting for "Investigation started."), but the page
+  state and API log were not captured, so it is consistent with the race above without being confirmed by it;
+* run 39884012334 (commit `5bff45c`): the image build failed after two seconds; its output was discarded;
+* run 39955949204 (commit `8cfe42e`): `docker compose up` failed sixteen seconds into the stage; its output is
+  discarded and no container logs existed yet. That commit changed only documentation and screenshots relative to a
+  passing `main`; this narrows where to look but does not establish that the change played no part.
+
+None could be rerun from here. The smoke test prints the build output, the page state and the API and job-worker logs
+on failure (verification runs 23 and 25), but not yet the output of `docker compose up`.
+
+### Statements this supersedes
+Historical records are kept as written. These statements in them are no longer correct:
+
+| Earlier statement | Where | Superseded by |
+|---|---|---|
+| "Clean-clone CI PASS" as an environment-independent result | runs 13 to 22 in docs/VERIFICATION.md; checkpoint reports | the correction at the top of docs/VERIFICATION.md; runs 23 and 24 (CI with a declared environment, UTC and Europe/Bucharest) |
+| Hosted CI never run | the CI row below (before this update), README, HANDOFF | GitHub Actions runs on pull requests and on `main` since 2026-10-22; its first runs failed and exposed the above (run 23) |
+| A compromised runtime credential acts only within its own tenant | checkpoint-7 trust statement | ADR 0012 amendment 4: it reaches every tenant |
+| The authority check ignores principal status | ADR 0012 amendment 4, revocation list | ADR 0012 amendment 5: disabled principals are refused at the next check |
+| Pinning was shown only with an unresolvable name | run 20, mutation W3 | run 21: two servers and a controlled resolver |
+| Legacy idempotency keys: "a retry with a non-UTC offset is rejected" | run 23; a delivery note outside the repository (after-checkpoint-8-v3) | ADR 0015 compatibility matrix; run 25 |
+| The API accepted timestamps without an offset | earlier API behaviour | ADR 0015 |
+
+### Where the history is
+* docs/VERIFICATION.md: every verification run, with the CI correction at the top and a pointer under each affected
+  run.
+* docs/adr/: decisions and their amendments, 0001 to 0015. The trust boundaries are in 0002, 0012 (amendments 3 to 5),
+  0014 and 0015.
+* docs/REQUIREMENTS.md: the register; counts below.
+* docs/HANDOFF.md: state by checkpoint and the next tasks.
+
+## Detailed status by area (review of 2026-10-22)
 
 Capability states used here:
 * **verified**: built and exercised by tests that were run.
@@ -11,7 +125,7 @@ Capability states used here:
 * **blocked**.
 * **not started**.
 
-## Core product status against the complete register (review of 2026-10-22)
+### Core product status against the complete register
 
 The action runner and approval protocol received most of the recent effort. The table below shows where the core
 product actually stands, so that work does not hide what is missing.
@@ -46,7 +160,7 @@ New row API-10 (timestamps must name an instant, ADR 0015). At checkpoint 7 the 
 Integration catalogue: 8 fixture-tested (the verification check endpoint added), 13 planned, none sandbox-validated
 or production-supported.
 
-## Phase A: Foundation and recovery contracts
+### Phase A: Foundation and recovery contracts
 
 | Item | State | Evidence / gap |
 |---|---|---|
@@ -61,9 +175,9 @@ or production-supported.
 | HTTP API (/api/v1) | verified for implemented endpoints | api::, act_api::, jrn::, Compose smoke |
 | Compose single-host install | verified (development profile) | PostgreSQL, SeaweedFS, init, API with the analyst UI, job worker and a local Keycloak; fresh-install smoke signs in through Keycloak in Chromium (docs/INSTALL-COMPOSE.md) |
 | Durable job runner (ADR 0006, accepted, provisional) | verified (single-effect jobs) | job::*, metrics, operations API; no operations UI, no multi-step workflows |
-| CI pipeline | **incomplete** | `scripts/ci/run.sh` run locally on a clean clone of the exact commit; GitHub workflow pinned to verified action commits; **never run on a hosted service** |
+| CI pipeline | verified | `scripts/ci/run.sh` on GitHub Actions for pull requests and `main` (since 2026-10-22), and locally with a declared environment (runs 23, 24). Updated 2026-10-23; until then this row said hosted CI had never run |
 
-## Phase B: Ingestion and inventory - incomplete (core verified)
+### Phase B: Ingestion and inventory - incomplete (core verified)
 
 | Item | State | Evidence / gap |
 |---|---|---|
@@ -80,7 +194,7 @@ or production-supported.
 * Ambiguous assets stay separate: met.
 * Live access validates the advertised operations: **not met**, because there are no vendor accounts.
 
-## Phase C: Investigation and prioritisation - incomplete
+### Phase C: Investigation and prioritisation - incomplete
 
 | Item | State | Evidence / gap |
 |---|---|---|
@@ -92,7 +206,7 @@ or production-supported.
 | Claim checks described precisely; scan-time ordering; unresolved contradictions kept for people | verified (fake) | inv::, adv::, invu:: (ADR 0012 amendment) |
 | Authority-aware decision trigger (system identities record only policy-authorised results) | verified | ovr::, sab:: (migrations 0014 and 0016: real bindings checked, workload roles only; ADR 0012 amendment 2) |
 
-## Phase D: Remediation and GRC lifecycle - incomplete (action, risk, ownership, SLA, reporting verified)
+### Phase D: Remediation and GRC lifecycle - incomplete (action, risk, ownership, SLA, reporting verified)
 
 | Item | State | Evidence / gap |
 |---|---|---|
@@ -122,10 +236,10 @@ or production-supported.
 The redeploy record and the rescan evidence are supplied manually in the journey test (the verification worker, added at checkpoint 7, is tested separately against a fixture endpoint). Unknown action outcomes reconcile safely, which is
 met against fakes only.
 
-## Phase E: Integration breadth - not started
+### Phase E: Integration breadth - not started
 Seven catalogue integrations are fixture-tested and 13 are planned. None is sandbox-validated or production-supported.
 
-## Phase F: Production operations and evaluation - not started (restore detection drills only)
+### Phase F: Production operations and evaluation - not started (restore detection drills only)
 
 | Item | State | Evidence / gap |
 |---|---|---|

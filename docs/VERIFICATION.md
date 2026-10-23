@@ -927,3 +927,24 @@ and the button's code are unchanged since `bc0fddf`, whose run passed; the same 
 Europe/Bucharest CI of `3f8aaea` and in three further local runs. Unresolved, like the image build failure of run
 39884012334; the UI check now prints the page's state and the API and job-worker logs on failure.
 
+### Run 26: demonstration on main for the documentation (2026-10-23 12:41Z to 12:43Z)
+
+`scripts/demo/run.sh` at `a05c01f7cf81b1bfd162c302cbe1177254bd11f6` (main after pull request 1), Trivy 0.76.1 with
+the database of 2026-10-22T19:14:47Z. Demonstrated case passed (`condition_absent`) and was closed in the browser;
+control A failed (`condition_present`); control B inconclusive (`different_deployment`). Records:
+`docs/verification/2026-10-23-demo-main/`. Four of its screenshots are in `docs/demo/`, unedited, with checksums and
+a check that they carry no metadata chunks (`docs/demo/PROVENANCE.md`).
+
+GitHub Actions on the first head of the documentation pull request (`8cfe42e`, run 39955949204): every stage passed
+except the Compose smoke, where `docker compose up` failed after sixteen seconds with its output discarded. The commit
+changed only documentation and screenshots relative to `a05c01f`, whose run passed; the next commit, which added only
+these failure records, passed. That is evidence, not a cause: the cause is unknown. Recorded as the third unexplained
+smoke-stage failure (docs/IMPLEMENTATION_STATUS.md).
+
+GitHub Actions on `8bc0ac1` (run 39969148347): every stage passed except the Compose smoke's browser check, which
+timed out waiting for "Investigation started.". The diagnostics added in run 25 established the mechanism: the API
+returned 200 for the command, the captured page showed the case `investigating` and no status element, and the UI
+renders that message inside a section that is removed once the reloaded case is no longer `received`. The check races
+the reload. Not fixed in this change. Run 39946416834 had the same symptom without diagnostics and is not confirmed to
+share the cause.
+
