@@ -81,7 +81,15 @@ the page, when captured, showed the case as `investigating` and no status messag
 (`frontend/src/pages/CaseEvidence.tsx`), that message is rendered inside the "Start investigation" section, which is
 shown only while the case is `received`; after success the page reloads the case and the section, with its message,
 disappears. The check passes only if it sees the message before the reload completes. This is a race between the
-check and the UI, not a server failure; it is not fixed yet.
+check and the UI, not a server failure.
+
+The defect is in the application, not only in the check: the confirmation was not stable feedback. Once the reload
+finished it was gone every time, so a user could miss it as easily as the check did. Fixed in verification run 28: the
+message is rendered outside that section and stays after the reload; the browser check now waits for the durable
+outcome first (the reloaded case shows `investigating`), then for the confirmation, then loads the page again; the
+smoke test still confirms on the server that the decision was recorded as alice's. A browser test
+(`test_start_investigation_records_the_decision_and_its_confirmation_stays`) failed four times out of four before the
+fix and passed three times out of three after it.
 
 **Cause established for another, by the build output added in run 23:** run 39975479973 (merge commit `305b0fc` on
 `main`). The image build failed about two seconds into the stage because `public.ecr.aws` answered the request for
