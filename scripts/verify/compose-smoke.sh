@@ -108,7 +108,9 @@ done
 [ "$(dc ps keycloak --format '{{.Health}}')" = "healthy" ] || fail "keycloak not healthy"
 dc logs idp-init --no-color | grep '"alice"' >/dev/null || fail "idp-init did not link alice"
 UIOUT=$(AXIOM_DEMO_PASSWORD="$DEMO_PASSWORD" uv run --frozen python "$ROOT/scripts/verify/compose_ui_check.py" \
-  "http://127.0.0.1:$PORT" 2>&1) || { echo "$UIOUT" | tail -20; fail "UI check"; }
+  "http://127.0.0.1:$PORT" 2>&1) || { echo "$UIOUT" | grep -v '^ok ' | tail -80
+                                      echo "--- api and job-worker logs"; dc logs --no-color api job-worker | tail -60
+                                      fail "UI check"; }
 echo "$UIOUT" | grep '^ok '
 UICASE=$(echo "$UIOUT" | sed -n 's/^CASE //p')
 WHO=$(dc exec -T postgres psql -U postgres -d axiom -tAc "SELECT p.display_name || ' ' || p.kind FROM axiom.decisions d JOIN axiom.principals p ON p.id = d.actor_principal_id WHERE d.case_id = '$UICASE' AND d.kind = 'investigation_start'")
