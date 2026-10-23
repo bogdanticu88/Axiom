@@ -866,3 +866,39 @@ time zone, changes the API contract and is left for a decision (HANDOFF, next ta
 The GitHub Actions result for the pull request is recorded in the pull request, not here, because this record is part
 of what it tests.
 
+
+### Run 24: API timestamps must name an instant (2026-10-23 ~10:40Z to 11:10Z)
+
+Records: `docs/verification/2026-10-23-timestamps/`. Tested commit: `7b9d50bc7dc5c55ce228cf71985ced710642344c`
+(tree `977b2cd5…`, executable inputs `sha256:57943f8c…`), branch `fix/ci-environment-independence`. After it, only this
+record and that directory were added.
+
+**1. Contract correction** (`2fccebc`, ADR 0015, requirement API-10). Request fields that name an instant now require
+RFC 3339 with `Z` or a numeric offset; offset-free values, bare dates and numbers are refused with `422` before any
+handler runs, and accepted values are converted to UTC. The asset-version and role-assignment services refuse naive
+values from internal callers; a list cursor without an offset is refused. No field in the API is date-only or
+local-calendar. Import parsers already recorded offset-free source times as unknown (now covered by unit tests).
+
+**2. UI** (`a1a7d81`). The default expiry of the risk-acceptance and override inputs was written in UTC and read as
+local time; defaults are now local, values are still sent as UTC instants.
+
+**3. Tests.** `test_api_instants.py` (8) and `test_import_instants.py` (10): offset-free values on all 10 affected
+endpoints refused with nothing written (17 tables compared before and after), equivalent instants stored identically,
+distinct instants kept distinct, services refuse internal callers. Run under `TZ`/`PGTZ` UTC and Europe/Bucharest
+without inherited certificate settings: all pass. With the API schema change removed, 6 of the 7 API tests then
+written failed in both zones (the storage test passes either way: PostgreSQL already stores instants once they are
+explicit); the service-level test was added afterwards and was not run against the old code.
+
+**4. Behaviour before the correction** (probe against the earlier code): an offset-free `observed_at` was stored as
+20:00 UTC under UTC and 18:00 UTC under Europe/Bucharest; an offset-free role `valid_until` raised a server error and
+stored nothing; the other fields were refused by their services. Asset versions recorded by hand before the correction
+may therefore hold an ambiguous `observed_at`, and they cannot be identified from Axiom's records (ADR 0015).
+
+**5. Clean-environment CI** (`env -i`, the declared environment of run 23): **UTC: CI PASS**, 688 passed, 3 skipped,
+restore drill, Compose smoke `SMOKE PASS` (`ci-7b9d50b-utc.log`); **Europe/Bucharest: CI PASS**, same counts
+(`ci-7b9d50b-europe-bucharest.log`).
+
+**6. Register:** 263 rows, 150 verified (19 only against fakes or fixtures); API-10 added.
+
+**Unresolved:** the Compose smoke image build that failed after two seconds on GitHub Actions (run 39884012334,
+commit `5bff45c`) without output. The smoke test now prints build output on failure; it has not recurred.
