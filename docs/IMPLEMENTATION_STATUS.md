@@ -73,14 +73,18 @@ passed; the opt-in real-provider test, never run; the opt-in demonstration). The
 * The demonstration depends on the daily Trivy database; a later run can fail honestly (docs/DEMO.md).
 
 ### Unresolved intermittent CI failures
-Two one-off failures on GitHub Actions in the Compose smoke stage, not reproduced since:
+Three one-off failures on GitHub Actions, each in a different step of the Compose smoke stage, with every other
+stage passing:
 * run 39884012334 (commit `5bff45c`): the image build failed after two seconds; its output was discarded;
 * run 39946416834 (commit `063347b`): the browser check timed out waiting for "Investigation started."; the page state
-  and API log were not captured.
+  and API log were not captured;
+* run 39955949204 (commit `8cfe42e`, documentation only): `docker compose up` failed sixteen seconds into the stage;
+  its output is discarded and no container logs existed yet.
 
-Neither was rerun. The next runs, on commits that changed only diagnostics, passed, as did every later run. The smoke
-test now prints the build output, the page state and the API and job-worker logs on failure (verification runs 23
-and 25).
+None could be rerun from here. The runs after the first two, on commits that changed only diagnostics, passed. The
+smoke test prints the build output, the page state and the API and job-worker logs on failure (verification runs 23
+and 25), but not yet the output of `docker compose up`. The cause of all three is unknown; none has been reproduced
+locally.
 
 ### Statements this supersedes
 Historical records are kept as written. These statements in them are no longer correct:

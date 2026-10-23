@@ -935,3 +935,7 @@ control A failed (`condition_present`); control B inconclusive (`different_deplo
 `docs/verification/2026-10-23-demo-main/`. Four of its screenshots are in `docs/demo/`, unedited, with checksums and
 a check that they carry no metadata chunks (`docs/demo/PROVENANCE.md`).
 
+GitHub Actions on the first head of the documentation pull request (`8cfe42e`, run 39955949204): every stage passed
+except the Compose smoke, where `docker compose up` failed after sixteen seconds with its output discarded. The
+change was documentation only. Recorded as the third unexplained smoke-stage failure (docs/IMPLEMENTATION_STATUS.md).
+
