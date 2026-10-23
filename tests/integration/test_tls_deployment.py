@@ -274,13 +274,18 @@ def test_browser_sign_in_over_tls_with_secure_cookies_csrf_logout_and_replay(dep
         session, csrf = cookies["axiom_session"], cookies["axiom_csrf"]
         assert session["secure"] and session["httpOnly"] and session["sameSite"] == "Lax"
         assert csrf["secure"] and not csrf["httpOnly"]
-        # CSRF: an unsafe request without the header is refused even with the session cookie
-        r = page.request.post(f"{t['origin']}/api/v1/cases", headers={"X-Axiom-Tenant": world.a.slug},
-                              data={"scope_id": str(world.a.project), "title": "x"})
-        assert r.status == 403 and r.json()["error"]["code"] == "csrf_failed"
-        r = page.request.post(f"{t['origin']}/api/v1/cases", data={"scope_id": str(world.a.project), "title": "x"},
-                              headers={"X-Axiom-Tenant": world.a.slug, "X-CSRF-Token": csrf["value"]})
-        assert r.status == 201
+        # CSRF: an unsafe request without the header is refused even with the session cookie. These requests go
+        # through an HTTP client that trusts exactly the local CA and checks the host name; nothing is inherited
+        # from the environment (the Node-based page.request would use whatever trust its process inherited).
+        cookie = f"axiom_session={session['value']}; axiom_csrf={csrf['value']}"
+        case = {"scope_id": str(world.a.project), "title": "x"}
+        with client(t) as c:
+            r = c.post(f"{t['origin']}/api/v1/cases", json=case,
+                       headers={"X-Axiom-Tenant": world.a.slug, "Cookie": cookie})
+            assert r.status_code == 403 and r.json()["error"]["code"] == "csrf_failed"
+            r = c.post(f"{t['origin']}/api/v1/cases", json=case,
+                       headers={"X-Axiom-Tenant": world.a.slug, "Cookie": cookie, "X-CSRF-Token": csrf["value"]})
+            assert r.status_code == 201, r.text
         page.get_by_test_id("sign-out").click()
         page.wait_for_url(f"{t['idp']}/**")                       # RP-initiated logout at the IdP
         shot(page, "31-logout-at-idp-over-tls")
@@ -288,6 +293,33 @@ def test_browser_sign_in_over_tls_with_secure_cookies_csrf_logout_and_replay(dep
     with client(t) as c:                                          # the old cookie is dead server-side
         r = c.get(f"{t['origin']}/auth/session", headers={"Cookie": f"axiom_session={session['value']}"})
         assert r.status_code == 401
+
+
+def test_the_test_client_validates_the_certificate_and_the_host_name(deployed):
+    """The HTTP client used for the CSRF checks above really validates: an untrusted CA and a wrong host name both
+    fail the handshake. Trust comes only from the context built here, not from SSL_CERT_FILE or other settings."""
+    t = deployed
+    with pytest.raises(httpx.ConnectError, match="CERTIFICATE_VERIFY_FAILED"):
+        with client(t) as c:                                  # right CA, wrong name checked against the certificate
+            c.get(f"{t['origin']}/api/v1/health/live", extensions={"sni_hostname": "not-this-host.test"})
+    other = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)          # verification on, but no CA that issued this certificate
+    other.load_verify_locations(cadata=_unrelated_ca_pem())
+    with pytest.raises(httpx.ConnectError, match="CERTIFICATE_VERIFY_FAILED"):
+        with httpx.Client(verify=other, timeout=15) as c:
+            c.get(f"{t['origin']}/api/v1/health/live")
+    with client(t) as c:
+        assert c.get(f"{t['origin']}/api/v1/health/live").status_code == 200
+
+
+def _unrelated_ca_pem() -> str:
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "unrelated test CA")])
+    now = dt.datetime.now(dt.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(now - dt.timedelta(minutes=5))
+            .not_valid_after(now + dt.timedelta(days=1))
+            .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True).sign(key, hashes.SHA256()))
+    return cert.public_bytes(serialization.Encoding.PEM).decode()
 
 
 # ------------------------------------------------------------------------------------------------- headers
