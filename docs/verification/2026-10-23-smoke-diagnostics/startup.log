@@ -1,186 +1,186 @@
-image built: sha256:781557160d30bc700ba2468dac91562da30c895e0cb2ddcac05a36789553ecfc
-project axiom-smoke-142448
-docker compose up failed; its output:
- Volume axiom-smoke-142448_devidp Created 
- Volume axiom-smoke-142448_devidp Created 
- Volume axiom-smoke-142448_idpimport Created 
- Volume axiom-smoke-142448_idpimport Created 
- Volume axiom-smoke-142448_objcfg Created 
- Volume axiom-smoke-142448_objcfg Created 
- Volume axiom-smoke-142448_objdata Created 
- Volume axiom-smoke-142448_objdata Created 
- Volume axiom-smoke-142448_pgdata Created 
- Volume axiom-smoke-142448_pgdata Created 
- Volume axiom-smoke-142448_witness Created 
- Volume axiom-smoke-142448_witness Created 
- Network axiom-smoke-142448_data Created 
- Network axiom-smoke-142448_data Created 
- Container axiom-smoke-142448-postgres-1 Creating 
- Container axiom-smoke-142448-objects-1 Creating 
- Network axiom-smoke-142448_edge Created 
- Network axiom-smoke-142448_edge Created 
- Container axiom-smoke-142448-objects-1 Created 
- Container axiom-smoke-142448-postgres-1 Created 
- Container axiom-smoke-142448-db-init-1 Creating 
- Container axiom-smoke-142448-db-init-1 Created 
- Container axiom-smoke-142448-app-init-1 Creating 
- Container axiom-smoke-142448-app-init-1 Created 
- Container axiom-smoke-142448-job-worker-1 Creating 
- Container axiom-smoke-142448-idp-init-1 Creating 
- Container axiom-smoke-142448-job-worker-1 Created 
- Container axiom-smoke-142448-idp-init-1 Created 
- Container axiom-smoke-142448-keycloak-1 Creating 
- Container axiom-smoke-142448-keycloak-1 Created 
- Container axiom-smoke-142448-api-1 Creating 
- Container axiom-smoke-142448-api-1 Created 
- Container axiom-smoke-142448-postgres-1 Starting 
- Container axiom-smoke-142448-objects-1 Starting 
- Container axiom-smoke-142448-postgres-1 Started 
- Container axiom-smoke-142448-postgres-1 Waiting 
- Container axiom-smoke-142448-objects-1 Started 
- Container axiom-smoke-142448-postgres-1 Healthy 
- Container axiom-smoke-142448-db-init-1 Starting 
- Container axiom-smoke-142448-db-init-1 Started 
- Container axiom-smoke-142448-db-init-1 Waiting 
- Container axiom-smoke-142448-db-init-1 Exited 
- Container axiom-smoke-142448-app-init-1 Starting 
- Container axiom-smoke-142448-app-init-1 Started 
- Container axiom-smoke-142448-app-init-1 Waiting 
- Container axiom-smoke-142448-app-init-1 Waiting 
- Container axiom-smoke-142448-app-init-1 Exited 
- Container axiom-smoke-142448-idp-init-1 Starting 
- Container axiom-smoke-142448-app-init-1 Exited 
- Container axiom-smoke-142448-job-worker-1 Starting 
- Container axiom-smoke-142448-idp-init-1 Started 
- Container axiom-smoke-142448-idp-init-1 Waiting 
- Container axiom-smoke-142448-job-worker-1 Started 
- Container axiom-smoke-142448-idp-init-1 Exited 
- Container axiom-smoke-142448-keycloak-1 Starting 
- Container axiom-smoke-142448-keycloak-1 Started 
- Container axiom-smoke-142448-app-init-1 Waiting 
- Container axiom-smoke-142448-app-init-1 Exited 
- Container axiom-smoke-142448-api-1 Starting 
-Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint axiom-smoke-142448-api-1 (010b65e7283d21b0d0883305da4a50e965b002f54be95cd95823322d0c0a7189): failed to bind host port 127.0.0.1:18010/tcp: address already in use
-SMOKE FAIL: compose up
---- diagnostics for project axiom-smoke-142448 (bounded, secrets redacted)
---- containers
-service      STATE     STATUS                           IMAGE
-api          created   Created                          axiom-backend:dev
-keycloak     running   Up 1 second (health: starting)   quay.io/keycloak/keycloak:26.4.2
-idp-init     exited    Exited (0) 1 second ago          axiom-backend:dev
-job-worker   running   Up 2 seconds                     axiom-backend:dev
-app-init     exited    Exited (0) 3 seconds ago         axiom-backend:dev
-db-init      exited    Exited (0) 6 seconds ago         public.ecr.aws/docker/library/postgres:16.15
-postgres     running   Up 12 seconds (healthy)          public.ecr.aws/docker/library/postgres:16.15
-objects      running   Up 12 seconds                    mirror.gcr.io/chrislusf/seaweedfs:4.48
---- container state and the last health-check results
-api: state=created exit=128 oom=false health=none error=failed to set up container networking: driver failed programming external connectivity on endpoint axiom-smoke-142448-api-1 (010b65e7283d21b0d0883305da4a50e965b002f54be95cd95823322d0c0a7189): failed t
-keycloak: state=running exit=0 oom=false health=starting error=
-idp-init: state=exited exit=0 oom=false health=unhealthy error=
-job-worker: state=running exit=0 oom=false health=none error=
-app-init: state=exited exit=0 oom=false health=unhealthy error=
-db-init: state=exited exit=0 oom=false health=none error=
-postgres: state=running exit=0 oom=false health=healthy error=
-  check exit 0: /var/run/postgresql:5432 - accepting connections
-  check exit 0: /var/run/postgresql:5432 - accepting connections
-objects: state=running exit=0 oom=false health=none error=
---- service logs (last lines each)
-## postgres
-postgres-1  | selecting default time zone ... Etc/UTC
-postgres-1  | creating configuration files ... ok
-postgres-1  | running bootstrap script ... ok
-postgres-1  | performing post-bootstrap initialization ... ok
-postgres-1  | syncing data to disk ... ok
-postgres-1  | 
-postgres-1  | 
-postgres-1  | Success. You can now start the database server using:
-postgres-1  | 
-postgres-1  |     pg_ctl -D /var/lib/postgresql/data -l logfile start
-postgres-1  | 
-postgres-1  | initdb: warning: enabling "trust" authentication for local connections
-postgres-1  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
-postgres-1  | waiting for server to start....2026-10-23 14:24:51.950 UTC [47] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
-postgres-1  | 2026-10-23 14:24:51.953 UTC [47] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
-postgres-1  | 2026-10-23 14:24:51.955 UTC [50] LOG:  database system was shut down at 2026-10-23 14:24:51 UTC
-postgres-1  | 2026-10-23 14:24:51.961 UTC [47] LOG:  database system is ready to accept connections
-postgres-1  |  done
-postgres-1  | server started
-postgres-1  | 
-postgres-1  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
-postgres-1  | 
-postgres-1  | waiting for server to shut down....2026-10-23 14:24:52.075 UTC [47] LOG:  received fast shutdown request
-postgres-1  | 2026-10-23 14:24:52.076 UTC [47] LOG:  aborting any active transactions
-postgres-1  | 2026-10-23 14:24:52.078 UTC [47] LOG:  background worker "logical replication launcher" (PID 53) exited with exit code 1
-postgres-1  | 2026-10-23 14:24:52.079 UTC [48] LOG:  shutting down
-postgres-1  | 2026-10-23 14:24:52.079 UTC [48] LOG:  checkpoint starting: shutdown immediate
-postgres-1  | 2026-10-23 14:24:52.083 UTC [48] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.005 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/14F2AE8, redo lsn=0/14F2AE8
-postgres-1  | 2026-10-23 14:24:52.088 UTC [47] LOG:  database system is shut down
-postgres-1  |  done
-postgres-1  | server stopped
-postgres-1  | 
-postgres-1  | PostgreSQL init process complete; ready for start up.
-postgres-1  | 
-postgres-1  | 2026-10-23 14:24:52.192 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
-postgres-1  | 2026-10-23 14:24:52.192 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
-postgres-1  | 2026-10-23 14:24:52.193 UTC [1] LOG:  could not create IPv6 socket for address "::": Address family not supported by protocol
-postgres-1  | 2026-10-23 14:24:52.193 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
-postgres-1  | 2026-10-23 14:24:52.195 UTC [61] LOG:  database system was shut down at 2026-10-23 14:24:52 UTC
-postgres-1  | 2026-10-23 14:24:52.198 UTC [1] LOG:  database system is ready to accept connections
-## db-init
-db-init-1  | db-init complete
-## app-init
-app-init-1  | applied: 0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008, 0009, 0010, 0011, 0012, 0013, 0014, 0015, 0016, 0017, 0018, 0019, 0020
-app-init-1  | {
-app-init-1  |   "status": "seeded",
-app-init-1  |   "tenants": {
-app-init-1  |     "demo": "9e2f3a71-37c6-4c08-b2e9-b3edf00eb1a9",
-app-init-1  |     "demo-two": "2ae18778-776d-4a46-a272-b357b92ef85b"
-app-init-1  |   },
-app-init-1  |   "scopes": {
-app-init-1  |     "demo/payments": "a4eb77d6-90d5-47b3-a88b-4fa55204d934"
-app-init-1  |   },
-app-init-1  |   "principals": {
-app-init-1  |     "alice": "fe4caa94-e62a-4f75-8ed2-bdb3708f258c",
-app-init-1  |     "carol": "12ef49ad-65e3-4a98-bc11-635ca74c836c",
-app-init-1  |     "bob": "8dc28972-bf22-4802-ae05-4bea44a1b4ff",
-app-init-1  |     "dave": "1c4d1e98-9311-4aa7-8529-512dc83ec6cd",
-app-init-1  |     "erin": "c64bcc85-a733-4526-861b-9e3195c5d752",
-app-init-1  |     "admin": "4e14ade7-b572-4494-a13c-057299d08b03",
-app-init-1  |     "audrey": "e6b2ae37-4c25-4263-bb57-3243a4fd366d",
-app-init-1  |     "consult": "6eecb325-b175-41cd-99c7-ccf9aadc72ca"
-app-init-1  |   }
-app-init-1  | }
-app-init-1  | bucket ready
-app-init-1  | app-init complete
-## idp-init
-idp-init-1  | realm written for http://127.0.0.1:18010
-idp-init-1  | {
-idp-init-1  |   "provider_id": "8fcb0dfe-fb72-4fbc-89ba-88f522e0bcc6",
-idp-init-1  |   "issuer": "http://127.0.0.1:18011/realms/axiom",
-idp-init-1  |   "linked": {
-idp-init-1  |     "alice": "fe4caa94-e62a-4f75-8ed2-bdb3708f258c",
-idp-init-1  |     "carol": "12ef49ad-65e3-4a98-bc11-635ca74c836c",
-idp-init-1  |     "bob": "8dc28972-bf22-4802-ae05-4bea44a1b4ff",
-idp-init-1  |     "dave": "1c4d1e98-9311-4aa7-8529-512dc83ec6cd",
-idp-init-1  |     "erin": "c64bcc85-a733-4526-861b-9e3195c5d752",
-idp-init-1  |     "admin": "4e14ade7-b572-4494-a13c-057299d08b03",
-idp-init-1  |     "audrey": "e6b2ae37-4c25-4263-bb57-3243a4fd366d",
-idp-init-1  |     "consult": "6eecb325-b175-41cd-99c7-ccf9aadc72ca"
-idp-init-1  |   }
-idp-init-1  | }
-## keycloak
-keycloak-1  | Updating the configuration and installing your custom providers, if any. Please wait.
-## api
-## job-worker
-job-worker-1  | INFO:botocore.credentials:Found credentials in environment variables.
-## objects
-objects-1  | I1023 14:24:54.716571 s3api_bucket_owner_index.go:277 bucket owner index ready
-objects-1  | I1023 14:24:54.724469 master_client.go:24 the cluster has 1 filer
-objects-1  | I1023 14:24:54.724494 filer_client.go:430 FilerClient: removed 1 filer(s) no longer in group '': [172.18.0.3:8888]
-objects-1  | I1023 14:24:54.724500 filer_client.go:433 FilerClient: discovered 1 new filer(s) in group '': [172.18.0.3:8888]
-objects-1  | I1023 14:24:55.472333 meta_aggregator.go:335 loopSubscribeToOneFiler read 172.18.0.3:8888 start from 2026-10-23 14:23:53.738149298 +0000 UTC 1792765433738149298
-objects-1  | I1023 14:24:55.472823 meta_aggregator.go:462 subscribing remote 172.18.0.3:8888 meta change: 2026-10-23 14:23:53.738149298 +0000 UTC, clientId:1023144057
-objects-1  | I1023 14:24:55.473586 filer_grpc_server_sub_meta.go:1534 + local listener filer:172.18.0.3:8888.18888@@ clientId -1023144057 clientEpoch 1
-objects-1  | I1023 14:24:55.473604 filer_grpc_server_sub_meta.go:973  + filer:172.18.0.3:8888.18888@@ local subscribe / from {Time:2026-10-23 14:23:53.738149298 +0000 UTC Offset:-7 IsOffsetBased:false} clientId:-1023144057
-objects-1  | I1023 14:24:58.487381 disk.go:119 disk status: dir:"/data"  all:270553174016  used:260857946112  free:9695227904  percent_free:3.5834832  percent_used:96.41652
-objects-1  | I1023 14:25:03.487504 disk.go:119 disk status: dir:"/data"  all:270553174016  used:260858691584  free:9694482432  percent_free:3.5832078  percent_used:96.416794
+[    0.2s] project axiom-smoke-171819
+[   15.1s] docker compose up failed; its output:
+[   15.2s]  Volume axiom-smoke-171819_devidp Created 
+[   15.2s]  Volume axiom-smoke-171819_devidp Created 
+[   15.2s]  Volume axiom-smoke-171819_objcfg Created 
+[   15.2s]  Volume axiom-smoke-171819_objcfg Created 
+[   15.2s]  Volume axiom-smoke-171819_idpimport Created 
+[   15.2s]  Volume axiom-smoke-171819_idpimport Created 
+[   15.2s]  Volume axiom-smoke-171819_witness Created 
+[   15.2s]  Volume axiom-smoke-171819_witness Created 
+[   15.2s]  Volume axiom-smoke-171819_pgdata Created 
+[   15.2s]  Volume axiom-smoke-171819_pgdata Created 
+[   15.2s]  Volume axiom-smoke-171819_objdata Created 
+[   15.2s]  Volume axiom-smoke-171819_objdata Created 
+[   15.2s]  Network axiom-smoke-171819_data Created 
+[   15.2s]  Network axiom-smoke-171819_data Created 
+[   15.2s]  Container axiom-smoke-171819-postgres-1 Creating 
+[   15.2s]  Container axiom-smoke-171819-objects-1 Creating 
+[   15.2s]  Network axiom-smoke-171819_edge Created 
+[   15.2s]  Network axiom-smoke-171819_edge Created 
+[   15.2s]  Container axiom-smoke-171819-objects-1 Created 
+[   15.2s]  Container axiom-smoke-171819-postgres-1 Created 
+[   15.2s]  Container axiom-smoke-171819-db-init-1 Creating 
+[   15.2s]  Container axiom-smoke-171819-db-init-1 Created 
+[   15.2s]  Container axiom-smoke-171819-app-init-1 Creating 
+[   15.2s]  Container axiom-smoke-171819-app-init-1 Created 
+[   15.2s]  Container axiom-smoke-171819-job-worker-1 Creating 
+[   15.2s]  Container axiom-smoke-171819-idp-init-1 Creating 
+[   15.2s]  Container axiom-smoke-171819-idp-init-1 Created 
+[   15.2s]  Container axiom-smoke-171819-keycloak-1 Creating 
+[   15.2s]  Container axiom-smoke-171819-job-worker-1 Created 
+[   15.2s]  Container axiom-smoke-171819-keycloak-1 Created 
+[   15.2s]  Container axiom-smoke-171819-api-1 Creating 
+[   15.2s]  Container axiom-smoke-171819-api-1 Created 
+[   15.2s]  Container axiom-smoke-171819-postgres-1 Starting 
+[   15.2s]  Container axiom-smoke-171819-objects-1 Starting 
+[   15.2s]  Container axiom-smoke-171819-postgres-1 Started 
+[   15.2s]  Container axiom-smoke-171819-postgres-1 Waiting 
+[   15.2s]  Container axiom-smoke-171819-objects-1 Started 
+[   15.2s]  Container axiom-smoke-171819-postgres-1 Healthy 
+[   15.2s]  Container axiom-smoke-171819-db-init-1 Starting 
+[   15.2s]  Container axiom-smoke-171819-db-init-1 Started 
+[   15.2s]  Container axiom-smoke-171819-db-init-1 Waiting 
+[   15.2s]  Container axiom-smoke-171819-db-init-1 Exited 
+[   15.2s]  Container axiom-smoke-171819-app-init-1 Starting 
+[   15.2s]  Container axiom-smoke-171819-app-init-1 Started 
+[   15.2s]  Container axiom-smoke-171819-app-init-1 Waiting 
+[   15.2s]  Container axiom-smoke-171819-app-init-1 Waiting 
+[   15.2s]  Container axiom-smoke-171819-app-init-1 Exited 
+[   15.2s]  Container axiom-smoke-171819-job-worker-1 Starting 
+[   15.2s]  Container axiom-smoke-171819-app-init-1 Exited 
+[   15.2s]  Container axiom-smoke-171819-idp-init-1 Starting 
+[   15.2s]  Container axiom-smoke-171819-job-worker-1 Started 
+[   15.2s]  Container axiom-smoke-171819-idp-init-1 Started 
+[   15.2s]  Container axiom-smoke-171819-idp-init-1 Waiting 
+[   15.2s]  Container axiom-smoke-171819-idp-init-1 Exited 
+[   15.2s]  Container axiom-smoke-171819-keycloak-1 Starting 
+[   15.2s]  Container axiom-smoke-171819-keycloak-1 Started 
+[   15.2s]  Container axiom-smoke-171819-app-init-1 Waiting 
+[   15.2s]  Container axiom-smoke-171819-app-init-1 Exited 
+[   15.2s]  Container axiom-smoke-171819-api-1 Starting 
+[   15.2s] Error response from daemon: failed to set up container networking: driver failed programming external connectivity on endpoint axiom-smoke-171819-api-1 (280f770c4caa904206fcc218ef8f5e76eab6776dc0698f71955c4818260ac049): failed to bind host port 127.0.0.1:18010/tcp: address already in use
+[   15.3s] SMOKE FAIL: compose up
+[   15.3s] --- diagnostics for project axiom-smoke-171819 (bounded, redacted)
+[   15.3s] --- containers
+[   15.4s] service      STATE     STATUS                           IMAGE
+[   15.4s] api          created   Created                          axiom-backend:dev
+[   15.4s] keycloak     running   Up 1 second (health: starting)   quay.io/keycloak/keycloak:26.4.2
+[   15.4s] job-worker   running   Up 4 seconds                     axiom-backend:dev
+[   15.4s] idp-init     exited    Exited (0) 1 second ago          axiom-backend:dev
+[   15.4s] app-init     exited    Exited (0) 4 seconds ago         axiom-backend:dev
+[   15.4s] db-init      exited    Exited (0) 8 seconds ago         public.ecr.aws/docker/library/postgres:16.15
+[   15.4s] postgres     running   Up 14 seconds (healthy)          public.ecr.aws/docker/library/postgres:16.15
+[   15.4s] objects      running   Up 14 seconds                    mirror.gcr.io/chrislusf/seaweedfs:4.48
+[   15.4s] --- container state and the last health-check results
+[   15.5s] api: state=created exit=128 oom=false health=none error=failed to set up container networking: driver failed programming external connectivity on endpoint axiom-smoke-171819-api-1 (280f770c4caa904206fcc218ef8f5e76eab6776dc0698f71955c4818260ac049): failed t
+[   15.5s] keycloak: state=running exit=0 oom=false health=starting error=
+[   15.6s] job-worker: state=running exit=0 oom=false health=none error=
+[   15.6s] idp-init: state=exited exit=0 oom=false health=unhealthy error=
+[   15.7s] app-init: state=exited exit=0 oom=false health=unhealthy error=
+[   15.7s] db-init: state=exited exit=0 oom=false health=none error=
+[   15.8s] postgres: state=running exit=0 oom=false health=healthy error=
+[   15.8s]   check exit 0: /var/run/postgresql:5432 - accepting connections
+[   15.8s]   check exit 0: /var/run/postgresql:5432 - accepting connections
+[   15.8s] objects: state=running exit=0 oom=false health=none error=
+[   15.8s] --- service logs (last lines each)
+[   15.8s] ## postgres
+[   16.0s] postgres-1  | selecting default time zone ... Etc/UTC
+[   16.0s] postgres-1  | creating configuration files ... ok
+[   16.0s] postgres-1  | running bootstrap script ... ok
+[   16.0s] postgres-1  | performing post-bootstrap initialization ... ok
+[   16.0s] postgres-1  | initdb: warning: enabling "trust" authentication for local connections
+[   16.0s] postgres-1  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+[   16.0s] postgres-1  | syncing data to disk ... ok
+[   16.0s] postgres-1  | 
+[   16.0s] postgres-1  | 
+[   16.0s] postgres-1  | Success. You can now start the database server using:
+[   16.0s] postgres-1  | 
+[   16.0s] postgres-1  |     pg_ctl -D /var/lib/postgresql/data -l logfile start
+[   16.0s] postgres-1  | 
+[   16.0s] postgres-1  | waiting for server to start....2026-10-23 17:18:21.118 UTC [46] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.120 UTC [46] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.122 UTC [49] LOG:  database system was shut down at 2026-10-23 17:18:20 UTC
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.128 UTC [46] LOG:  database system is ready to accept connections
+[   16.0s] postgres-1  |  done
+[   16.0s] postgres-1  | server started
+[   16.0s] postgres-1  | 
+[   16.0s] postgres-1  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+[   16.0s] postgres-1  | 
+[   16.0s] postgres-1  | waiting for server to shut down....2026-10-23 17:18:21.231 UTC [46] LOG:  received fast shutdown request
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.232 UTC [46] LOG:  aborting any active transactions
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.233 UTC [46] LOG:  background worker "logical replication launcher" (PID 52) exited with exit code 1
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.235 UTC [47] LOG:  shutting down
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.235 UTC [47] LOG:  checkpoint starting: shutdown immediate
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.239 UTC [47] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.005 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/14F2AE8, redo lsn=0/14F2AE8
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.244 UTC [46] LOG:  database system is shut down
+[   16.0s] postgres-1  |  done
+[   16.0s] postgres-1  | server stopped
+[   16.0s] postgres-1  | 
+[   16.0s] postgres-1  | PostgreSQL init process complete; ready for start up.
+[   16.0s] postgres-1  | 
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.348 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.348 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.348 UTC [1] LOG:  could not create IPv6 socket for address "::": Address family not supported by protocol
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.350 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.352 UTC [60] LOG:  database system was shut down at 2026-10-23 17:18:21 UTC
+[   16.0s] postgres-1  | 2026-10-23 17:18:21.356 UTC [1] LOG:  database system is ready to accept connections
+[   16.0s] ## db-init
+[   16.1s] db-init-1  | db-init complete
+[   16.1s] ## app-init
+[   16.2s] app-init-1  | applied: 0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008, 0009, 0010, 0011, 0012, 0013, 0014, 0015, 0016, 0017, 0018, 0019, 0020
+[   16.2s] app-init-1  | {
+[   16.2s] app-init-1  |   "status": "seeded",
+[   16.2s] app-init-1  |   "tenants": {
+[   16.2s] app-init-1  |     "demo": "157ece3b-2e8b-404d-a636-0664e61763a3",
+[   16.2s] app-init-1  |     "demo-two": "0108553c-0089-4fe8-b6c8-1e75878ce372"
+[   16.2s] app-init-1  |   },
+[   16.2s] app-init-1  |   "scopes": {
+[   16.2s] app-init-1  |     "demo/payments": "4983c054-1453-46cf-bfe5-ad8921faf2b0"
+[   16.2s] app-init-1  |   },
+[   16.2s] app-init-1  |   "principals": {
+[   16.2s] app-init-1  |     "alice": "6bf03e28-aad7-48cd-bb0d-8f9539ccc24d",
+[   16.2s] app-init-1  |     "carol": "741760ae-28d1-4efc-8358-1d18481b1e15",
+[   16.2s] app-init-1  |     "bob": "43d0a667-4a0d-47fa-9008-831a855c236d",
+[   16.2s] app-init-1  |     "dave": "4f8536a4-a141-4099-a8e6-59a1e829ff53",
+[   16.2s] app-init-1  |     "erin": "866ce6d5-2b3b-43af-bb4b-6ed01fd77afe",
+[   16.2s] app-init-1  |     "admin": "a320e50f-7c89-42c6-861e-518cfab1dcba",
+[   16.2s] app-init-1  |     "audrey": "cc4dec6c-eb4b-4093-bc20-d7a0da7a3fca",
+[   16.2s] app-init-1  |     "consult": "420137c5-5464-44b3-8f4e-56675bff1a98"
+[   16.2s] app-init-1  |   }
+[   16.2s] app-init-1  | }
+[   16.2s] app-init-1  | bucket ready
+[   16.2s] app-init-1  | app-init complete
+[   16.2s] ## idp-init
+[   16.3s] idp-init-1  | realm written for http://127.0.0.1:18010
+[   16.3s] idp-init-1  | {
+[   16.3s] idp-init-1  |   "provider_id": "e284dbfc-058b-44ec-bfff-0952f365f66f",
+[   16.3s] idp-init-1  |   "issuer": "http://127.0.0.1:18011/realms/axiom",
+[   16.3s] idp-init-1  |   "linked": {
+[   16.3s] idp-init-1  |     "alice": "6bf03e28-aad7-48cd-bb0d-8f9539ccc24d",
+[   16.3s] idp-init-1  |     "carol": "741760ae-28d1-4efc-8358-1d18481b1e15",
+[   16.3s] idp-init-1  |     "bob": "43d0a667-4a0d-47fa-9008-831a855c236d",
+[   16.3s] idp-init-1  |     "dave": "4f8536a4-a141-4099-a8e6-59a1e829ff53",
+[   16.3s] idp-init-1  |     "erin": "866ce6d5-2b3b-43af-bb4b-6ed01fd77afe",
+[   16.3s] idp-init-1  |     "admin": "a320e50f-7c89-42c6-861e-518cfab1dcba",
+[   16.3s] idp-init-1  |     "audrey": "cc4dec6c-eb4b-4093-bc20-d7a0da7a3fca",
+[   16.3s] idp-init-1  |     "consult": "420137c5-5464-44b3-8f4e-56675bff1a98"
+[   16.3s] idp-init-1  |   }
+[   16.3s] idp-init-1  | }
+[   16.3s] ## keycloak
+[   16.4s] ## api
+[   16.5s] ## job-worker
+[   16.6s] job-worker-1  | INFO:botocore.credentials:Found credentials in environment variables.
+[   16.6s] ## objects
+[   16.7s] objects-1  | I1023 17:18:23.835683 masterclient.go:346 LockRing: s3@172.18.0.3:18333 received ring update v1792775903834093017: [172.18.0.3:8888.18888]
+[   16.7s] objects-1  | I1023 17:18:23.835761 masterclient.go:331 + master@172.18.0.3:9333 noticed .s3 172.18.0.3:18333
+[   16.7s] objects-1  | I1023 17:18:23.835828 masterclient.go:331 + filer@172.18.0.3:8888 noticed .s3 172.18.0.3:18333
+[   16.7s] objects-1  | I1023 17:18:23.835877 masterclient.go:346 LockRing: filer@172.18.0.3:8888 received ring update v1792775903834093017: [172.18.0.3:8888.18888]
+[   16.7s] objects-1  | I1023 17:18:23.835921 filer.go:181 LockRing: applying master ring update v1792775903834093017: [172.18.0.3:8888]
+[   16.7s] objects-1  | I1023 17:18:23.884038 master_client.go:24 the cluster has 1 filer
+[   16.7s] objects-1  | I1023 17:18:23.884208 filer_client.go:430 FilerClient: removed 1 filer(s) no longer in group '': [172.18.0.3:8888]
+[   16.7s] objects-1  | I1023 17:18:23.884239 filer_client.go:433 FilerClient: discovered 1 new filer(s) in group '': [172.18.0.3:8888]
+[   16.7s] objects-1  | I1023 17:18:27.614643 disk.go:119 disk status: dir:"/data"  all:270553174016  used:260952788992  free:9600385024  percent_free:3.548428  percent_used:96.45157
+[   16.7s] objects-1  | I1023 17:18:32.615403 disk.go:119 disk status: dir:"/data"  all:270553174016  used:260955643904  free:9597530112  percent_free:3.547373  percent_used:96.45263
+[   37.7s] exit status 1
+[   37.7s] (stream closed)

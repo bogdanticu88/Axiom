@@ -1,146 +1,140 @@
-project axiom-smoke-142718
-ok   fresh install: migrations applied, api healthy
-SMOKE FAIL: unexpected exit 7 at line 111: X=$(curl -sf http://127.0.0.1:1/controlled-failure)
---- diagnostics for project axiom-smoke-142718 (bounded, secrets redacted)
---- containers
-service      STATE     STATUS                             IMAGE
-api          running   Up 17 seconds (healthy)            axiom-backend:dev
-keycloak     running   Up 17 seconds (health: starting)   quay.io/keycloak/keycloak:26.4.2
-job-worker   running   Up 19 seconds                      axiom-backend:dev
-idp-init     exited    Exited (0) 18 seconds ago          axiom-backend:dev
-app-init     exited    Exited (0) 19 seconds ago          axiom-backend:dev
-db-init      exited    Exited (0) 23 seconds ago          public.ecr.aws/docker/library/postgres:16.15
-postgres     running   Up 28 seconds (healthy)            public.ecr.aws/docker/library/postgres:16.15
-objects      running   Up 28 seconds                      mirror.gcr.io/chrislusf/seaweedfs:4.48
---- container state and the last health-check results
-api: state=running exit=0 oom=false health=healthy error=
-  check exit 0: 
-keycloak: state=running exit=0 oom=false health=starting error=
-/bin/sh: line 1: /dev/tcp/127.0.0.1/9000: Connection refused
-  check exit 1: /bin/sh: connect: Connection refused
-/bin/sh: line 1: /dev/tcp/127.0.0.1/9000: Connection refused
-job-worker: state=running exit=0 oom=false health=none error=
-idp-init: state=exited exit=0 oom=false health=unhealthy error=
-app-init: state=exited exit=0 oom=false health=unhealthy error=
-db-init: state=exited exit=0 oom=false health=none error=
-postgres: state=running exit=0 oom=false health=healthy error=
-  check exit 0: /var/run/postgresql:5432 - accepting connections
-  check exit 0: /var/run/postgresql:5432 - accepting connections
-  check exit 0: /var/run/postgresql:5432 - accepting connections
-objects: state=running exit=0 oom=false health=none error=
---- service logs (last lines each)
-## postgres
-postgres-1  | selecting default time zone ... Etc/UTC
-postgres-1  | creating configuration files ... ok
-postgres-1  | running bootstrap script ... ok
-postgres-1  | performing post-bootstrap initialization ... ok
-postgres-1  | syncing data to disk ... ok
-postgres-1  | initdb: warning: enabling "trust" authentication for local connections
-postgres-1  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
-postgres-1  | 
-postgres-1  | 
-postgres-1  | Success. You can now start the database server using:
-postgres-1  | 
-postgres-1  |     pg_ctl -D /var/lib/postgresql/data -l logfile start
-postgres-1  | 
-postgres-1  | waiting for server to start....2026-10-23 14:27:19.697 UTC [47] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
-postgres-1  | 2026-10-23 14:27:19.699 UTC [47] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
-postgres-1  | 2026-10-23 14:27:19.701 UTC [50] LOG:  database system was shut down at 2026-10-23 14:27:19 UTC
-postgres-1  | 2026-10-23 14:27:19.705 UTC [47] LOG:  database system is ready to accept connections
-postgres-1  |  done
-postgres-1  | server started
-postgres-1  | 
-postgres-1  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
-postgres-1  | 
-postgres-1  | waiting for server to shut down...2026-10-23 14:27:19.811 UTC [47] LOG:  received fast shutdown request
-postgres-1  | .2026-10-23 14:27:19.812 UTC [47] LOG:  aborting any active transactions
-postgres-1  | 2026-10-23 14:27:19.814 UTC [47] LOG:  background worker "logical replication launcher" (PID 53) exited with exit code 1
-postgres-1  | 2026-10-23 14:27:19.814 UTC [48] LOG:  shutting down
-postgres-1  | 2026-10-23 14:27:19.815 UTC [48] LOG:  checkpoint starting: shutdown immediate
-postgres-1  | 2026-10-23 14:27:19.817 UTC [48] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.004 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/14F2AE8, redo lsn=0/14F2AE8
-postgres-1  | 2026-10-23 14:27:19.822 UTC [47] LOG:  database system is shut down
-postgres-1  |  done
-postgres-1  | server stopped
-postgres-1  | 
-postgres-1  | PostgreSQL init process complete; ready for start up.
-postgres-1  | 
-postgres-1  | 2026-10-23 14:27:19.927 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
-postgres-1  | 2026-10-23 14:27:19.928 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
-postgres-1  | 2026-10-23 14:27:19.928 UTC [1] LOG:  could not create IPv6 socket for address "::": Address family not supported by protocol
-postgres-1  | 2026-10-23 14:27:19.929 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
-postgres-1  | 2026-10-23 14:27:19.930 UTC [61] LOG:  database system was shut down at 2026-10-23 14:27:19 UTC
-postgres-1  | 2026-10-23 14:27:19.933 UTC [1] LOG:  database system is ready to accept connections
-## db-init
-db-init-1  | db-init complete
-## app-init
-app-init-1  | applied: 0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008, 0009, 0010, 0011, 0012, 0013, 0014, 0015, 0016, 0017, 0018, 0019, 0020
-app-init-1  | {
-app-init-1  |   "status": "seeded",
-app-init-1  |   "tenants": {
-app-init-1  |     "demo": "81e0c279-d464-4dfe-9e10-0c9614ef6682",
-app-init-1  |     "demo-two": "175351e5-fb78-456f-8971-8c4091f15866"
-app-init-1  |   },
-app-init-1  |   "scopes": {
-app-init-1  |     "demo/payments": "8ccc6f13-7272-4b7a-8f0a-383ab487bdcc"
-app-init-1  |   },
-app-init-1  |   "principals": {
-app-init-1  |     "alice": "ec966cfe-8363-4348-96d2-7ca02442cf04",
-app-init-1  |     "carol": "0028c133-8c7d-433e-ab1c-d4d980d032c2",
-app-init-1  |     "bob": "31568de3-6179-4273-a0db-ec618837caaa",
-app-init-1  |     "dave": "1224cc73-fc29-4632-b5d6-af888096fc58",
-app-init-1  |     "erin": "55ebadc5-d257-4de9-95ce-0c13f18c592d",
-app-init-1  |     "admin": "959d9936-8cea-49c4-a1d4-bb99d69feb65",
-app-init-1  |     "audrey": "87fbbda8-ed02-4a0c-9c95-7aec4952da40",
-app-init-1  |     "consult": "fa1ff178-d8c8-4c9d-a251-b5f59a1b8c3d"
-app-init-1  |   }
-app-init-1  | }
-app-init-1  | bucket ready
-app-init-1  | app-init complete
-## idp-init
-idp-init-1  | realm written for http://127.0.0.1:18010
-idp-init-1  | {
-idp-init-1  |   "provider_id": "2b890dca-f713-413a-a627-587ba0a2b884",
-idp-init-1  |   "issuer": "http://127.0.0.1:18011/realms/axiom",
-idp-init-1  |   "linked": {
-idp-init-1  |     "alice": "ec966cfe-8363-4348-96d2-7ca02442cf04",
-idp-init-1  |     "carol": "0028c133-8c7d-433e-ab1c-d4d980d032c2",
-idp-init-1  |     "bob": "31568de3-6179-4273-a0db-ec618837caaa",
-idp-init-1  |     "dave": "1224cc73-fc29-4632-b5d6-af888096fc58",
-idp-init-1  |     "erin": "55ebadc5-d257-4de9-95ce-0c13f18c592d",
-idp-init-1  |     "admin": "959d9936-8cea-49c4-a1d4-bb99d69feb65",
-idp-init-1  |     "audrey": "87fbbda8-ed02-4a0c-9c95-7aec4952da40",
-idp-init-1  |     "consult": "fa1ff178-d8c8-4c9d-a251-b5f59a1b8c3d"
-idp-init-1  |   }
-idp-init-1  | }
-## keycloak
-keycloak-1  | Updating the configuration and installing your custom providers, if any. Please wait.
-keycloak-1  | 2026-10-23 14:27:39,137 INFO  [io.quarkus.deployment.QuarkusAugmentor] (main) Quarkus augmentation completed in 7005ms
-keycloak-1  | Running the server in development mode. DO NOT use this configuration in production.
-keycloak-1  | 2026-10-23 14:27:40,916 INFO  [org.keycloak.url.HostnameV2ProviderFactory] (main) If hostname is specified, hostname-strict is effectively ignored
-keycloak-1  | 2026-10-23 14:27:42,817 INFO  [org.hibernate.orm.jdbc.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 32)
-keycloak-1  | 2026-10-23 14:27:43,661 INFO  [org.keycloak.quarkus.runtime.storage.database.liquibase.QuarkusJpaUpdaterProvider] (main) Initializing database schema. Using changelog META-INF/jpa-changelog-master.xml
-keycloak-1  | 2026-10-23 14:27:46,986 INFO  [org.infinispan.CONTAINER] (main) Virtual threads support enabled
-keycloak-1  | 2026-10-23 14:27:47,114 INFO  [org.infinispan.CONTAINER] (main) ISPN000556: Starting user marshaller 'org.infinispan.commons.marshall.ImmutableProtoStreamMarshaller'
-keycloak-1  | 2026-10-23 14:27:47,431 INFO  [org.keycloak.connections.infinispan.DefaultInfinispanConnectionProviderFactory] (main) Node name: node_495181, Site name: null
-keycloak-1  | 2026-10-23 14:27:47,652 INFO  [org.keycloak.exportimport.dir.DirImportProvider] (main) Importing from directory /opt/keycloak/bin/../data/import
-keycloak-1  | 2026-10-23 14:27:47,853 INFO  [org.keycloak.services] (main) KC-SERVICES0050: Initializing master realm
-## api
-api-1  | INFO:botocore.credentials:Found credentials in environment variables.
-api-1  | INFO:     Started server process [1]
-api-1  | INFO:     Waiting for application startup.
-api-1  | INFO:     Application startup complete.
-api-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-api-1  | INFO:     127.0.0.1:53322 - "GET /api/v1/health/ready HTTP/1.1" 200 OK
-## job-worker
-job-worker-1  | INFO:botocore.credentials:Found credentials in environment variables.
-## objects
-objects-1  | I1023 14:27:22.473469 masterclient.go:346 LockRing: filer@172.19.0.3:8888 received ring update v1792765642473270545: [172.19.0.3:8888.18888]
-objects-1  | I1023 14:27:22.473474 filer.go:181 LockRing: applying master ring update v1792765642473270545: [172.19.0.3:8888]
-objects-1  | I1023 14:27:22.619170 master_client.go:24 the cluster has 1 filer
-objects-1  | I1023 14:27:22.619199 filer_client.go:430 FilerClient: removed 1 filer(s) no longer in group '': [172.19.0.3:8888]
-objects-1  | I1023 14:27:22.619208 filer_client.go:433 FilerClient: discovered 1 new filer(s) in group '': [172.19.0.3:8888]
-objects-1  | I1023 14:27:26.242495 disk.go:119 disk status: dir:"/data"  all:270553174016  used:260864000000  free:9689174016  percent_free:3.5812457  percent_used:96.418755
-objects-1  | I1023 14:27:31.243149 disk.go:119 disk status: dir:"/data"  all:270553174016  used:260864712704  free:9688461312  percent_free:3.5809822  percent_used:96.419014
-objects-1  | I1023 14:27:36.242955 disk.go:119 disk status: dir:"/data"  all:270553174016  used:260864716800  free:9688457216  percent_free:3.5809808  percent_used:96.41902
-objects-1  | I1023 14:27:41.242826 disk.go:119 disk status: dir:"/data"  all:270553174016  used:261028286464  free:9524887552  percent_free:3.5205233  percent_used:96.47948
-objects-1  | I1023 14:27:46.242791 disk.go:119 disk status: dir:"/data"  all:270553174016  used:261028728832  free:9524445184  percent_free:3.5203598  percent_used:96.47964
+[    0.2s] project axiom-smoke-172025
+[   32.2s] ok   fresh install: migrations applied, api healthy
+[   32.2s] SMOKE FAIL: unexpected exit 7 at line 142: curl -sf http://127.0.0.1:1/ >/dev/null
+[   32.3s] --- diagnostics for project axiom-smoke-172025 (bounded, redacted)
+[   32.3s] --- containers
+[   32.3s] service      STATE     STATUS                             IMAGE
+[   32.3s] api          running   Up 17 seconds (healthy)            axiom-backend:dev
+[   32.3s] keycloak     running   Up 18 seconds (health: starting)   quay.io/keycloak/keycloak:26.4.2
+[   32.3s] idp-init     exited    Exited (0) 19 seconds ago          axiom-backend:dev
+[   32.3s] job-worker   running   Up 21 seconds                      axiom-backend:dev
+[   32.3s] app-init     exited    Exited (0) 21 seconds ago          axiom-backend:dev
+[   32.3s] db-init      exited    Exited (0) 25 seconds ago          public.ecr.aws/docker/library/postgres:16.15
+[   32.3s] postgres     running   Up 31 seconds (healthy)            public.ecr.aws/docker/library/postgres:16.15
+[   32.3s] objects      running   Up 31 seconds                      mirror.gcr.io/chrislusf/seaweedfs:4.48
+[   32.3s] --- container state and the last health-check results
+[   32.4s] api: state=running exit=0 oom=false health=healthy error=
+[   32.4s]   check exit 0: 
+[   32.5s] keycloak: state=running exit=0 oom=false health=starting error=
+[   32.5s] /bin/sh: line 1: /dev/tcp/127.0.0.1/9000: Connection refused
+[   32.5s]   check exit 1: /bin/sh: connect: Connection refused
+[   32.5s] /bin/sh: line 1: /dev/tcp/127.0.0.1/9000: Connection refused
+[   32.6s] idp-init: state=exited exit=0 oom=false health=unhealthy error=
+[   32.7s] job-worker: state=running exit=0 oom=false health=none error=
+[   32.7s] app-init: state=exited exit=0 oom=false health=unhealthy error=
+[   32.8s] db-init: state=exited exit=0 oom=false health=none error=
+[   32.8s] postgres: state=running exit=0 oom=false health=healthy error=
+[   32.9s]   check exit 0: /var/run/postgresql:5432 - accepting connections
+[   32.9s]   check exit 0: /var/run/postgresql:5432 - accepting connections
+[   32.9s]   check exit 0: /var/run/postgresql:5432 - accepting connections
+[   32.9s] objects: state=running exit=0 oom=false health=none error=
+[   32.9s] --- service logs (last lines each)
+[   32.9s] ## postgres
+[   33.0s] postgres-1  | selecting default time zone ... Etc/UTC
+[   33.0s] postgres-1  | creating configuration files ... ok
+[   33.0s] postgres-1  | running bootstrap script ... ok
+[   33.0s] postgres-1  | performing post-bootstrap initialization ... ok
+[   33.0s] postgres-1  | syncing data to disk ... ok
+[   33.0s] postgres-1  | 
+[   33.0s] postgres-1  | 
+[   33.0s] postgres-1  | Success. You can now start the database server using:
+[   33.0s] postgres-1  | 
+[   33.0s] postgres-1  |     pg_ctl -D /var/lib/postgresql/data -l logfile start
+[   33.0s] postgres-1  | 
+[   33.0s] postgres-1  | initdb: warning: enabling "trust" authentication for local connections
+[   33.0s] postgres-1  | initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+[   33.0s] postgres-1  | waiting for server to start....2026-10-23 17:20:26.994 UTC [47] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.008 UTC [47] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.011 UTC [50] LOG:  database system was shut down at 2026-10-23 17:20:26 UTC
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.037 UTC [47] LOG:  database system is ready to accept connections
+[   33.0s] postgres-1  |  done
+[   33.0s] postgres-1  | server started
+[   33.0s] postgres-1  | 
+[   33.0s] postgres-1  | /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+[   33.0s] postgres-1  | 
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.108 UTC [47] LOG:  received fast shutdown request
+[   33.0s] postgres-1  | waiting for server to shut down....2026-10-23 17:20:27.110 UTC [47] LOG:  aborting any active transactions
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.114 UTC [47] LOG:  background worker "logical replication launcher" (PID 53) exited with exit code 1
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.114 UTC [48] LOG:  shutting down
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.115 UTC [48] LOG:  checkpoint starting: shutdown immediate
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.125 UTC [48] LOG:  checkpoint complete: wrote 3 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.007 s, sync=0.001 s, total=0.012 s; sync files=2, longest=0.001 s, average=0.001 s; distance=0 kB, estimate=0 kB; lsn=0/14F2AE8, redo lsn=0/14F2AE8
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.131 UTC [47] LOG:  database system is shut down
+[   33.0s] postgres-1  |  done
+[   33.0s] postgres-1  | server stopped
+[   33.0s] postgres-1  | 
+[   33.0s] postgres-1  | PostgreSQL init process complete; ready for start up.
+[   33.0s] postgres-1  | 
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.235 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.235 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.235 UTC [1] LOG:  could not create IPv6 socket for address "::": Address family not supported by protocol
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.237 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.239 UTC [61] LOG:  database system was shut down at 2026-10-23 17:20:27 UTC
+[   33.0s] postgres-1  | 2026-10-23 17:20:27.242 UTC [1] LOG:  database system is ready to accept connections
+[   33.0s] ## db-init
+[   33.1s] db-init-1  | db-init complete
+[   33.1s] ## app-init
+[   33.2s] app-init-1  | applied: 0001, 0002, 0003, 0004, 0005, 0006, 0007, 0008, 0009, 0010, 0011, 0012, 0013, 0014, 0015, 0016, 0017, 0018, 0019, 0020
+[   33.2s] app-init-1  | {
+[   33.2s] app-init-1  |   "status": "seeded",
+[   33.2s] app-init-1  |   "tenants": {
+[   33.2s] app-init-1  |     "demo": "097280db-c42a-4744-bd23-c746891237f5",
+[   33.2s] app-init-1  |     "demo-two": "55ac4965-b5e1-4b96-a6a7-a8ae6a0a3268"
+[   33.2s] app-init-1  |   },
+[   33.2s] app-init-1  |   "scopes": {
+[   33.2s] app-init-1  |     "demo/payments": "1f340830-d268-4a18-a22a-8bcc37e4ef1a"
+[   33.2s] app-init-1  |   },
+[   33.2s] app-init-1  |   "principals": {
+[   33.2s] app-init-1  |     "alice": "5f1e2ff2-5c05-480c-9d8b-2add98fde946",
+[   33.2s] app-init-1  |     "carol": "69f2621f-ad7e-4033-8c08-d4d9acfc5709",
+[   33.2s] app-init-1  |     "bob": "d15bb39c-f257-41a4-a20b-9c9c319c6a7e",
+[   33.2s] app-init-1  |     "dave": "44699c19-4b06-462e-924c-640e90db4fcb",
+[   33.2s] app-init-1  |     "erin": "eb2559a1-582f-489b-9b15-99fd415a5456",
+[   33.2s] app-init-1  |     "admin": "a0e4d808-67dc-4102-bcf9-669ab2e7a2b5",
+[   33.2s] app-init-1  |     "audrey": "6fb447a6-9b67-479a-abf3-575758345ef7",
+[   33.2s] app-init-1  |     "consult": "d497dce9-708f-43bc-9c3c-f62a229e3fae"
+[   33.2s] app-init-1  |   }
+[   33.2s] app-init-1  | }
+[   33.2s] app-init-1  | bucket ready
+[   33.2s] app-init-1  | app-init complete
+[   33.2s] ## idp-init
+[   33.3s] idp-init-1  | realm written for http://127.0.0.1:18010
+[   33.3s] idp-init-1  | {
+[   33.3s] idp-init-1  |   "provider_id": "11b87695-7e54-494b-8081-3e31cfd1d359",
+[   33.3s] idp-init-1  |   "issuer": "http://127.0.0.1:18011/realms/axiom",
+[   33.3s] idp-init-1  |   "linked": {
+[   33.3s] idp-init-1  |     "alice": "5f1e2ff2-5c05-480c-9d8b-2add98fde946",
+[   33.3s] idp-init-1  |     "carol": "69f2621f-ad7e-4033-8c08-d4d9acfc5709",
+[   33.3s] idp-init-1  |     "bob": "d15bb39c-f257-41a4-a20b-9c9c319c6a7e",
+[   33.3s] idp-init-1  |     "dave": "44699c19-4b06-462e-924c-640e90db4fcb",
+[   33.3s] idp-init-1  |     "erin": "eb2559a1-582f-489b-9b15-99fd415a5456",
+[   33.3s] idp-init-1  |     "admin": "a0e4d808-67dc-4102-bcf9-669ab2e7a2b5",
+[   33.3s] idp-init-1  |     "audrey": "6fb447a6-9b67-479a-abf3-575758345ef7",
+[   33.3s] idp-init-1  |     "consult": "d497dce9-708f-43bc-9c3c-f62a229e3fae"
+[   33.3s] idp-init-1  |   }
+[   33.3s] idp-init-1  | }
+[   33.3s] ## keycloak
+[   33.4s] keycloak-1  | Updating the configuration and installing your custom providers, if any. Please wait.
+[   33.4s] keycloak-1  | 2026-10-23 17:20:55,953 INFO  [io.quarkus.deployment.QuarkusAugmentor] (main) Quarkus augmentation completed in 13699ms
+[   33.4s] keycloak-1  | Running the server in development mode. DO NOT use this configuration in production.
+[   33.4s] ## api
+[   33.5s] api-1  | INFO:botocore.credentials:Found credentials in environment variables.
+[   33.5s] api-1  | INFO:     Started server process [1]
+[   33.5s] api-1  | INFO:     Waiting for application startup.
+[   33.5s] api-1  | INFO:     Application startup complete.
+[   33.5s] api-1  | INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+[   33.5s] api-1  | INFO:     127.0.0.1:58088 - "GET /api/v1/health/ready HTTP/1.1" 200 OK
+[   33.5s] ## job-worker
+[   33.6s] job-worker-1  | INFO:botocore.credentials:Found credentials in environment variables.
+[   33.6s] ## objects
+[   33.7s] objects-1  | I1023 17:20:30.350315 meta_aggregator.go:335 loopSubscribeToOneFiler read 172.18.0.3:8888 start from 2026-10-23 17:19:28.615908069 +0000 UTC 1792775968615908069
+[   33.7s] objects-1  | I1023 17:20:30.350789 meta_aggregator.go:462 subscribing remote 172.18.0.3:8888 meta change: 2026-10-23 17:19:28.615908069 +0000 UTC, clientId:1692448424
+[   33.7s] objects-1  | I1023 17:20:30.352926 filer_grpc_server_sub_meta.go:1534 + local listener filer:172.18.0.3:8888.18888@@ clientId -1692448424 clientEpoch 1
+[   33.7s] objects-1  | I1023 17:20:30.353035 filer_grpc_server_sub_meta.go:973  + filer:172.18.0.3:8888.18888@@ local subscribe / from {Time:2026-10-23 17:19:28.615908069 +0000 UTC Offset:-7 IsOffsetBased:false} clientId:-1692448424
+[   33.7s] objects-1  | I1023 17:20:33.370870 disk.go:119 disk status: dir:"/data"  all:270553174016  used:261465837568  free:9087336448  percent_free:3.3587987  percent_used:96.641205
+[   33.7s] objects-1  | I1023 17:20:38.370908 disk.go:119 disk status: dir:"/data"  all:270553174016  used:261466804224  free:9086369792  percent_free:3.3584414  percent_used:96.641556
+[   33.7s] objects-1  | I1023 17:20:43.370669 disk.go:119 disk status: dir:"/data"  all:270553174016  used:261468008448  free:9085165568  percent_free:3.3579962  percent_used:96.642006
+[   33.7s] objects-1  | I1023 17:20:48.371106 disk.go:119 disk status: dir:"/data"  all:270553174016  used:261481353216  free:9071820800  percent_free:3.3530638  percent_used:96.646935
+[   33.7s] objects-1  | I1023 17:20:53.373390 disk.go:119 disk status: dir:"/data"  all:270553174016  used:261534117888  free:9019056128  percent_free:3.3335614  percent_used:96.666435
+[   33.7s] objects-1  | I1023 17:20:58.371293 disk.go:119 disk status: dir:"/data"  all:270553174016  used:261693767680  free:8859406336  percent_free:3.2745528  percent_used:96.72545
+[   54.7s] exit status 7
+[   54.7s] (stream closed)

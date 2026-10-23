@@ -1,20 +1,22 @@
-project axiom-smoke-143236
-ok   fresh install: migrations applied, api healthy
-ok   no token -> 401
-ok   evidence upload -> verified -> download via S3 (SeaweedFS)
-ok   digest mismatch -> rejected
-ok   case create, start-investigation, stale version -> 409
-ok   consultant in other tenant -> 404; non-member tenant selection -> 403
-ok   case events linked to audit rows: 2
-ok   Trivy import via API + job-worker: completed complete 30; cases visible: 30
-ok   re-running init: migrations 'applied: none', seed 'already seeded'
-ok   UI served by the API at /ui with a restrictive Content-Security-Policy
-ok   alice signed in through the local Keycloak login page
-ok   case queue lists imported cases (29 received)
-ok   alice moved a case to investigating through the UI; the page shows the new workflow
-ok   audrey (auditor) was refused by the server: permission_denied; the case did not change
-ok   sign-out revoked the platform session server-side (old cookie replayed: 401)
-ok   the server recorded that decision as alice's (human principal, resolved from the Keycloak subject)
-ok   AXIOM_ENV=production with the development identity refuses to start (inline JWKS not permitted)
-ok   a missing OIDC client secret stops start-up (fails closed)
-SMOKE PASS (axiom-smoke-143236)
+[    0.2s] project axiom-smoke-173116
+[   29.7s] ok   fresh install: migrations applied, api healthy
+[   30.8s] ok   no token -> 401
+[   31.5s] ok   evidence upload -> verified -> download via S3 (SeaweedFS)
+[   31.7s] ok   digest mismatch -> rejected
+[   31.9s] ok   case create, start-investigation, stale version -> 409
+[   31.9s] ok   consultant in other tenant -> 404; non-member tenant selection -> 403
+[   32.1s] ok   case events linked to audit rows: 2
+[   34.4s] ok   Trivy import via API + job-worker: completed complete 30; cases visible: 30
+[   38.7s] ok   re-running init: migrations 'applied: none', seed 'already seeded'
+[   42.6s] ok   UI served by the API at /ui with a restrictive Content-Security-Policy
+[   42.6s] ok   alice signed in through the local Keycloak login page
+[   42.6s] ok   case queue lists imported cases (29 received)
+[   42.6s] ok   alice moved a case to investigating through the UI; the page shows the new workflow
+[   42.6s] ok   audrey (auditor) was refused by the server: permission_denied; the case did not change
+[   42.6s] ok   sign-out revoked the platform session server-side (old cookie replayed: 401)
+[   42.7s] ok   the server recorded that decision as alice's (human principal, resolved from the Keycloak subject)
+[   44.2s] ok   AXIOM_ENV=production with the development identity refuses to start (inline JWKS not permitted)
+[   45.9s] ok   a missing OIDC client secret stops start-up (fails closed)
+[   45.9s] SMOKE PASS (axiom-smoke-173116)
+[   66.6s] exit status 0
+[   66.6s] (stream closed)
