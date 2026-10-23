@@ -1,0 +1,12 @@
+{
+  "trivy_db": {
+    "Version": 2,
+    "NextUpdate": "2026-10-23T19:14:47.059491102Z",
+    "UpdatedAt": "2026-10-22T19:14:47.059491382Z",
+    "DownloadedAt": "2026-10-22T20:15:30.726542656Z"
+  },
+  "deployed": {
+    "orders-api": "sha256:cf61d3538f8437db132f9f2ba9d7bd50f468ba710674e19aa7f81d837d128d73",
+    "reports-api": "sha256:f2424e54fadc2b0743273c13ea90b2ac25f48e71526ad97191112bfa917a93a2"
+  }
+}
