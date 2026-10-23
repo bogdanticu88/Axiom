@@ -14,7 +14,7 @@ import psycopg
 from ... import audit
 from ...access import Authorizer
 from ...db import TenantContext
-from ...errors import Conflict, NotFound
+from ...errors import Conflict, NotFound, ValidationFailed
 
 ASSET_KINDS = {"host", "container_image", "workload", "cloud_resource", "repository", "application", "unknown"}
 
@@ -41,6 +41,8 @@ class AssetService:
 
     def record_version(self, *, asset_id: UUID, observed_at: datetime, deployment_digest: str | None = None,
                        version_label: str | None = None, source_evidence_id: UUID | None = None) -> dict:
+        if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+            raise ValidationFailed("observed_at must carry a UTC offset")
         asset = self._asset(asset_id)
         self.authz.require("asset.manage", asset["scope_id"])
         version_id = uuid.uuid4()

@@ -2,11 +2,34 @@
 client-supplied tenant_id, actor or 'verified': true) are rejected, never ignored."""
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Literal
+import re
+from datetime import datetime, timezone
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
+
+# An instant must say which instant it is: RFC 3339 with "Z" or a numeric offset. Values without one ("2026-10-27"
+# or "2026-10-27T20:00:00") used to be accepted and were then read in the database session's time zone, so the same
+# request meant different instants on differently configured servers. They are now refused. Accepted values are
+# normalised to UTC, so storage and idempotency comparison see one form.
+_INSTANT = re.compile(r"^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?([Zz]|[+-]\d{2}:?\d{2})$")
+INSTANT_REQUIRED = "timestamp must be an RFC 3339 date-time with 'Z' or a numeric UTC offset, e.g. 2026-10-27T20:00:00Z"
+
+
+def _instant(value: object) -> datetime:
+    if isinstance(value, datetime):          # constructed in Python (tests, internal callers), not parsed from JSON
+        parsed = value
+    elif isinstance(value, str) and _INSTANT.match(value):
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00" if value[-1] in "Zz" else value)
+    else:
+        raise ValueError(INSTANT_REQUIRED)
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(INSTANT_REQUIRED)
+    return parsed.astimezone(timezone.utc)
+
+
+Instant = Annotated[datetime, BeforeValidator(_instant)]
 
 
 class Body(BaseModel):
@@ -46,7 +69,7 @@ class PlanRemediation(Versioned):
 
 
 class Defer(Versioned):
-    review_at: datetime
+    review_at: Instant
     pause_reason: str | None = Field(default=None, max_length=50)
 
 
@@ -82,7 +105,7 @@ class CloseRetired(Versioned):
 
 
 class AcceptRisk(Versioned):
-    expires_at: datetime
+    expires_at: Instant
     compensating_controls: str | None = Field(default=None, max_length=5000)
 
 
@@ -114,7 +137,7 @@ class CreateAsset(Body):
 
 
 class RecordAssetVersion(Body):
-    observed_at: datetime
+    observed_at: Instant
     deployment_digest: str | None = Field(default=None, max_length=200)
     version_label: str | None = Field(default=None, max_length=200)
     source_evidence_id: UUID | None = None
@@ -139,7 +162,7 @@ class AssignRole(Body):
     role_id: str = Field(pattern=r"^[a-z_]+$")
     scope_id: UUID
     reason: str = Field(min_length=1, max_length=2000)
-    valid_until: datetime | None = None
+    valid_until: Instant | None = None
     emergency: bool = False
 
 
@@ -199,7 +222,7 @@ class CreateProposal(Body):
     payload: dict
     verification_criteria: str = Field(min_length=1, max_length=5000)
     rollback_guidance: str | None = Field(default=None, max_length=5000)
-    expires_at: datetime
+    expires_at: Instant
 
 
 class ReviseProposal(Body):
@@ -207,13 +230,13 @@ class ReviseProposal(Body):
     payload: dict
     verification_criteria: str = Field(min_length=1, max_length=5000)
     rollback_guidance: str | None = Field(default=None, max_length=5000)
-    expires_at: datetime
+    expires_at: Instant
 
 
 class Decide(Body):
     decision: Literal["approved", "rejected"]
     rationale: str = Field(min_length=1, max_length=10000)
-    valid_until: datetime | None = None
+    valid_until: Instant | None = None
     max_uses: int = Field(default=1, ge=1, le=100)
 
 
@@ -233,7 +256,7 @@ class Resolve(Body):
 
 class RiskRequest(Body):
     expected_version: int = Field(ge=0)
-    expires_at: datetime
+    expires_at: Instant
     rationale: str = Field(min_length=1, max_length=10000)
     compensating_controls: str | None = Field(default=None, max_length=10000)
 
@@ -250,7 +273,7 @@ class JobRetry(Body):
 class GenerateReport(Body):
     kind: Literal["exposure_summary"]
     scope_id: UUID
-    as_of: datetime | None = None
+    as_of: Instant | None = None
 
 
 class DraftPolicy(Body):
@@ -267,7 +290,7 @@ class ApplyPriority(Body):
 
 class OverridePriority(ApplyPriority):
     priority: Literal["urgent", "high", "medium", "low"]
-    expires_at: datetime | None = None
+    expires_at: Instant | None = None
 
 
 class PreviewPolicy(Body):
