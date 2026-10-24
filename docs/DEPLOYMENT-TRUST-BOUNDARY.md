@@ -63,7 +63,9 @@ and its role configuration (ADR 0003), the object store, the configured identity
 HTTPS in production), the secret files the deployment mounts, and the runtime database credential. That credential
 (`axiom_app`) is shared by the API and the job worker for every tenant of the installation. Whoever holds it can bind
 any tenant and any principal, so its compromise means cross-tenant access and impersonation of any user: the holder
-can read any tenant's rows and record decisions, approvals and audit entries in any principal's name. The database keeps history append-only and enforces structural rules, but it does not authenticate
+can read any tenant's rows and record decisions, approvals and audit entries in any principal's name. Job leases
+coordinate workers that share this credential against crashes, hangs and pauses; their expiry is checked by the worker
+code, not by the database, so they are no protection against its holder (ADR 0006 amendment 1). The database keeps history append-only and enforces structural rules, but it does not authenticate
 people (ADR 0012 amendment 4, ADR 0002).
 
 Not trusted: browsers, request bodies and headers, token claims other than those validated (issuer, audience,

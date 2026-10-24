@@ -255,6 +255,193 @@ def test_a_worker_whose_lease_is_still_valid_finishes_normally(db, world, sys_ct
     assert "stale_result_discarded" not in events(db, sys_ctx, j["id"])
 
 
+def wait_until(admin_conn, sql, args, *, limit=15.0):
+    """Coordination on database state, not on elapsed time: poll a condition until it holds. The limit only turns a
+    hang into a failure; it never decides the outcome."""
+    give_up = time.monotonic() + limit
+    while time.monotonic() < give_up:
+        row = admin_conn.execute(sql, args).fetchone()
+        if row and row["ok"]:
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"condition never held: {sql}")
+
+
+def test_running_heartbeat_does_not_revive_an_expired_lease_for_the_final_write(db, world, sys_ctx, admin_conn):
+    """End to end, with the worker's own heartbeat thread: the lease expires while the step deadline is still ahead
+    and nobody has reclaimed the job. The handler then waits until the heartbeat has acted, either by renewing the lease
+    (revival) or by reporting the loss, and returns. A revived lease would pass the final write's check."""
+    cfg = WorkerConfig(lease_seconds=0.6, step_timeout_seconds=60, per_tenant_running_limit=10)   # beat every 0.2 s
+    j = put(db, sys_ctx, kind="test.scripted")
+    seen = {}
+
+    def expire_then_wait_for_the_heartbeat(jc):
+        admin_conn.execute("UPDATE axiom.jobs SET lease_expires_at = clock_timestamp() - interval '1 second', "
+                           "record_version = record_version + 1 WHERE id = %s", (j["id"],))
+        wait_until(admin_conn,
+                   """SELECT j.lease_expires_at > clock_timestamp()
+                             OR EXISTS (SELECT 1 FROM axiom.job_events e WHERE e.job_id = j.id
+                                        AND e.event = 'heartbeat_lease_lost') AS ok
+                        FROM axiom.jobs j WHERE j.id = %s""", (j["id"],))
+        seen["revived"] = admin_conn.execute("SELECT lease_expires_at > clock_timestamp() AS r FROM axiom.jobs "
+                                             "WHERE id = %s", (j["id"],)).fetchone()["r"]
+        return Done({"by": "worker whose lease had expired"})
+    w = Worker(db, [ScriptedHandler([expire_then_wait_for_the_heartbeat])], worker_id="late", config=cfg)
+    [(claimed, token)] = w.claim(sys_ctx)
+    w.execute(sys_ctx, claimed, token)
+
+    assert seen["revived"] is False, "the heartbeat renewed a lease that had already expired"
+    row = job(db, sys_ctx, j["id"])
+    assert row["state"] == "running" and row["result"] is None, "the revived worker's outcome was written"
+    ev = events(db, sys_ctx, j["id"])
+    assert "heartbeat_lease_lost" in ev and ev[-1] == "stale_result_discarded"
+    [(again, token2)] = Worker(db, [ScriptedHandler([])], worker_id="second", config=cfg).claim(sys_ctx)
+    assert token2 == token + 1
+
+
+@pytest.mark.parametrize("op", ["finish", "renew"])
+@pytest.mark.parametrize("blocker_updates", [False, True], ids=["blocker-only-locks", "blocker-updates-row"])
+def test_lease_that_expires_while_waiting_for_the_row_lock_is_not_accepted(
+        db, world, sys_ctx, admin_conn, dbinfo, blocker_updates, op):
+    """PostgreSQL (READ COMMITTED) evaluates a locking query's WHERE clause before it waits for a row lock. If the
+    transaction it waited for changed the row, the clause is evaluated again on the new row version; if that
+    transaction only locked the row, the earlier evaluation stands. So the lease is tested after the lock is held
+    (lock_held_lease). Here the lease is valid when the final write, or a heartbeat, starts waiting; it expires during
+    the wait; then the blocking transaction ends."""
+    cfg = WorkerConfig(lease_seconds=60, step_timeout_seconds=120, per_tenant_running_limit=10)
+    j = put(db, sys_ctx, kind="test.scripted")
+    w = Worker(db, [ScriptedHandler([])], worker_id="waiting", config=cfg)
+    [(claimed, token)] = w.claim(sys_ctx)
+    admin_conn.execute("UPDATE axiom.jobs SET lease_expires_at = clock_timestamp() + interval '2 seconds', "
+                       "record_version = record_version + 1 WHERE id = %s", (j["id"],))
+    blocker = psycopg.connect(dbinfo.admin_dsn, row_factory=dict_row)
+    try:
+        blocker.execute("SELECT id FROM axiom.jobs WHERE id = %s FOR UPDATE", (j["id"],))
+        target = (w._finish, (sys_ctx, claimed, token, Done({"by": "waited"}))) if op == "finish" else \
+            (w._renew, (sys_ctx, j["id"], token))
+        t = threading.Thread(target=target[0], args=target[1])
+        t.start()
+        wait_until(admin_conn, """SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+                                     WHERE %s = ANY(pg_blocking_pids(pid))) AS ok""", (blocker.info.backend_pid,))
+        still_valid = admin_conn.execute("SELECT lease_expires_at > clock_timestamp() AS v FROM axiom.jobs "
+                                         "WHERE id = %s", (j["id"],)).fetchone()["v"]
+        assert still_valid, "precondition: the final write must start waiting while the lease is still valid"
+        wait_until(admin_conn, "SELECT lease_expires_at <= clock_timestamp() AS ok FROM axiom.jobs WHERE id = %s",
+                   (j["id"],))
+        if blocker_updates:
+            blocker.execute("UPDATE axiom.jobs SET record_version = record_version + 1 WHERE id = %s", (j["id"],))
+        blocker.commit()
+        t.join(15)
+        assert not t.is_alive()
+    finally:
+        blocker.close()
+    row = job(db, sys_ctx, j["id"])
+    assert row["state"] == "running" and row["result"] is None, \
+        f"an outcome was accepted although the lease expired before the row lock was acquired: {row['state']}"
+    assert row["lease_expires_at"] <= datetime.now(timezone.utc), "the heartbeat renewed an expired lease"
+    assert events(db, sys_ctx, j["id"])[-1] == ("stale_result_discarded" if op == "finish" else "heartbeat_lease_lost")
+
+
+def lease_row(admin_conn, job_id):
+    return admin_conn.execute("SELECT lease_token, lease_owner, lease_expires_at, step_deadline_at, state, "
+                              "clock_timestamp() AS now FROM axiom.jobs WHERE id = %s", (job_id,)).fetchone()
+
+
+def last_event(db, ctx, job_id):
+    with db.tenant_tx(ctx) as conn:
+        return conn.execute("SELECT event, lease_token, detail FROM axiom.job_events WHERE job_id = %s "
+                            "ORDER BY created_at DESC, id DESC LIMIT 1", (job_id,)).fetchone()
+
+
+HB = WorkerConfig(lease_seconds=30, step_timeout_seconds=120, per_tenant_running_limit=10)
+
+
+def test_heartbeat_renews_a_lease_that_is_still_held_and_never_past_the_step_deadline(db, world, sys_ctx, admin_conn):
+    j = put(db, sys_ctx, kind="test.scripted")
+    w = Worker(db, [ScriptedHandler([])], worker_id="holder", config=HB)
+    [(_, token)] = w.claim(sys_ctx)
+    admin_conn.execute("UPDATE axiom.jobs SET lease_expires_at = clock_timestamp() + interval '5 seconds', "
+                       "record_version = record_version + 1 WHERE id = %s", (j["id"],))
+    before = lease_row(admin_conn, j["id"])
+    assert w._renew(sys_ctx, j["id"], token) is True
+    after = lease_row(admin_conn, j["id"])
+    assert after["lease_expires_at"] > before["lease_expires_at"] + timedelta(seconds=20)
+    assert after["lease_token"] == token and after["lease_owner"] == "holder"
+    # the step deadline still caps the lease
+    admin_conn.execute("UPDATE axiom.jobs SET step_deadline_at = clock_timestamp() + interval '3 seconds', "
+                       "record_version = record_version + 1 WHERE id = %s", (j["id"],))
+    assert w._renew(sys_ctx, j["id"], token) is True
+    capped = lease_row(admin_conn, j["id"])
+    assert capped["lease_expires_at"] == capped["step_deadline_at"]
+    assert "heartbeat_lease_lost" not in events(db, sys_ctx, j["id"])
+
+
+def test_heartbeat_after_expiry_without_reclaim_reports_the_loss_and_does_not_renew(db, world, sys_ctx, admin_conn):
+    j = put(db, sys_ctx, kind="test.scripted")
+    w = Worker(db, [ScriptedHandler([])], worker_id="late", config=HB)
+    [(_, token)] = w.claim(sys_ctx)
+    admin_conn.execute("UPDATE axiom.jobs SET lease_expires_at = clock_timestamp() - interval '1 second', "
+                       "record_version = record_version + 1 WHERE id = %s", (j["id"],))   # deadline still ahead
+    expired_at = lease_row(admin_conn, j["id"])["lease_expires_at"]
+    assert w._renew(sys_ctx, j["id"], token) is False
+    row = lease_row(admin_conn, j["id"])
+    assert row["lease_expires_at"] == expired_at and row["step_deadline_at"] > row["now"]
+    ev = last_event(db, sys_ctx, j["id"])
+    assert (ev["event"], ev["lease_token"], ev["detail"]) == ("heartbeat_lease_lost", token, {"reason": "lease expired"})
+    assert w.counters["heartbeat_lease_lost"] == 1
+    [(_, token2)] = Worker(db, [ScriptedHandler([])], worker_id="second", config=HB).claim(sys_ctx)
+    assert token2 == token + 1
+
+
+def test_heartbeat_after_another_worker_reclaimed_the_job_leaves_the_new_lease_alone(db, world, sys_ctx, admin_conn):
+    j = put(db, sys_ctx, kind="test.scripted")
+    first = Worker(db, [ScriptedHandler([])], worker_id="first", config=HB)
+    [(_, token)] = first.claim(sys_ctx)
+    admin_conn.execute("UPDATE axiom.jobs SET lease_expires_at = clock_timestamp() - interval '1 second', "
+                       "record_version = record_version + 1 WHERE id = %s", (j["id"],))
+    [(_, token2)] = Worker(db, [ScriptedHandler([])], worker_id="second", config=HB).claim(sys_ctx)
+    reclaimed = lease_row(admin_conn, j["id"])
+    assert first._renew(sys_ctx, j["id"], token) is False
+    assert lease_row(admin_conn, j["id"])["lease_expires_at"] == reclaimed["lease_expires_at"]
+    assert (reclaimed["lease_token"], reclaimed["lease_owner"]) == (token2, "second")
+    ev = last_event(db, sys_ctx, j["id"])
+    assert (ev["event"], ev["detail"]) == ("heartbeat_lease_lost", {"reason": "reclaimed by a later claim"})
+
+
+def test_attempted_heartbeat_revival_then_final_write_is_discarded(db, world, sys_ctx, admin_conn):
+    j = put(db, sys_ctx, kind="test.scripted")
+    w = Worker(db, [ScriptedHandler([])], worker_id="late", config=HB)
+    [(claimed, token)] = w.claim(sys_ctx)
+    admin_conn.execute("UPDATE axiom.jobs SET lease_expires_at = clock_timestamp() - interval '1 second', "
+                       "record_version = record_version + 1 WHERE id = %s", (j["id"],))
+    assert w._renew(sys_ctx, j["id"], token) is False, "the heartbeat revived an expired lease"
+    w._finish(sys_ctx, claimed, token, Done({"by": "late worker"}))
+    row = job(db, sys_ctx, j["id"])
+    assert row["state"] == "running" and row["result"] is None, "the late worker's outcome was written"
+    assert events(db, sys_ctx, j["id"])[-2:] == ["heartbeat_lease_lost", "stale_result_discarded"]
+
+
+def test_lease_expiry_is_enforced_by_the_worker_not_by_the_database(db, world, sys_ctx, admin_conn):
+    """Documents the boundary (ADR 0006 amendment 1). The runtime credential, shared by the API and every worker, may
+    update the lease columns, so a database rule on expiry could not stop its holder: it could move the expiry first.
+    Leases coordinate workers that share that trusted credential against crashes, hangs and pauses; expiry is checked
+    by the worker (lock_held_lease). What the database does enforce stays enforced: the token cannot go back, and a
+    finished job cannot change."""
+    j = put(db, sys_ctx, kind="test.scripted")
+    [(_, token)] = Worker(db, [ScriptedHandler([])], config=HB).claim(sys_ctx)
+    admin_conn.execute("UPDATE axiom.jobs SET lease_expires_at = clock_timestamp() - interval '1 second', "
+                       "record_version = record_version + 1 WHERE id = %s", (j["id"],))
+    with db.tenant_tx(sys_ctx) as conn:      # the runtime credential, writing directly, not through the worker
+        n = conn.execute("UPDATE axiom.jobs SET state = 'succeeded', finished_at = clock_timestamp(), "
+                         "record_version = record_version + 1 WHERE id = %s AND lease_token = %s",
+                         (j["id"], token)).rowcount
+    assert n == 1 and job(db, sys_ctx, j["id"])["state"] == "succeeded"
+    with pytest.raises(psycopg.errors.CheckViolation, match="finished job is immutable"):
+        with db.tenant_tx(sys_ctx) as conn:
+            conn.execute("UPDATE axiom.jobs SET state = 'queued', record_version = record_version + 1 "
+                         "WHERE id = %s", (j["id"],))
+
+
 def test_stale_token_cannot_write_even_bypassing_python(db, world, sys_ctx):
     j = put(db, sys_ctx, kind="test.scripted")
     w = Worker(db, [ScriptedHandler([])], config=FAST)

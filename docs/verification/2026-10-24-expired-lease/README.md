@@ -1,10 +1,13 @@
-# Outcome returned after the lease expired (verification run 31)
+# An expired lease is lost at every write (verification run 31)
 
-Both files are `pytest -rA` summaries of the same selection, run against the PostgreSQL test database
-(`scripts/dev/test-db.sh`):
+`pytest -rA` summaries against the PostgreSQL test database (`scripts/dev/test-db.sh`).
 
-    pytest tests/integration/test_jobs.py -k "after_the_lease_expired or still_valid"
+| File | Code under test | Result |
+|---|---|---|
+| `before-fix.txt` | `main` at `5be8aee`: the final write did not test expiry | the 10 expired-outcome cases failed ("the expired worker's outcome was written"); the valid-lease control passed |
+| `fix-removed.txt`, `fix-removed-reasons.txt` | this change with the previous authorization semantics put back (heartbeat without the expiry test; expiry tested inside the locking query, before any lock wait) | 6 of the 20 lease tests failed, each for its intended reason; the 14 others cover cases the previous code already handled |
+| `after-fix.txt` | this change | all 21 lease tests passed, including the database-boundary test |
 
-* `before-fix.txt`: the new tests on `main` at `5be8aee` with `backend/axiom/jobs/worker.py` unchanged. Every expired
-  case failed on its first assertion, "the expired worker's outcome was written"; the valid-lease control passed.
-* `after-fix.txt`: the same tests with the fix: all passed.
+Heartbeat revival on the first head of this change (`0b86a5c`, where only the final write had been fixed), observed
+with `test_running_heartbeat_does_not_revive_an_expired_lease_for_the_final_write`: the worker's heartbeat thread renewed
+the expired lease, and the final write then recorded the job as `succeeded` with the late worker's result.

@@ -113,15 +113,39 @@ Production Temporal cluster and its persistence; Temporal authoriser/mTLS config
 replication and failover; point-in-time recovery; network partitions; cancellation after an external call started;
 multi-step workflows.
 
-## Amendment 1 (2026-10-24): an expired lease is lost at the final write too
+## Amendment 1 (2026-10-24): an expired lease is lost, everywhere
 
-A lease is held only while its token matches, the job is `running` and `lease_expires_at` is in the future by the
-database clock. `JobContext.fenced` and `claim` already applied that rule, but the worker's final write (`_finish`)
-checked only the token and the state. A handler that returned after its lease expired, before another worker
-reclaimed the job, therefore had its outcome written: success, failure, retry scheduling, a wait, operator parking or
-cancellation. The final write now applies the same rule, using `clock_timestamp()`; such an outcome is discarded
-(`stale_result_discarded`) and the job stays reclaimable. The check holds the row lock until commit and a reclaim needs
-that lock, so expiry between the check and the commit cannot let another worker in. The `jobs_guard` trigger still
-does not test expiry, and the heartbeat still extends a lease that has expired but not been reclaimed, as long as the
-step deadline has not passed; neither is changed here. Discarding the outcome does not undo writes a handler committed
-in its own fenced transactions before expiry, or effects outside the database. Verification run 31.
+**Contract.** A lease is held only while its token matches, the job is `running` and `lease_expires_at` is in the future
+by the database clock. An expired lease is lost: only a new claim, with a new token, can take the job again. Nothing
+documented allows a heartbeat or a final write to revive it.
+
+**What was wrong.** Two places did not apply the expiry part. The worker's final write (`_finish`) checked only the
+token and the state, so an outcome returned after the lease expired, before another worker reclaimed the job, was
+written: success, failure, retry, wait, operator parking or cancellation. The heartbeat checked the token, the state and
+the step deadline, so it renewed a lease that had already expired. A worker whose lease had expired could therefore
+regain it and then pass the final write. Separately, an expiry test placed inside a locking query is evaluated before
+that query waits for the row lock. In PostgreSQL (READ COMMITTED), if the transaction it waited for only locked the row,
+that earlier evaluation stands, so a lease that expired during the wait was still accepted. If that transaction changed
+the row, the condition is evaluated again on the new row version.
+
+**Decision.** Every write a lease holder makes is authorized by one check, `core.lock_held_lease`: lock the job row by
+token and `running` state, then, with the lock held, test `lease_expires_at > clock_timestamp()`. `JobContext.fenced`
+(handler writes), the heartbeat and the final write all use it. The heartbeat renews only a lease that passes that check,
+still never past the step deadline. When it finds the lease lost, it records `heartbeat_lease_lost` with the reason and
+stops; it does not revive the lease.
+
+**Guarantee, stated precisely.** The lease was valid at the locked check. It is not promised to be valid at commit: it
+may expire after the check. Until this transaction commits it holds the row lock, and a reclaim needs that lock (`claim`
+uses `FOR UPDATE SKIP LOCKED`), so no other worker can take the job during the transaction. That rules out a competing
+reclaim; it does not make a slow transaction harmless in other ways.
+
+**Outcome versus effects.** A discarded outcome leaves the job `running` for another worker to reclaim. It does not undo
+writes the handler committed in its own fenced transactions before the lease was lost, or effects outside the database;
+the reclaiming worker runs the step again, and effects rely on the idempotency and reconciliation rules above.
+
+**Database enforcement.** Lease expiry is enforced by the worker, not by the `jobs_guard` trigger. The runtime
+credential (`axiom_app`) is shared by the API and every worker and may update the lease columns, so a database rule on
+expiry could not stop its holder, who could move the expiry first. That holder is trusted and can already act as any
+principal (ADR 0012 amendment 4). Leases coordinate cooperating workers against crashes, hangs and pauses, not against the
+credential holder. The trigger keeps enforcing the structural rules: the token and counters never decrease, a finished
+job cannot change, and job events are append-only. Verification run 31.

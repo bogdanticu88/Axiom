@@ -4,12 +4,17 @@
   jobs with FOR UPDATE SKIP LOCKED, honouring a per-tenant cap on concurrently running jobs.
 * Every claim increments ``claims`` and the fencing ``lease_token``. A job claimed more than ``max_claims``
   times is dead-lettered as poison, even if every previous claim crashed before reaching the handler.
-* A heartbeat thread extends the lease only until the step deadline. A step that hangs past its deadline loses
-  the lease; another worker may then take the job, and anything the hung worker writes later is fenced out.
-* Results are written only while the lease is held: token, ``running`` state and an unexpired ``lease_expires_at``
-  by the database clock, the same test as ``JobContext.fenced``. A lost or expired lease discards the result and
-  leaves the job for another worker to reclaim. Discarding the job's outcome does not undo writes a handler already
-  committed in its own fenced transactions, or effects outside the database.
+* A lease is held only while its token matches, the job is ``running`` and ``lease_expires_at`` is in the future by
+  the database clock; an expired lease is lost and can only be taken again by a new claim, with a new token. Every
+  write a lease holder makes (handler writes through ``JobContext.fenced``, the heartbeat, the final write) is
+  authorized by ``core.lock_held_lease``, which tests expiry while holding the job's row lock.
+* A heartbeat thread renews a lease that is still held, and only until the step deadline. It never revives an
+  expired lease: a heartbeat that finds the lease lost records ``heartbeat_lease_lost`` and stops. A step that hangs
+  past its deadline loses the lease; another worker may then take the job, and anything the hung worker writes later
+  is fenced out.
+* A lost or expired lease discards the step's outcome and leaves the job for another worker to reclaim. Discarding
+  the job's outcome does not undo writes a handler already committed in its own fenced transactions, or effects
+  outside the database.
 * Handlers declare the versions they run; jobs pinned to other versions are left for other workers.
 """
 from __future__ import annotations
@@ -25,7 +30,8 @@ from psycopg.types.json import Jsonb
 
 from ..db import Database, TenantContext
 from .witness import check as witness_check
-from .core import Done, Fail, Handler, JobContext, NeedsOperator, Retry, StaleLease, Wait, enqueue, event
+from .core import (Done, Fail, Handler, JobContext, NeedsOperator, Retry, StaleLease, Wait, enqueue, event,
+                   lock_held_lease)
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +67,7 @@ class Worker:
         self.db = db
         self.witness = witness
         self.counters: dict[str, int] = {"claimed": 0, "executed": 0, "stale_results_discarded": 0,
-                                         "dead_lettered_poison": 0, "handler_errors": 0}
+                                         "dead_lettered_poison": 0, "handler_errors": 0, "heartbeat_lease_lost": 0}
         self.schedules = list(schedules or [])
         self.handlers = {h.kind: h for h in handlers}
         self.worker_id = worker_id or f"worker-{uuid.uuid4().hex[:8]}"
@@ -173,20 +179,41 @@ class Worker:
         return claimed
 
     # ------------------------------------------------------------------------ execute
+    def _renew(self, ctx: TenantContext, job_id, token: int) -> bool:
+        """One heartbeat. Renews the lease only if this token still holds it (``lock_held_lease``: matching token,
+        running, unexpired, checked with the row lock held) and the step deadline has not passed; the renewed lease
+        never extends past the step deadline. Otherwise records why the lease is lost and returns False."""
+        with self.db.tenant_tx(ctx) as conn:
+            held = lock_held_lease(conn, job_id, token)
+            if held is not None:
+                row = conn.execute(
+                    """UPDATE axiom.jobs SET lease_expires_at = LEAST(clock_timestamp() + make_interval(secs => %s),
+                                                                     step_deadline_at),
+                              updated_at = clock_timestamp(), record_version = record_version + 1
+                        WHERE id = %s AND step_deadline_at > clock_timestamp()
+                    RETURNING id""", (self.config.lease_seconds, job_id)).fetchone()
+                if row is not None:
+                    return True
+            now = conn.execute(
+                """SELECT lease_token, state, lease_expires_at > clock_timestamp() AS unexpired,
+                          step_deadline_at > clock_timestamp() AS before_deadline
+                     FROM axiom.jobs WHERE id = %s""", (job_id,)).fetchone()
+            reason = ("reclaimed by a later claim" if now["lease_token"] != token
+                      else f"job is {now['state']}" if now["state"] != "running"
+                      else "lease expired" if not now["unexpired"]
+                      else "step deadline passed")
+            self.counters["heartbeat_lease_lost"] += 1
+            event(conn, ctx, job_id, "heartbeat_lease_lost", lease_token=token, worker=self.worker_id,
+                  detail={"reason": reason})
+        log.warning("heartbeat found the lease lost; not renewed", extra={"job_id": str(job_id), "reason": reason})
+        return False
+
     def _heartbeat(self, ctx: TenantContext, job_id, token: int, stop: threading.Event) -> None:
         interval = max(0.2, self.config.lease_seconds / 3)
         while not stop.wait(interval):
             try:
-                with self.db.tenant_tx(ctx) as conn:
-                    row = conn.execute(
-                        """UPDATE axiom.jobs SET lease_expires_at = LEAST(clock_timestamp() + make_interval(secs => %s),
-                                                                         step_deadline_at),
-                                  updated_at = clock_timestamp(), record_version = record_version + 1
-                            WHERE id = %s AND lease_token = %s AND state = 'running'
-                              AND step_deadline_at > clock_timestamp()
-                        RETURNING id""", (self.config.lease_seconds, job_id, token)).fetchone()
-                if row is None:
-                    return   # deadline passed or lease lost: stop extending
+                if not self._renew(ctx, job_id, token):
+                    return   # lease lost or step deadline passed: reported, never revived
             except Exception:  # noqa: BLE001 - the lease simply expires
                 log.exception("heartbeat failed")
                 return
@@ -228,16 +255,10 @@ class Worker:
     def _finish(self, ctx: TenantContext, job: dict, token: int, outcome) -> None:
         cfg = self.config
         with self.db.tenant_tx(ctx) as conn:
-            # The final write boundary: the same test as JobContext.fenced. The lease counts as held only while its
-            # token matches, the job is running and lease_expires_at is still in the future by the database clock
-            # (clock_timestamp(), the time of this statement, not of the transaction start). The row lock taken here
-            # is held until this transaction commits, and a reclaim needs the same lock (claim uses FOR UPDATE SKIP
-            # LOCKED), so a lease that expires between this check and the commit cannot be taken by another worker
-            # in between: the outcome is written as if it had finished at the moment of the check.
-            current = conn.execute(
-                """SELECT * FROM axiom.jobs WHERE id = %s AND lease_token = %s AND state = 'running'
-                     AND lease_expires_at > clock_timestamp() FOR UPDATE""",
-                (job["id"], token)).fetchone()
+            # The final write's authorization: the lease must be valid at the locked check in lock_held_lease (see
+            # its docstring). It may expire after that check and before the commit; no other worker can reclaim the job
+            # meanwhile, because this transaction holds the row lock a reclaim needs.
+            current = lock_held_lease(conn, job["id"], token)
             if current is None:
                 self.counters["stale_results_discarded"] += 1
                 event(conn, ctx, job["id"], "stale_result_discarded", lease_token=token, worker=self.worker_id,
