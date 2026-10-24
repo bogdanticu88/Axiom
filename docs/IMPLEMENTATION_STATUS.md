@@ -1,12 +1,11 @@
 # Implementation status
 
-This is the single entry point for the current state. Two revisions matter and are kept apart here:
-
-* **Last revision with passing hosted CI:** `a05c01f7cf81b1bfd162c302cbe1177254bd11f6` on `main` (the merge of pull
-  request 1, GitHub Actions run 39950928655). "Current status" below describes this code.
-* **Current `main`:** `305b0fc` (the merge of pull request 2, documentation and screenshots only). Its hosted run,
-  39975479973, failed in the Compose smoke stage because the image registry refused a pull, so `main` has not shown a
-  passing hosted run since `a05c01f`.
+This is the single entry point for the current state. "Current status" below describes the last revision of `main`
+with passing hosted CI: `3d4d997` (the merge of pull request 5, GitHub Actions run 40054331646 on its tested head and
+run 40055087635 on `main`, 2026-10-24). A later commit on `main` is not covered by that result until its own hosted
+run passes; check the Actions page for the commit you are reading. History of earlier `main` results: `a05c01f`
+passed (run 39950928655); `305b0fc` failed in the Compose smoke stage because the image registry refused a pull (run
+39975479973).
 
 The sections after "Current status" are the
 detailed status by area from the review of 2026-10-22, kept as written except where marked; where they disagree with
@@ -15,8 +14,8 @@ detailed status by area from the review of 2026-10-22, kept as written except wh
 ## Current status
 
 ### Implemented and tested
-Exercised by tests that were run. The latest full run on `main` is GitHub Actions run 39950928655 at `a05c01f`:
-every stage passed, 692 tests passed and 3 were skipped (the physical restore drill, which runs as its own stage and
+Exercised by tests that were run. The latest full run on `main` is GitHub Actions run 40055087635 at `3d4d997`:
+every stage passed, 699 tests passed and 3 were skipped (the physical restore drill, which runs as its own stage and
 passed; the opt-in real-provider test, never run; the opt-in demonstration). These counts describe that run only.
 
 * Tenant isolation: application authorisation, composite tenant-aware foreign keys, forced row-level security,

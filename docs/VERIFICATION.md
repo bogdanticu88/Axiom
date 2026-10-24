@@ -1031,3 +1031,10 @@ Checked locally: with the registry unreachable, the build used a present pinned 
 registry; the pull-failure path stopped the test with exit 1 and the registry error; a normal run with a rebuild
 passed. These were cached runs, not cold installs. The Dockerfile syntax image is still resolved by tag from Docker Hub
 on every build.
+
+Hosted CI (run 29's change merged with runs 27 and 28 in pull request 5): on the tested head `a35aab3`, run
+40054331646 passed every stage (699 passed, 3 skipped). On that fresh runner the smoke test pulled the Python, Node and
+PostgreSQL images once each, in sequence; Keycloak and SeaweedFS were already present, pulled earlier in the same run
+by the foundation stage, and nothing was cached between runs. Merged as `3d4d997`, whose tree is identical to
+`a35aab3`; the push run on `main`, 40055087635, passed every stage (699 passed, 3 skipped). Pull requests 3 and 4 were
+closed as superseded. Runs 39884012334, 39946416834 and 39955949204 remain unexplained.
