@@ -596,3 +596,201 @@ def test_generic_action_permissions_no_longer_grant_anything(env, admin_conn):
     rows = admin_conn.execute("SELECT role_id, permission FROM axiom.role_permissions WHERE permission IN "
                               "('action.propose', 'action.approve', 'action.execute')").fetchall()
     assert rows == []
+
+
+# ------------------------------------------------- stale worker after the effect gate (execution transitions)
+# The effect gate records what it observed about the provider (effect intents) even after the lease is lost; that
+# is by design. These tests are about the next step: the handler's transition of the *execution record*
+# (succeeded / reconciling / failed / cancelled, and the approval use it consumes or returns). Coordination is by
+# events inside the gate and the adapter, and by moving lease timestamps with the database clock; no sleeps.
+LONG = WorkerConfig(lease_seconds=60, step_timeout_seconds=120, per_tenant_running_limit=20, max_backoff_seconds=0.01)
+_GATE_HOOKS: dict = {}
+
+
+class _HookedGate(EffectGate):
+    """The real effect gate; after it returns, a test hook keyed by thread name may run (pause, expire a lease)."""
+    def run(self, *args, **kwargs):
+        outcome = super().run(*args, **kwargs)
+        hook = _GATE_HOOKS.get(threading.current_thread().name)
+        if hook:
+            hook(self.jc, outcome)
+        return outcome
+
+
+@pytest.fixture()
+def hooked_gate(monkeypatch):
+    import axiom.domains.actions.jobs as handler_module
+    monkeypatch.setattr(handler_module, "EffectGate", _HookedGate)
+    _GATE_HOOKS.clear()
+    yield _GATE_HOOKS
+    _GATE_HOOKS.clear()
+
+
+def _expire_lease(admin_conn, job_id):
+    admin_conn.execute("""UPDATE axiom.jobs SET lease_expires_at = clock_timestamp() - interval '1 second',
+                                 record_version = record_version + 1 WHERE id = %s""", (job_id,))
+
+
+def _restore_membership(admin_conn, principal_id):
+    admin_conn.execute("UPDATE axiom.memberships SET status = 'active', record_version = record_version + 1 "
+                       "WHERE principal_id = %s AND status = 'suspended'", (principal_id,))
+
+
+def _reservation(admin_conn, execution_id):
+    return admin_conn.execute("SELECT status FROM axiom.approval_reservations WHERE execution_id = %s",
+                              (execution_id,)).fetchone()["status"]
+
+
+def test_stale_denial_cannot_fail_the_execution_and_return_the_use_while_the_current_worker_creates(
+        env, admin_conn, world, hooked_gate):
+    """Worker A's gate denies (the approver's membership is suspended) and sends nothing. Before A writes the
+    execution record its lease expires, the membership is restored, and worker B reclaims the job and reaches its
+    lookup. A then marks the execution failed and, as no attempt existed yet, returns the approval use. B resumes
+    and creates the ticket. The single-use approval must not be usable again, and the record must show the effect."""
+    p = env.propose()
+    a = env.approve(p, max_uses=1)
+    e = env.execute(p, a)
+    env.run(env.ctx_for("admin"), lambda s: s.tenancy.suspend_membership(principal_id=world["approver"],
+                                                                           reason="temporarily suspended"))
+    a_gate_done, proceed_a = threading.Event(), threading.Event()
+    b_at_lookup, proceed_b = threading.Event(), threading.Event()
+    hooked_gate["A"] = lambda jc, outcome: (a_gate_done.set(), proceed_a.wait(15))
+
+    def b_adapter(*args):
+        adapter = env.adapter()
+        real_find = adapter.find
+
+        def find(key):
+            b_at_lookup.set()
+            proceed_b.wait(15)
+            return real_find(key)
+        adapter.find = find
+        return adapter
+    sys_ctx = env.ctx_for("system")
+    worker_a = env.worker("A", LONG)
+    [(job, token)] = worker_a.claim(sys_ctx)
+    ta = threading.Thread(target=worker_a.execute, args=(sys_ctx, job, token), name="A")
+    ta.start()
+    assert a_gate_done.wait(15)                                   # A's gate returned its denial; nothing was sent
+    _expire_lease(admin_conn, job["id"])
+    _restore_membership(admin_conn, world["approver"])
+    worker_b = Worker(env.db, [ActionExecuteHandler(b_adapter)], worker_id="B", config=LONG)
+    tb = threading.Thread(target=worker_b.run_once, kwargs={"only_tenants": {env.world.a.id}}, name="B")
+    tb.start()
+    assert b_at_lookup.wait(15)                                   # B holds the lease and has passed its checks
+    proceed_a.set()
+    ta.join(15)
+    proceed_b.set()
+    tb.join(15)
+    assert not ta.is_alive() and not tb.is_alive()
+    got = env.execution(e["id"])
+    facts = {"tickets": len(env.fake.issues), "execution": got["state"],
+             "external_ref_recorded": got["external_ref"] is not None, "reservation": _reservation(admin_conn, e["id"])}
+    try:                                                          # can the same single-use approval run again?
+        e2 = env.execute(p, a)
+        env.drive(admin_conn, e2["job_id"])
+        facts["second_execution"] = "allowed"
+    except Conflict:
+        facts["second_execution"] = "refused"
+    facts["tickets_after_second_attempt"] = len(env.fake.issues)
+    assert facts == {"tickets": 1, "execution": "succeeded", "external_ref_recorded": True,
+                     "reservation": "consumed", "second_execution": "refused", "tickets_after_second_attempt": 1}, \
+        f"a stale worker's execution transition was applied: {facts}"
+
+
+@pytest.mark.parametrize("outcome", ["succeeded", "verify_mismatch", "denied", "parked"])
+def test_execution_transition_after_the_lease_is_lost_is_discarded_and_the_observation_kept(
+        env, admin_conn, world, hooked_gate, outcome):
+    """The lease is lost right after the gate returns, before the handler writes the execution record. A worker
+    without the lease must not change that record (state, detail, external reference, approval use). What it
+    observed stays on record (effect intent and job events), and the current lease holder reconciles from it."""
+    p = env.propose()
+    e = env.execute(p, env.approve(p))
+    sys_ctx = env.ctx_for("system")
+    factory = env.adapter
+    if outcome == "verify_mismatch":
+        def factory(*args):
+            adapter = env.adapter()
+            adapter.verify = lambda ref, key: False
+            return adapter
+    elif outcome == "denied":
+        env.run(env.ctx_for("admin"), lambda s: s.tenancy.suspend_membership(principal_id=world["approver"],
+                                                                               reason="suspended"))
+    elif outcome == "parked":       # a first attempt whose acknowledgement was lost; the lookup cannot see it yet
+        env.fake, env.fake.lose_ack = JiraStyleFake(search_lag=3600), 1
+        env.worker("W0", LONG).run_once(only_tenants={env.world.a.id})
+        admin_conn.execute("UPDATE axiom.jobs SET due_at = clock_timestamp(), record_version = record_version + 1 "
+                           "WHERE id = %s", (e["job_id"],))
+    before = {}
+
+    def lose_lease(jc, gate_outcome):
+        row = env.execution(e["id"])
+        before.update(state=row["state"], detail=row["outcome_detail"], ref=row["external_ref"],
+                      reservation=_reservation(admin_conn, e["id"]), gate=type(gate_outcome.step).__name__)
+        _expire_lease(admin_conn, jc.job["id"])
+    hooked_gate["A"] = lose_lease
+    worker_a = Worker(env.db, [ActionExecuteHandler(factory)], worker_id="A", config=LONG)
+    [(job, token)] = worker_a.claim(sys_ctx)
+    ta = threading.Thread(target=worker_a.execute, args=(sys_ctx, job, token), name="A")
+    ta.start()
+    ta.join(30)
+    assert before, "the gate hook did not run"
+    row = env.execution(e["id"])
+    after = {"state": row["state"], "detail": row["outcome_detail"], "ref": row["external_ref"],
+             "reservation": _reservation(admin_conn, e["id"]), "gate": before["gate"]}
+    assert after == before, f"a worker without the lease changed the execution record: {before} -> {after}"
+    ev = admin_conn.execute("SELECT event, detail FROM axiom.job_events WHERE job_id = %s ORDER BY created_at, id",
+                            (job["id"],)).fetchall()
+    discarded = [r["detail"] for r in ev if r["event"] == "execution_transition_discarded"]
+    assert len(discarded) == 1 and discarded[0]["lease_token"] == token
+    if outcome == "succeeded":       # the observation is kept, and the current worker reconciles from it
+        intent = admin_conn.execute("SELECT state, external_ref FROM axiom.effect_intents WHERE operation_key = %s",
+                                    (e["external_operation_id"],)).fetchone()
+        assert intent["state"] == "succeeded" and discarded[0]["external_ref"] == intent["external_ref"]
+        env.drive(admin_conn, e["job_id"], worker=env.worker("B", LONG))
+        final = env.execution(e["id"])
+        assert (final["state"], final["external_ref"]) == ("succeeded", intent["external_ref"])
+        assert env.fake.create_requests == 1, "the effect was repeated instead of reconciled from the record"
+
+
+@pytest.mark.parametrize("resolution", ["adopt", "not_applied", "adopt_wrong_ref"])
+def test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence(env, admin_conn, resolution):
+    """Worker A's request is in flight when its lease is lost; B takes over and parks (the provider cannot
+    deduplicate and the lookup is behind). A's request lands: the gate records the success as an observation, but
+    A may no longer transition the execution, which stays reconciling. The operator then reconciles. Nothing is
+    created a second time, and an adopted reference must agree with the recorded one."""
+    env.fake = JiraStyleFake(search_lag=3600)
+    env.fake.hold_armed = True
+    p = env.propose()
+    e = env.execute(p, env.approve(p))
+    sys_ctx = env.ctx_for("system")
+    worker_a = env.worker("A", LONG)
+    [(job, token)] = worker_a.claim(sys_ctx)
+    ta = threading.Thread(target=worker_a.execute, args=(sys_ctx, job, token), name="A")
+    ta.start()
+    assert env.fake.at_boundary.wait(10)                          # A's create request is held inside the provider
+    _expire_lease(admin_conn, job["id"])
+    env.worker("B", LONG).run_once(only_tenants={env.world.a.id})
+    assert env.job(job["id"])["state"] == "needs_operator"
+    env.fake.release.set()
+    ta.join(30)
+    [ref] = env.fake.keys()
+    intent = admin_conn.execute("SELECT state, external_ref FROM axiom.effect_intents WHERE operation_key = %s",
+                                (e["external_operation_id"],)).fetchone()
+    assert (intent["state"], intent["external_ref"]) == ("succeeded", ref)      # the observation is on record
+    state = env.execution(e["id"])["state"]
+    assert state == "reconciling", f"worker A transitioned the execution to {state} without the lease"
+    if resolution == "adopt_wrong_ref":
+        with pytest.raises(Conflict) as err:
+            env.svc("admin", lambda s: s.reconcile(e["id"], resolution="adopt", rationale="checked the tracker",
+                                                   external_ref="SEC-999"))
+        assert err.value.code == "effect_evidence_conflict"
+        assert env.job(job["id"])["state"] == "needs_operator" and env.execution(e["id"])["state"] == "reconciling"
+        return
+    env.svc("admin", lambda s: s.reconcile(e["id"], resolution=resolution, rationale="checked the tracker",
+                                           external_ref=ref if resolution == "adopt" else None))
+    env.drive(admin_conn, e["job_id"], worker=env.worker("C", LONG))
+    got = env.execution(e["id"])
+    assert (env.job(job["id"])["state"], got["state"], got["external_ref"]) == ("succeeded", "succeeded", ref)
+    assert _reservation(admin_conn, e["id"]) == "consumed"
+    assert env.fake.create_requests == 1 and len(env.fake.issues) == 1

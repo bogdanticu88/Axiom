@@ -1091,3 +1091,34 @@ blocked backend found through `pg_blocking_pids`), not on elapsed time.
 
 Discarding a job's outcome does not undo writes the handler committed earlier in fenced transactions, or external
 effects.
+
+### Run 32: action execution transitions after the effect are lease-fenced (2026-10-24)
+
+Records: `docs/verification/2026-10-24-execution-transitions/`. PostgreSQL test database; workers coordinated through
+events inside the effect gate and the adapter's lookup, lease timestamps moved with the database clock, no sleeps.
+
+* **Confirmed on `main` (`8f8a3e6`).** `test_stale_denial_cannot_fail_the_execution_and_return_the_use_while_the_current_worker_creates`:
+  worker A's gate denied (approver suspended) and sent nothing; A's lease expired, the membership was restored, worker
+  B reclaimed the job and reached its lookup; A marked the execution `failed` and returned the approval use; B created
+  the ticket. Observed: 1 ticket, execution `failed`, no external reference, reservation `released`; a second
+  execution of the same single-use approval was allowed and created a second ticket.
+* **Confirmed on `main`, every post-effect transition.**
+  `test_execution_transition_after_the_lease_is_lost_is_discarded_and_the_observation_kept`: with the lease lost right
+  after the gate returned, a worker without the lease set the execution `succeeded` (use consumed), `reconciling`
+  (verification mismatch, and a parked gate), or `failed` (denial, use returned).
+* **Fix:** each of those transitions commits only after `JobContext.fenced` in the same transaction; otherwise the
+  observation is recorded as `execution_transition_discarded` and the step stops. Effect-gate observations unchanged.
+* **Operator adoption** (`test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence`): with only the
+  fence, adopting a discarded stale success left the execution `reconciling` with no reference while the job was
+  `succeeded` (`fence-without-reconcile-fix.txt`). With the reconcile fix, `adopt` and `not_applied` both end
+  `succeeded` with the recorded reference, the use consumed and one create request; a contradicting reference is
+  refused.
+* **Results:** on `main` all 8 new tests failed for their intended reasons (`on-main.txt`); with the fix all 8 passed;
+  the action, action API, workflow adapter and job test files passed (107 passed).
+* **Reproduced, not fixed:** a cancellation applied at claim time after the previous worker's lease expired leaves the
+  execution `prepared` and the reservation `reserved` with the job `cancelled` (`probe-cancel-after-worker-loss.py.txt`).
+
+Accepted assumptions: the runtime credential is trusted (ADR 0012 amendment 4); external effects are at most one first
+attempt per operation key, with duplicates stopped only by provider deduplication or fencing (ADR 0010). Nothing here
+makes execution exactly-once.
+

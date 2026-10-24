@@ -410,9 +410,23 @@ class ActionService:
         row = JobOperations(self.conn, self.ctx, self.authz, permission="action.reconcile",
                             scope_id=proposal["scope_id"]).resolve_effect(
             e["job_id"], resolution=resolution, rationale=rationale, external_ref=external_ref)
+        recorded = self.conn.execute(
+            """SELECT external_ref FROM axiom.effect_intents WHERE operation_key = %s
+                 AND state IN ('succeeded', 'reconciled') AND external_ref IS NOT NULL""",
+            (e["external_operation_id"],)).fetchone()
+        if resolution == "adopt" and recorded and recorded["external_ref"] != external_ref:
+            # raising rolls back the whole decision, including the job change above
+            raise Conflict(f"the recorded effect is {recorded['external_ref']}, not {external_ref}",
+                           code="effect_evidence_conflict")
         if resolution == "abandon":
             finish_execution(self.conn, self.ctx, execution_id, "failed",
                              detail={"abandoned_by_operator": True, "rationale": rationale})
+        elif resolution == "adopt" and row["state"] == "succeeded":
+            # No open effect intent was left to re-run (for example, a worker that lost its lease recorded the
+            # success but was not allowed to transition the execution): the job is finished, so the execution is too.
+            finish_execution(self.conn, self.ctx, execution_id, "succeeded", external_ref=external_ref,
+                             how="adopted_by_operator", detail={"operator_resolution": resolution,
+                                                                 "rationale": rationale})
         else:
             set_execution_state(self.conn, execution_id, "prepared" if resolution == "not_applied" else "reconciling",
                                 {"operator_resolution": resolution, "rationale": rationale})
