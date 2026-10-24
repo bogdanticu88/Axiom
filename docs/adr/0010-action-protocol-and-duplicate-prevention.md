@@ -256,9 +256,12 @@ the release, after the job, execution and intent rows are locked:
   before it was written there, and a live database's sequence never goes back (acknowledging a recovery only moves it
   forward), so a healthy database never reads lower; a concurrent dispatch elsewhere cannot cause a false alarm. A
   database rolled back past recorded effects reads lower.
-* the release commits through the same connection that read the watermark. A restore that replaces the database after
-  the check breaks that connection, so the release cannot commit into the restored database; a restore after the
-  commit loses the release and the use is reserved again, which fails safe.
+* the release commits in the same transaction, on the same server session, that read the watermark. That protects
+  the release only against restores that end every existing session before the restored data accepts writes (see
+  "Supported restore boundary" below): such a restore aborts a transaction caught between the check and the commit,
+  and a restore after the commit loses the release (the use is reserved again), which fails safe. Later transactions
+  run on whatever database is there, because the pool replaces dead connections (`check_connection`); each takes its
+  own clearance.
 * an unreadable witness, an empty witness when the database has issued watermarks, and a process without witness
   access (the API) give no clearance. The worker then holds the cancellation for an operator; the API defers it.
 
@@ -266,6 +269,37 @@ Every path that returns a use goes through this check: the cancellation settleme
 before the effect) in the handler, which passes the worker's witness. `finish_execution`'s default is no witness access,
 which never returns a use. An installation configured without a witness (refused in production) relies on the
 database's own signals, as the effect gate does.
+
+**Supported restore boundary.** No backup and restore procedure for a real installation is defined yet
+(IMPLEMENTATION_STATUS, phase F). The argument above, and the witness protocol generally, holds for the restores the
+drills perform, in which no database session survives into the restored data:
+
+* **physical rollback with the cluster stopped** (`pg_ctl stop -m fast` terminates every session; the data directory is
+  replaced; the cluster starts). `tests/drills/test_action_restore_boundary.py` runs the action path across one: an
+  application session held open across the rollback fails on its next statement, the pool reconnects to the restored
+  database, the API cancellation of an execution whose intent the rollback lost leaves the use reserved, the next
+  worker holds it ("behind the external witness"), and after the recovery is acknowledged a fresh execution of the
+  single-use approval is still refused. On the previous head of this change the API returned the use and the approval
+  then created a second ticket (verification run 35).
+* **logical restore into a recreated database** (`DROP DATABASE ... WITH (FORCE)` terminates sessions; `pg_restore`
+  into a new database, same OID or not; `test_restore_witness.py`, not run with the action path).
+
+Not covered, and not to be assumed safe:
+
+* **an in-place restore into a live database** (for example `pg_restore --clean` with the application connected), or
+  any data change under a session that stays open: the watermark read and the release write can then straddle the
+  change, and the same-transaction argument does not hold.
+* **restoring while workers run.** A worker that passed the gate's witness check before the restore and authorizes its
+  dispatch afterwards draws a watermark from the restored sequence; enough of those could lift the restored sequence to
+  the witness's mark and hide the rollback. This is a property of the witness protocol (mechanism 2), not new here;
+  stop the API and the workers before restoring, and start the workers only after `recovery-status` and
+  `acknowledge-recovery`.
+* **connection proxies** (for example PgBouncer) keep client connections across a server restart, but a transaction
+  runs on one server session, which the restart ends; the same-transaction argument is unchanged, provided the proxy
+  does not move a transaction between servers. Not tested.
+* **failover and point-in-time recovery**: sessions on the old primary end; the promoted or recovered cluster has a new
+  timeline, so the fingerprint changes and workers refuse until it is acknowledged, while the witness detects lost
+  watermarks. Neither is tested (ADR 0006).
 
 **Races.** Cancel against the gate's authorization: the gate re-reads the job row under its lock at the authorization
 (step 3) and stops if cancellation was requested; a settlement reads the intent under lock after locking the job row.
@@ -317,6 +351,11 @@ the guard ensures "the effect was never attempted"; that overstated it and is co
   `not_applied` after establishing that nothing was sent.
 * A cancellation through the API whose evidence says nothing was sent stays pending, with the use reserved, until a
   worker claims the job; with no worker running it is not settled.
+* Restores are covered only within the supported restore boundary above.
+* A denial before the effect (a failed execution, not a cancellation) whose witness clearance fails ends `failed` with
+  the use consumed and the reason in `outcome_detail`: no capacity returns, but that use cannot be recovered; a new
+  approval is needed. A held cancellation, by contrast, stays recoverable (operator `not_applied` once the witness is
+  readable, or after the recovery is acknowledged and the job reconciled).
 * The witness gives clearance only as far as its storage keeps its guarantees (durable writes, a listing that shows a
   completed write); validated for a local directory and SeaweedFS only. An installation without a witness (refused in
   production) relies on the database's own signals.

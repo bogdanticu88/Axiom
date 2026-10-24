@@ -113,6 +113,15 @@ is recorded for it. Recovery, both paths tested in `tests/integration/test_princ
 
 While the tenant stays suspended, neither path is available: the job cannot be seen or cancelled through the API.
 
+## Restoring the database
+
+No backup procedure is defined yet. If you restore the database, stop the API and the job workers first
+(`docker compose stop api job-worker`), restore with PostgreSQL stopped or into a recreated database, start
+PostgreSQL, run `python -m axiom.provisioning --dsn ... recovery-status` with the restore witness, reconcile external
+effects, run `acknowledge-recovery`, and only then start the API and workers. Restoring into a database while the
+application is connected is not supported: the restore witness and the approval accounting rely on no session
+surviving into the restored data (ADR 0010, amendment of 2026-10-25, "Supported restore boundary").
+
 ## Verify an installation
 `BUILD=1 scripts/verify/compose-smoke.sh` creates a throwaway project with new secrets and volumes, runs the API
 checks, imports a real Trivy report through the worker, then drives a real Chromium browser

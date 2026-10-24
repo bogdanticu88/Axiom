@@ -1197,3 +1197,25 @@ has), at it (healthy), or removed (unreadable).
   `test_cancel_after_an_attempt_reported_not_applied_returns_the_use` now drive a worker before expecting the use back,
   and the first also asserts the use is still reserved right after the API call.
 
+### Run 35: approval use across a physical rollback (2026-10-25)
+
+Records: `docs/verification/2026-10-25-cancellation/` (`rollback-drill-final.txt`, `rollback-drill-on-24e2dfd.txt`).
+`tests/drills/test_action_restore_boundary.py` (opt-in drill, part of the CI restore-drill stage) starts its own
+cluster and runs `tests/drills/action_restore_child.py` against it: a real execution request, a stopped-cluster
+snapshot, the execution (one ticket, witness advanced to watermark 1), an application session opened, cluster stopped,
+data directory rolled back, cluster started.
+
+* **Both runs:** the open session failed on its next statement (`OperationalError`); the restored database showed the
+  execution `prepared`, the job `queued`, no intent and the use reserved, while the ticket existed.
+* **On `24e2dfd`:** the API cancellation cancelled the execution and released the use (uses 1 reserved / 1 released);
+  after `acknowledge-recovery`, a fresh execution of the single-use approval was allowed and created a **second
+  ticket**.
+* **Final head:** the API cancellation left everything unchanged; a worker's `run_once` refused (`behind the external
+  witness`); a worker claiming as if past its preflight held the cancellation (`needs_operator`, `reconciling`, use
+  reserved, reason "database effect watermark 0 is behind the external witness 1"); after `acknowledge-recovery` a
+  fresh execution was refused (`approval_exhausted`); one ticket.
+* **What the existing physical drill did not cover:** it runs a generic ticket job, not the action path, and closes its
+  connection pool before each stop, so neither approval release nor a session open across the rollback was tested.
+* **Not covered:** in-place restores into a live database, restoring while workers run, proxies, failover and
+  point-in-time recovery (ADR 0010 amendment of 2026-10-25, "Supported restore boundary").
+

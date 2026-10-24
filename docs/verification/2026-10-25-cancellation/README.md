@@ -22,3 +22,10 @@ Run 34 (same folder):
 | `lock-order-control.txt` | the lock-order test on this change with the observation write's job-row lock removed | failed: `deadlock detected`, outcome record aborted, intent left `executing` |
 | `after-change.txt` | this change, whole new file | regenerated after the run-34 changes |
 
+Run 35:
+
+| File | Code under test | Result |
+|---|---|---|
+| `rollback-drill-on-24e2dfd.txt` | `tests/drills/test_action_restore_boundary.py` on `24e2dfd` | failed: the API cancellation released the use after a physical rollback lost the intent; after acknowledgement the approval created a second ticket |
+| `rollback-drill-final.txt` | both drills on the final head | 2 passed; use held, one ticket |
+

@@ -1,0 +1,8 @@
+BEFORE_ROLLBACK {'execution': 'succeeded', 'job': 'succeeded', 'reservation': 'consumed', 'uses': (1, 0), 'intent': 'succeeded', 'tickets': 1}
+AFTER_ROLLBACK {'execution': 'prepared', 'job': 'queued', 'reservation': 'reserved', 'uses': (1, 0), 'intent': None, 'tickets': 1}
+AFTER_API_CANCEL {'execution': 'cancelled', 'job': 'cancelled', 'reservation': 'released', 'uses': (1, 1), 'intent': None, 'tickets': 1}
+AFTER_WORKER_CLAIM {'execution': 'cancelled', 'job': 'cancelled', 'reservation': 'released', 'uses': (1, 1), 'intent': None, 'tickets': 1} | None | claimed: 0
+AFTER_ACKNOWLEDGEMENT {'execution': 'cancelled', 'job': 'cancelled', 'reservation': 'released', 'uses': (2, 1), 'intent': None, 'tickets': 2} | second execution: allowed
+1 failed in 5.85s
+E           AssertionError: the API changed the reservation without restore-witness clearance
+1 failed in 7.20s
