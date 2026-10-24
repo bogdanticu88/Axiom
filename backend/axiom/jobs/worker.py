@@ -6,8 +6,9 @@
   times is dead-lettered as poison, even if every previous claim crashed before reaching the handler.
 * A lease is held only while its token matches, the job is ``running`` and ``lease_expires_at`` is in the future by
   the database clock; an expired lease is lost and can only be taken again by a new claim, with a new token. Every
-  write a lease holder makes (handler writes through ``JobContext.fenced``, the heartbeat, the final write) is
-  authorized by ``core.lock_held_lease``, which tests expiry while holding the job's row lock.
+  write a lease holder makes to the job row (attempt counter, heartbeat, final write), and every handler transaction
+  that calls ``JobContext.fenced``, is authorized by ``core.lock_held_lease``, which tests expiry while holding the
+  job's row lock. Handler writes made without ``fenced`` are not covered (ADR 0006 amendment 1).
 * A heartbeat thread renews a lease that is still held, and only until the step deadline. It never revives an
   expired lease: a heartbeat that finds the lease lost records ``heartbeat_lease_lost`` and stops. A step that hangs
   past its deadline loses the lease; another worker may then take the job, and anything the hung worker writes later

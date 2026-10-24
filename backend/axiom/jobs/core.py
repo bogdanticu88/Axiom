@@ -59,9 +59,10 @@ class StaleLease(Exception):
 
 
 def lock_held_lease(conn: psycopg.Connection, job_id, token: int) -> dict | None:
-    """The lease authorization check, shared by every write a lease holder makes (handler writes through
-    ``JobContext.fenced``, the heartbeat and the final write). Call inside a transaction; returns the locked job row
-    while this token holds an unexpired lease, otherwise None.
+    """The lease authorization check for writes to the job row (the attempt counter, the heartbeat and the final
+    write) and for handler transactions that call ``JobContext.fenced``. Call inside a transaction; returns the locked
+    job row while this token holds an unexpired lease, otherwise None. Handler writes made without ``fenced`` are not
+    covered (see ADR 0006 amendment 1).
 
     Two steps, because PostgreSQL (READ COMMITTED) evaluates a locking query's WHERE clause before it waits for a
     row lock and, if the transaction it waited for only locked the row, does not evaluate it again. An expiry test

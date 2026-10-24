@@ -5,7 +5,7 @@
 | File | Code under test | Result |
 |---|---|---|
 | `before-fix.txt` | `main` at `5be8aee`: the final write did not test expiry | the 10 expired-outcome cases failed ("the expired worker's outcome was written"); the valid-lease control passed |
-| `fix-removed.txt`, `fix-removed-reasons.txt` | this change with the previous authorization semantics put back (heartbeat without the expiry test; expiry tested inside the locking query, before any lock wait) | 6 of the 20 lease tests failed, each for its intended reason; the 14 others cover cases the previous code already handled |
+| `fix-removed.txt`, `fix-removed-reasons.txt` | this change with the previous authorization semantics put back (heartbeat without the expiry test; expiry tested inside the locking query, before any lock wait) | of the 20 lease tests that existed then, 6 failed, each for its intended reason; the 14 others cover cases the previous code already handled. The 21st (database boundary) was added afterwards and not run here |
 | `after-fix.txt` | this change | all 21 lease tests passed, including the database-boundary test |
 
 Heartbeat revival on the first head of this change (`0b86a5c`, where only the final write had been fixed), observed

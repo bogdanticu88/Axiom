@@ -1070,17 +1070,21 @@ blocked backend found through `pg_blocking_pids`), not on elapsed time.
   with the expiry test inside the locking query, a lease valid when the final write started waiting and expired during
   the wait was accepted when the blocking transaction had only locked the row ("succeeded"); it was rejected when that
   transaction had changed the row, because PostgreSQL evaluated the condition again on the new row version.
-* **Fix:** one authorization check for handler writes, heartbeat and final write (`lock_held_lease`: lock by token and
-  state, then test expiry with the lock held); the heartbeat reports `heartbeat_lease_lost` and never revives a lease
+* **Fix:** one authorization check for the job-row writes (attempt counter, heartbeat, final write) and for handler
+  transactions that call `JobContext.fenced` (`lock_held_lease`: lock by token and state, then test expiry with the
+  lock held); the heartbeat reports `heartbeat_lease_lost` and never revives a lease
   (ADR 0006 amendment 1).
-* **With the fix:** 21 targeted tests pass, including valid renewal capped at the step deadline, heartbeat after expiry
+* **With the fix:** all 21 lease tests pass, including valid renewal capped at the step deadline, heartbeat after expiry
   without reclaim, heartbeat after a reclaim, and an attempted revival followed by the final write. The 21 test files
   that drive the job runner passed (231 passed, 1 opt-in demonstration skipped).
 * **Fix removed:** with the previous authorization semantics put back into the new code (heartbeat without the expiry
-  test; expiry inside the locking query), 6 of the new tests failed, each for its intended reason: "the heartbeat
+  test; expiry inside the locking query), the 20 lease tests that existed at that point were run: 6 failed, each for
+  its intended reason: "the heartbeat
   renewed a lease that had already expired" (three), "an outcome was accepted although the lease expired before the row
   lock was acquired", "the heartbeat revived an expired lease", and a heartbeat after expiry that returned True. The
-  others passed, as they test cases the previous code already handled.
+  other 14 passed, as they test cases the previous code already handled. The 21st, the database-boundary test below,
+  was added afterwards and was not run with the previous semantics; it writes through the runtime credential directly
+  and does not exercise the changed checks.
 * **Database boundary:** `test_lease_expiry_is_enforced_by_the_worker_not_by_the_database` shows the runtime credential
   can finish a job whose lease expired, and cannot change it once finished. Lease expiry is application-enforced,
   consistent with the trusted runtime credential (ADR 0006 amendment 1, ADR 0012 amendment 4).

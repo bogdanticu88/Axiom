@@ -128,9 +128,9 @@ that query waits for the row lock. In PostgreSQL (READ COMMITTED), if the transa
 that earlier evaluation stands, so a lease that expired during the wait was still accepted. If that transaction changed
 the row, the condition is evaluated again on the new row version.
 
-**Decision.** Every write a lease holder makes is authorized by one check, `core.lock_held_lease`: lock the job row by
-token and `running` state, then, with the lock held, test `lease_expires_at > clock_timestamp()`. `JobContext.fenced`
-(handler writes), the heartbeat and the final write all use it. The heartbeat renews only a lease that passes that check,
+**Decision.** One check, `core.lock_held_lease`, authorizes every write a lease holder makes to the job row (the
+attempt counter, the heartbeat, the final write) and every handler transaction that calls `JobContext.fenced`: lock the
+job row by token and `running` state, then, with the lock held, test `lease_expires_at > clock_timestamp()`. The heartbeat renews only a lease that passes that check,
 still never past the step deadline. When it finds the lease lost, it records `heartbeat_lease_lost` with the reason and
 stops; it does not revive the lease.
 
@@ -138,6 +138,15 @@ stops; it does not revive the lease.
 may expire after the check. Until this transaction commits it holds the row lock, and a reclaim needs that lock (`claim`
 uses `FOR UPDATE SKIP LOCKED`), so no other worker can take the job during the transaction. That rules out a competing
 reclaim; it does not make a slow transaction harmless in other ways.
+
+**Handler writes not covered.** Handler writes made without `JobContext.fenced` are not authorized by the lease, on
+`main` before this amendment as after it. Two are deliberate and documented in code: the effect gate records what it
+observed outside the database (effect intents and their events) even after losing the lease, because those are facts
+about the external world. One is a known gap, unchanged here: after the effect step, the action execution handler
+updates the execution record (`succeeded`, `failed`, `cancelled` or `reconciling`) without re-checking the lease
+(`domains/actions/jobs.py`). A worker that lost its lease after the effect can still write that record. Terminal
+records are not overwritten, and the recorded facts were established while the lease was held or observed externally,
+but it is not lease-fenced.
 
 **Outcome versus effects.** A discarded outcome leaves the job `running` for another worker to reclaim. It does not undo
 writes the handler committed in its own fenced transactions before the lease was lost, or effects outside the database;
