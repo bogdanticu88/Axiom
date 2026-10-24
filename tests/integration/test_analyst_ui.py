@@ -271,3 +271,25 @@ def test_sign_out_ends_the_session(browser, ui, keycloak, world):  # noqa: F811
     page.wait_for_url(f"{ui.base}/ui/*")
     page.get_by_test_id("sign-in").wait_for()
     assert page.evaluate("async () => (await fetch('/auth/session')).status") == 401
+
+
+def test_start_investigation_records_the_decision_and_its_confirmation_stays(browser, ui, keycloak, inv, world,  # noqa: F811
+                                                                             admin_conn):
+    """The confirmation of a successful start must still be visible after the page has reloaded the case. Before the
+    fix it was rendered inside the "Start investigation" section, which is shown only while the case is `received`, so
+    it disappeared as soon as the reload completed; a check that waited for it passed only if it looked in time."""
+    case = inv.case_for()
+    assert case["workflow"] == "received"
+    page = sign_in(browser, ui, keycloak, "alice", path=f"/ui/cases/{case['id']}/assessment", tenant=world.a.slug)
+    page.get_by_test_id("start-case-investigation").click()
+    page.get_by_test_id("case-workflow").filter(has_text="investigating").wait_for()   # the case has been reloaded
+    status = page.get_by_role("status").filter(has_text="Investigation started.")
+    assert status.is_visible(), "the success confirmation disappeared when the case reloaded"
+    assert page.get_by_test_id("start-case-investigation").count() == 0                 # nothing left to repeat
+    rows = admin_conn.execute(
+        "SELECT d.actor_principal_id, c.workflow FROM axiom.decisions d JOIN axiom.finding_cases c"
+        " ON c.id = d.case_id AND c.tenant_id = d.tenant_id WHERE d.case_id = %s AND d.kind = 'investigation_start'",
+        (case["id"],)).fetchall()
+    assert [(str(r["actor_principal_id"]), r["workflow"]) for r in rows] == [(str(ui.ids["alice"]), "investigating")]
+    page.reload()                                                                       # what the server now returns
+    assert page.get_by_test_id("case-workflow").inner_text() == "investigating"

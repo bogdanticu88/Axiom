@@ -1,7 +1,14 @@
 # Implementation status
 
-This is the single entry point for the current state. "Current status" below describes `main` at
-`a05c01f7cf81b1bfd162c302cbe1177254bd11f6` (2026-10-23, the merge of pull request 1). The sections after it are the
+This is the single entry point for the current state. Two revisions matter and are kept apart here:
+
+* **Last revision with passing hosted CI:** `a05c01f7cf81b1bfd162c302cbe1177254bd11f6` on `main` (the merge of pull
+  request 1, GitHub Actions run 39950928655). "Current status" below describes this code.
+* **Current `main`:** `305b0fc` (the merge of pull request 2, documentation and screenshots only). Its hosted run,
+  39975479973, failed in the Compose smoke stage because the image registry refused a pull, so `main` has not shown a
+  passing hosted run since `a05c01f`.
+
+The sections after "Current status" are the
 detailed status by area from the review of 2026-10-22, kept as written except where marked; where they disagree with
 "Current status", "Current status" wins. Requirement-level detail is in REQUIREMENTS.md.
 
@@ -37,18 +44,23 @@ passed; the opt-in real-provider test, never run; the opt-in demonstration). The
   `docs/verification/2026-10-23-demo-main/`.
 
 ### Tested only against fixtures, fakes or local services
-* Scanner and context sources: Trivy and SARIF with recorded real output; Tenable and Azure Resource Graph with
-  synthetic data and local fakes. None validated against a live service.
+* Scanner and context sources: Trivy has run for real, scanning controlled local containers in the demonstration
+  (Trivy 0.76.1 against images built and deployed by `scripts/demo`; docs/DEMO.md), and SARIF uses recorded real
+  output. Tenable and Azure Resource Graph use synthetic data and local fakes. No scanner or context source has been
+  run against a live external service.
 * Ticket integrations (Jira-style, ServiceNow-style, GitHub Issues): local fakes only.
 * Investigation: the deterministic fake model only. No language model has been called.
 * Verification worker: a TLS test fixture and the local demonstration check service (`scripts/demo`), which is not a
   supported component.
-* Sign-in: a local Keycloak; TLS: a local nginx with a throwaway CA.
+* Sign-in: a local Keycloak. TLS has run end to end through a local nginx with certificates from a local CA, in
+  production mode (`tests/integration/test_tls_deployment.py`); no public certificate has been used.
 * S3 storage and the restore witness: SeaweedFS.
 
 ### Not tested
-* Any hosted identity provider (for example Microsoft Entra ID), a public CA or a real reverse proxy deployment.
-* Any language model, any real check service, any live scanner, tracker or cloud API.
+* Any hosted identity provider (for example Microsoft Entra ID), a public certificate or a real reverse proxy
+  deployment.
+* Any external connector: no live scanner, tracker, cloud API or real check service.
+* Any real language model: real-model execution is disabled and has never run.
 * Load, scale and long-running operation; backup and restore of a real installation.
 * Browsers other than Chromium; an accessibility audit; usability testing.
 * Independent review of the trust boundaries or of the evaluation labels (docs/INDEPENDENT-REVIEW.md).
@@ -56,8 +68,9 @@ passed; the opt-in real-provider test, never run; the opt-in demonstration). The
 ### Known limitations
 * **The shared application database credential has cross-tenant authority.** One runtime login serves every tenant;
   whoever holds it can read and change any tenant's data, act as any user and attribute audit records to anyone. It
-  cannot rewrite recorded history. Tenants that need stronger separation need a dedicated installation (ADR 0012
-  amendment 4, docs/DEPLOYMENT-TRUST-BOUNDARY.md).
+  cannot rewrite recorded history. A dedicated installation keeps other customers' tenants out of reach, but does not
+  remove this authority within that installation: whoever holds its credential can still act as any of its users
+  (ADR 0012 amendment 4, docs/DEPLOYMENT-TRUST-BOUNDARY.md).
 * **A check endpoint can report false results.** Axiom binds each answer to the request, asset and reported
   deployment, but cannot prove it true; a dishonest endpoint can cause a false pass or a false failure (docs/DEMO.md).
 * **Timestamps accepted before ADR 0015.** Asset versions recorded by hand before the correction may hold an
@@ -81,18 +94,73 @@ the page, when captured, showed the case as `investigating` and no status messag
 (`frontend/src/pages/CaseEvidence.tsx`), that message is rendered inside the "Start investigation" section, which is
 shown only while the case is `received`; after success the page reloads the case and the section, with its message,
 disappears. The check passes only if it sees the message before the reload completes. This is a race between the
-check and the UI, not a server failure; it is not fixed yet.
+check and the UI, not a server failure.
+
+The defect is in the application, not only in the check: the confirmation was not stable feedback. Once the reload
+finished it was gone every time, so a user could miss it as easily as the check did. Fixed in verification run 28: the
+message is rendered outside that section and stays after the reload; the browser check now waits for the durable
+outcome first (the reloaded case shows `investigating`), then for the confirmation, then loads the page again; the
+smoke test still confirms on the server that the decision was recorded as alice's. A browser test
+(`test_start_investigation_records_the_decision_and_its_confirmation_stays`) failed four times out of four before the
+fix and passed three times out of three after it.
+
+**Cause established for another, by the build output added in run 23:** run 39975479973 (merge commit `305b0fc` on
+`main`). The image build failed about two seconds into the stage because `public.ecr.aws` answered the request for
+the pinned Python base image's manifest with HTTP 429 (Too Many Requests): the registry refused the request. Whether
+this run's own requests counted towards the limit is not known. The build has no retry; a later run is needed to show
+`main` green again.
+
+**Cause established for a third, by the diagnostics added in run 27:** run 39977205040 (pull request 3, commit
+`9de264a`). The image build passed; `docker compose up` then failed while pulling the pinned PostgreSQL image for
+`postgres` and `db-init`, with `toomanyrequests: Rate exceeded` from the registry. No container had been created, so
+the collected state and logs were empty. Rate limiting by the registry again; not retried. Run 39980128200 (commit
+`d9a5069`) was refused the same way during the image build: HTTP 429, "toomanyrequests: Data limit exceeded", for the
+Python base image.
 
 **Cause not established:**
 * run 39946416834 (commit `063347b`): the same symptom (timeout waiting for "Investigation started."), but the page
   state and API log were not captured, so it is consistent with the race above without being confirmed by it;
-* run 39884012334 (commit `5bff45c`): the image build failed after two seconds; its output was discarded;
+* run 39884012334 (commit `5bff45c`): the image build failed after two seconds; its output was discarded. The timing
+  matches the rate-limited pull above, but without the output that is not confirmed;
 * run 39955949204 (commit `8cfe42e`): `docker compose up` failed sixteen seconds into the stage; its output is
-  discarded and no container logs existed yet. That commit changed only documentation and screenshots relative to a
+  discarded and no container logs existed yet. A later `compose up` failure was a registry rate limit during image
+  pulls (run 39977205040 above), so this one is consistent with that, but its own output is gone and that is not
+  confirmed. That commit changed only documentation and screenshots relative to a
   passing `main`; this narrows where to look but does not establish that the change played no part.
 
-None could be rerun from here. The smoke test prints the build output, the page state and the API and job-worker logs
-on failure (verification runs 23 and 25), but not yet the output of `docker compose up`.
+None could be rerun from here. On failure the smoke test now prints the build output, the `docker compose up` output,
+every container's state, exit code and health results, the last lines of each service's log, and the page state of
+the browser check. Collection ends within 120 s and cleanup within 70 s, and the output passes through a filter for
+the generated secrets and known secret shapes, which is not a guarantee (verification runs 23, 25 and 27). The
+browser-check race above is not fixed by that change.
+
+### Registry throttling (assessed; nothing changed yet)
+* **What was refused:** three runs between 15:07 and 15:40 UTC on 2026-10-23, all by `public.ecr.aws`: the Python base
+  image's manifest twice (HTTP 429; once "Data limit exceeded") and the PostgreSQL image once ("Rate exceeded"). None
+  of the thirteen earlier runs shows a refusal, but one of them (39884012334) failed its build with the output
+  discarded, so for that one it is unknown.
+* **Pulls per run:** a GitHub runner starts with no images and the workflow caches none, so every run pulls everything,
+  and every smoke run is a cold install. From `public.ecr.aws`: `python:3.13-slim` (both build stages; BuildKit
+  resolves it once) and `postgres:16.15` (two Compose services; the failing log shows Compose starting two pulls of
+  it at once). Elsewhere: Docker Hub for the Dockerfile syntax image, `mirror.gcr.io` for Node, SeaweedFS and
+  others, `quay.io` for Keycloak (pulled by the foundation tests and reused by the smoke).
+* **Duplicate runs:** none found. Sixteen runs in 22 hours, one per pushed commit (`pull_request`, plus `push` to
+  `main` only), no re-runs; two overlapped (15:07 and 15:08).
+* **Quotas:** AWS documents unauthenticated ECR Public pulls at 1 per second and 500 GB of data per month, neither
+  adjustable, and 10 per second for authenticated pulls. This project's own traffic from that registry is under 1 GB per run (the two
+  images take 0.8 GB unpacked here; the download is smaller), and sixteen runs are far below 500 GB. "Data limit
+  exceeded" therefore suggests the quota is shared with other traffic
+  from the runner's address. That is an inference, not established.
+* **Local runs here** use images already on this machine. They are cached runs and say nothing about pulls.
+
+**Mitigation applied (verification run 29):** the smoke test now pulls each distinct image it needs once, one at a
+time, by the digest it is pinned to, before the build and before `docker compose up`, and stops with the pull's output
+if one fails. That removes the second, simultaneous request for the PostgreSQL image. Registries and digests are
+unchanged, and nothing is cached between runs, so on GitHub the smoke is still a cold install. It cannot prevent a
+data-limit refusal. Still resolved by tag on every build: the Dockerfile syntax image (`docker/dockerfile:1.7`, Docker
+Hub), which is not pinned by digest; unchanged here. If refusals continue, the choices are authenticated pulls (a CI
+credential), another registry for the two images (the same digests would need to be confirmed there), or caching
+images between runs, which would make those smoke runs cached rather than cold and would need to be labelled as such.
 
 ### Statements this supersedes
 Historical records are kept as written. These statements in them are no longer correct:

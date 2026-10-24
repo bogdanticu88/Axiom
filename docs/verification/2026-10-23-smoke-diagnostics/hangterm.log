@@ -1,0 +1,17 @@
+[    0.2s] project axiom-smoke-172456
+[   29.9s] ok   fresh install: migrations applied, api healthy
+[   30.0s] SMOKE FAIL: controlled failure while Docker hangs and ignores SIGTERM
+[   30.0s] --- diagnostics for project axiom-smoke-172456 (bounded, redacted)
+[   30.0s] --- containers
+[   55.0s] scripts/verify/compose-smoke.sh: line 81:  2085 Killed                  timeout -k "$KILL_GRACE" "$r" "$@"
+[   55.0s] --- container state and the last health-check results
+[   80.0s] --- service logs (last lines each)
+[   80.0s] ## postgres
+[  105.0s] scripts/verify/compose-smoke.sh: line 81:  2581 Killed                  timeout -k "$KILL_GRACE" "$r" "$@"
+[  105.0s] ## db-init
+[  130.0s] scripts/verify/compose-smoke.sh: line 81:  2842 Killed                  timeout -k "$KILL_GRACE" "$r" "$@"
+[  130.0s] ## app-init
+[  149.0s] scripts/verify/compose-smoke.sh: line 81:  3075 Killed                  timeout -k "$KILL_GRACE" "$r" "$@"
+[  149.0s] (diagnostics time limit reached)
+[  169.8s] exit status 1
+[  169.8s] (stream closed)

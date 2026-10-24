@@ -948,3 +948,86 @@ renders that message inside a section that is removed once the reloaded case is 
 the reload. Not fixed in this change. Run 39946416834 had the same symptom without diagnostics and is not confirmed to
 share the cause.
 
+### Run 27: Compose smoke diagnostics (2026-10-23)
+
+Records: `docs/verification/2026-10-23-smoke-diagnostics/`. On any failure the smoke script now prints the
+`docker compose up` output, container states, exit codes, OOM flags, health status and the last health-check results,
+and the last lines of each service's log. An ERR trap reports an unexpected failing command with its line and keeps
+its exit status. No retry, timeout increase or skipped check was added, and the application is unchanged.
+
+**Correction to the first version of this change.** It stated that collection was bounded at "about two minutes
+overall" and recorded "about 140 s" for a hung Docker. Measured again, the 140 s was 120 s of collection plus 21 s of
+cleanup; the limit was checked only between steps, so collection itself could reach about 140 s; commands that
+ignored SIGTERM were never killed; and cleanup had no limit. Now collection ends within 120 s including SIGKILL of
+anything that overruns, and cleanup within 60 s plus 10 s, so a failure adds at most about 190 s. Measured: 114 s and
+119 s of collection with a hung Docker (the second ignoring SIGTERM), and cleanup stopped at 70.0 s when Docker stayed
+hung, with the exit status still 1 and a message that the project may remain.
+
+**Redaction.** Every path that prints failure output now goes through one filter (`scripts/verify/smoke_redact.py`,
+with unit tests): the image build output (not filtered before), the `docker compose up` output, the browser check
+output and its `ok` lines, failure messages (some included command output and were not filtered before), the
+unexpected-failure line and everything diagnostics collect, including errors from the collection commands
+themselves. It replaces the generated secrets, JWT-shaped strings, `Authorization` header values, user information in
+URLs and private key blocks. It is a filter for known values and shapes, not a guarantee. The rendered Compose
+configuration and container environments are still never printed.
+
+Controlled failures, all on images already present here: build failure with credentials in its output (exit 1,
+replaced), held host port (exit 1, bind error shown), browser check printing five kinds of secret (exit 1, all
+replaced), unexpected failing command (exit 7 kept, line reported), Docker failing during collection (exit 1), Docker
+hanging (exit 1, 114 s), Docker hanging and ignoring SIGTERM (exit 1, 119 s), Docker hung through the cleanup (exit 1,
+cleanup stopped at 70 s). A normal run passed. The browser-check race found in run 39969148347 is not addressed here.
+
+GitHub Actions on `main` after merging pull request 2 (`305b0fc`, run 39975479973): every stage passed except the
+Compose smoke, whose image build failed because `public.ecr.aws` returned HTTP 429 (Too Many Requests) for the pinned
+`python:3.13-slim` manifest. Established from the build output the smoke test has printed since run 23. Not retried,
+and no change made to work around it.
+
+GitHub Actions on pull request 3: `e88ef06` passed (run 39975650264). `9de264a` (run 39977205040): every stage passed
+except the Compose smoke; the image build succeeded and `docker compose up` failed while pulling the pinned
+`public.ecr.aws` PostgreSQL image, with `toomanyrequests: Rate exceeded`, shown by the `compose up` output the
+diagnostics preserved. `d9a5069` (run 39980128200): the image build failed with HTTP 429 and "toomanyrequests: Data
+limit exceeded" from `public.ecr.aws` for the Python base image's manifest. Not retried. Later results are recorded in
+the pull request's conversation, not by commits made only to start another run.
+
+### Run 28: the start-investigation confirmation (2026-10-23)
+
+The browser-check failure of run 39969148347 was traced to the application. After a successful start the page reloads
+the case; the "Start investigation" section, shown only while the case is `received`, is then removed, and the
+confirmation "Investigation started." was rendered inside it. The confirmation was therefore gone every time the
+reload finished: unstable feedback for a user, and a race for the check that waited for it.
+
+* **Shown before the fix:** a new browser test
+  (`tests/integration/test_analyst_ui.py::test_start_investigation_records_the_decision_and_its_confirmation_stays`)
+  waits until the page shows the reloaded case as `investigating`, then asserts that the confirmation is visible, that
+  the decision is recorded for alice with the case `investigating`, and that a fresh page load still shows
+  `investigating`. Against the unchanged UI it failed four times out of four, on the confirmation.
+* **Fix:** the command's result (confirmation or refusal) is rendered outside the conditional section. The same test
+  then passed three times out of three; the three browser test files passed together (15 tests).
+* **Smoke browser check:** it now waits for the durable outcome first (the reloaded case shows `investigating`), then
+  for the confirmation as a `status` element, then loads the page again and checks the workflow. The smoke script's
+  existing server-side check, that the decision was recorded as alice's human principal, is unchanged. No sleep was
+  added and no timeout changed.
+* **Local clean CI** (declared environment, UTC) at `2389664`: CI PASS, foundation 693 passed and 3 skipped, Compose
+  smoke passed with the new check. That run rebuilt the image but used base images already on this machine, so it was
+  not a cold install.
+
+Run 39946416834 had the same symptom without diagnostics. It is consistent with this cause but not confirmed by it.
+
+### Run 29: one sequential pull per pinned image in the Compose smoke test (2026-10-24)
+
+Records: `docs/verification/2026-10-24-image-prepull/`. Before the build and before `docker compose up`, the smoke test
+now pulls each distinct image it needs once, one at a time, by its pinned digest: the Dockerfile's two base images
+(with `BUILD=1`) and the Compose services' images, read from those files. An image already present under its pinned
+reference is not pulled again; a failed pull stops the test with exit 1 and the pull's output, filtered like all other
+failure output. An image reference without a digest stops the test. Registries, digests, timeouts and checks are
+unchanged, there is no retry, and nothing is cached between runs.
+
+Why: in run 39977205040 Compose started two simultaneous pulls of the same PostgreSQL image (`postgres` and `db-init`),
+and the registry answered "Rate exceeded". Sequential, de-duplicated pulls remove that duplicate request. They do not
+reduce the data downloaded, so they cannot prevent a "Data limit exceeded" refusal like those of runs 39980128200 and
+40009459095.
+
+Checked locally: with the registry unreachable, the build used a present pinned base image without contacting the
+registry; the pull-failure path stopped the test with exit 1 and the registry error; a normal run with a rebuild
+passed. These were cached runs, not cold installs. The Dockerfile syntax image is still resolved by tag from Docker Hub
+on every build.

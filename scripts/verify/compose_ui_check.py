@@ -71,9 +71,14 @@ def run_checks(browser) -> int:
     shot(alice, "compose-01-queue")
     alice.goto(f"{BASE}/ui{first.removeprefix('/ui')}/assessment")
     alice.get_by_test_id("start-case-investigation").click()
-    alice.locator("[data-state='ok']", has_text="Investigation started.").wait_for()
+    # The durable outcome first: the page shows "investigating" only after reloading the case from the server.
     alice.get_by_test_id("case-workflow").filter(has_text="investigating").wait_for()
-    ok("alice moved a case to investigating through the UI; the page shows the new workflow")
+    # Then the confirmation, which must still be visible after that reload (it used to vanish with it).
+    alice.get_by_role("status").filter(has_text="Investigation started.").wait_for()
+    alice.reload()
+    assert alice.get_by_test_id("case-workflow").inner_text() == "investigating"
+    ok("alice moved a case to investigating through the UI; the confirmation stayed visible and a fresh load shows "
+       "the new workflow")
     print(f"CASE {first.rstrip('/').split('/')[-1]}", flush=True)
     shot(alice, "compose-02-investigating")
 

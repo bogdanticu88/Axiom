@@ -1,0 +1,19 @@
+[    0.2s] project axiom-smoke-173627
+[   29.7s] ok   fresh install: migrations applied, api healthy
+[   29.7s] SMOKE FAIL: controlled failure while Docker hangs for ten minutes, ignores SIGTERM, and stays hung for the cleanup
+[   29.7s] --- diagnostics for project axiom-smoke-173627 (bounded, redacted)
+[   29.7s] --- containers
+[   54.7s] scripts/verify/compose-smoke.sh: line 81: 14837 Killed                  timeout -k "$KILL_GRACE" "$r" "$@"
+[   54.7s] --- container state and the last health-check results
+[   79.7s] --- service logs (last lines each)
+[   79.7s] ## postgres
+[  104.7s] scripts/verify/compose-smoke.sh: line 81: 15339 Killed                  timeout -k "$KILL_GRACE" "$r" "$@"
+[  104.7s] ## db-init
+[  129.7s] scripts/verify/compose-smoke.sh: line 81: 15596 Killed                  timeout -k "$KILL_GRACE" "$r" "$@"
+[  129.7s] ## app-init
+[  148.7s] scripts/verify/compose-smoke.sh: line 81: 15831 Killed                  timeout -k "$KILL_GRACE" "$r" "$@"
+[  148.7s] (diagnostics time limit reached)
+[  218.7s] scripts/verify/compose-smoke.sh: line 26: 16021 Killed                  exit 1
+[  218.7s] cleanup: 'docker compose down -v' failed or did not finish within 60 s; project axiom-smoke-173627 may remain
+[  218.7s] exit status 1
+[  218.7s] (stream closed)

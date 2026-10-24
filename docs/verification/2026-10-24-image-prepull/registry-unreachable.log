@@ -1,0 +1,6 @@
+[    0.3s] image present: public.ecr.aws/docker/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+[    0.3s] image pull failed: mirror.gcr.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d; its output:
+[    0.3s] Error response from daemon: failed to resolve reference "mirror.gcr.io/chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d": failed to do request: Head "https://mirror.gcr.io/v2/chrislusf/seaweedfs/manifests/sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d": proxyconnect tcp: dial tcp 127.0.0.1:9: connect: connection refused
+[    0.3s] SMOKE FAIL: image pull
+[    0.4s] exit status 1
+[    0.4s] (stream closed)
