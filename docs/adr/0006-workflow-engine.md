@@ -169,3 +169,14 @@ job event `execution_transition_discarded` and stops; the effect gate's own reco
 unchanged and still written after lease loss. Details, reproductions and remaining gaps: ADR 0010 (amendment of
 2026-10-24) and verification run 32.
 
+## Amendment 3 (2026-10-25): a requested cancellation is settled by the handler
+
+Requesting cancellation stops scheduling; for a job with an external effect it does not establish that the effect was
+cancelled. A handler may define `on_cancel(conn, ctx, job)`, which decides the job's outcome from what the handler has
+on record. The worker calls it with the job row locked in two places: while claiming a job whose cancellation was
+requested (no worker holds a valid lease then), and in the lease holder's final write when cancellation was requested
+and the step did not finish `Done`. `jobs.core.settle_cancelled_job` applies the result: `Fail` cancels the job, `Done`
+marks it succeeded, `NeedsOperator` parks it for an operator instead of cancelling it. A claim-time settlement that
+raises is rolled back to a savepoint and the job is left for the next claim. Handlers without `on_cancel` are unchanged.
+The action execution handler is the only one that defines it (ADR 0010, amendment of 2026-10-25).
+

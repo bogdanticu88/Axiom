@@ -1117,6 +1117,53 @@ events inside the effect gate and the adapter's lookup, lease timestamps moved w
   the action, action API, workflow adapter and job test files passed (107 passed).
 * **Reproduced, not fixed:** a cancellation applied at claim time after the previous worker's lease expired leaves the
   execution `prepared` and the reservation `reserved` with the job `cancelled` (`probe-cancel-after-worker-loss.py.txt`).
+  Addressed in run 33.
+
+Accepted assumptions: the runtime credential is trusted (ADR 0012 amendment 4); external effects are at most one first
+attempt per operation key, with duplicates stopped only by provider deduplication or fencing (ADR 0010). Nothing here
+makes execution exactly-once.
+
+### Run 33: a cancellation is settled from the effect evidence (2026-10-25)
+
+Records: `docs/verification/2026-10-25-cancellation/`. PostgreSQL test database; workers coordinated through events
+inside the adapter (paused before the gate authorizes a dispatch, or after it and before the request is sent), inside
+the fake provider (request held) and after the gate returns, with lease timestamps moved by the database clock; no
+sleeps. Every test asserts the execution, the job, the effect intent and the approval accounting together.
+
+* **Established before changing it** (`probe-abandon-and-cancel.py.txt`, output `probe-on-prior-pr-head.txt`, on the
+  previous head of this change, `5e17eff`): abandoning a job the restore witness parked before any intent existed
+  ended `failed` with the use `released` and a second execution of the single-use approval allowed; abandoning a
+  carried job with a `prepared` intent consumed the use; cancelling a job queued after an unknown outcome (a ticket
+  existed) recorded the execution `cancelled`; cancelling a parked (`reconciling`) execution raised the database's
+  transition guard error.
+* **New tests** (`tests/integration/test_action_cancellation.py`, 23): on `5e17eff` 19 failed and 4 passed
+  (`on-prior-pr-head.txt`); on `main` (`8f8a3e6`, with this change's test helpers) 19 failed and 4 passed
+  (`on-main.txt`); with the change 23 passed (`after-change.txt`). The four that pass everywhere guard behaviour that
+  was already right: a worker that keeps its lease meets the cancellation at the authorization and returns the use; a
+  dispatch reported not applied is accounted for; a request that succeeds after the cancellation was requested ends
+  `succeeded` (two variants).
+* **Failures on the previous head, by reason:** a claim-time cancellation left the execution `executing` and the use
+  `reserved` with the job `cancelled` (takeover before authorization, takeover after authorization, recorded success
+  before the claim, the stale-worker test); a lost acknowledgement after the cancellation ended the job `cancelled` with
+  the execution open and the outcome unknown (two variants); cancelling with an earlier dispatch still in flight
+  returned the use, and that request then created the ticket; cancelling a queued job with an unknown outcome recorded
+  `cancelled` (three operator variants); cancelling a carried, never-run job returned the use; cancelling a parked
+  execution, including one whose success was already recorded, raised the transition guard error; abandoning a
+  witness-parked job returned the use; the generic job operations did not refuse an action job (two). On `main`, where
+  post-effect transitions are not yet fenced, three fail differently: the stale worker itself cancelled the execution
+  and returned the use (stale-worker test); the stale worker marked the execution `succeeded` while the claim cancelled
+  the job (recorded success before the claim); and the precondition of the parked-execution variant does not arise
+  because the stale worker finished the execution itself.
+* **Adoption the gate cannot verify** (found by a review of the whole change, `adopt-on-earlier-code.txt`): on
+  `5e17eff` adopting a witness-parked execution with an invented reference (`SEC-7`, no ticket existed) ended the
+  execution `succeeded` with that reference, and adopting a recorded object that had failed verification closed it
+  `succeeded`; on `main` both left the job `succeeded` and the execution `reconciling`.
+  `test_adopt_without_a_verifiable_record_is_refused` (2) now expects `effect_evidence_missing` with nothing changed.
+* **Fix** (ADR 0010 amendment of 2026-10-25, ADR 0006 amendment 3): the settlement rule and the handler's
+  `on_cancel`, called at claim time and in the lease holder's final write; `cancel_execution` settles only jobs no
+  worker holds; abandon never returns the use and records `external_effect: unknown`; generic job cancel and
+  effect resolution refuse action execution jobs; adoption without an open intent needs a matching, uncontested
+  recorded success; the gate's observation writes lock the job row before the intent.
 
 Accepted assumptions: the runtime credential is trusted (ADR 0012 amendment 4); external effects are at most one first
 attempt per operation key, with duplicates stopped only by provider deduplication or fencing (ADR 0010). Nothing here

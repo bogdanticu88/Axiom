@@ -3,7 +3,9 @@
 One effect is identified by a stable ``operation_key``. The gate:
 
 1. In a fenced transaction: checks the lease, cancellation and ``revalidate`` (current authority, approval,
-   preconditions), loads or creates the intent row, and detects a restored database.
+   preconditions), loads or creates the intent row, and detects a restored database. A requested cancellation ends
+   the step before any dispatch is authorized (here and in step 3); that is not a statement about an earlier attempt,
+   which the handler settles from the recorded evidence (``Handler.on_cancel``).
 2. Decides whether another create attempt is safe. That depends on what the integration can do:
 
    * ``dedupe``: ``idempotency_key`` (the provider returns the original object for a repeated key) or
@@ -95,6 +97,47 @@ def canonical(request: dict[str, Any]) -> str:
     return json.dumps(request, sort_keys=True, separators=(",", ":"), default=str)
 
 
+def restore_doubt(conn: psycopg.Connection, job: dict, intent: dict | None) -> str | None:
+    """Why this database cannot vouch that its effect records for ``job`` are complete, or None (ADR 0010).
+
+    A restored or copied database may have lost intents written after its backup, so there a missing intent, or a
+    ``prepared`` one, is not evidence that nothing was sent. The signals are the database's own: a fingerprint other
+    than the current one on the intent or the job, an unacknowledged fingerprint, or a job created before the latest
+    recovery acknowledgement and not reconciled since. The external witness is checked separately
+    (``witness.check``), by the gate and by the worker's preflight."""
+    fingerprint = conn.execute("SELECT axiom.db_fingerprint() AS f").fetchone()["f"]
+    if intent is not None and intent["db_fingerprint"] != fingerprint:
+        return "the effect intent was recorded under another database fingerprint"
+    if job["db_fingerprint"] != fingerprint:
+        return "the job was enqueued or last reconciled under another database fingerprint"
+    if conn.execute("SELECT 1 FROM axiom.recovery_acknowledgements WHERE fingerprint = %s",
+                    (fingerprint,)).fetchone() is None:
+        return "this database fingerprint has not been acknowledged"
+    last_ack = conn.execute("SELECT max(acknowledged_at) AS t FROM axiom.recovery_acknowledgements").fetchone()["t"]
+    if (last_ack is not None and job["created_at"] < last_ack
+            and (job["recovery_cleared_at"] is None or job["recovery_cleared_at"] < last_ack)):
+        return "the job predates the latest recovery acknowledgement and has not been reconciled since"
+    return None
+
+
+def unaccounted_dispatches(conn: psycopg.Connection, job_id) -> list[int]:
+    """Lease tokens of dispatches this job's gate authorized (``effect_attempt``) whose request is not known to have
+    had no effect. An attempt is accounted for when the provider reported it definitely not applied (``effect_prepared``
+    or ``effect_prepared_from_stale_attempt`` with the same token) or when an operator later resolved the effect as
+    not applied. Read from the append-only job events, which the gate writes in the transaction that authorizes the
+    dispatch. An empty list means every authorized dispatch is accounted for, not that no response was received."""
+    rows = conn.execute(
+        """SELECT a.lease_token FROM axiom.job_events a
+            WHERE a.job_id = %(job)s AND a.event = 'effect_attempt'
+              AND a.created_at > COALESCE((SELECT max(created_at) FROM axiom.job_events
+                                            WHERE job_id = %(job)s AND event = 'operator_not_applied'), '-infinity')
+              AND NOT EXISTS (SELECT 1 FROM axiom.job_events n
+                               WHERE n.job_id = a.job_id AND n.lease_token = a.lease_token AND n.created_at > a.created_at
+                                 AND n.event IN ('effect_prepared', 'effect_prepared_from_stale_attempt'))
+            ORDER BY a.created_at""", {"job": job_id}).fetchall()
+    return [r["lease_token"] for r in rows]
+
+
 class RestoreWitness(Protocol):
     """Records effect watermarks outside the database (ADR 0010)."""
 
@@ -117,6 +160,12 @@ class EffectGate:
 
     def _intent(self, conn: psycopg.Connection, key: str) -> dict | None:
         return conn.execute("SELECT * FROM axiom.effect_intents WHERE operation_key = %s FOR UPDATE", (key,)).fetchone()
+
+    def _job_key_share(self, conn) -> None:
+        """Unfenced observation writes lock the job row (KEY SHARE, which the job-event insert needs anyway) before the
+        intent, the order every other writer uses (job, then execution, then intent). Without it, an observation
+        holding the intent could deadlock against a cancellation settlement holding the job row. No lease needed."""
+        conn.execute("SELECT 1 FROM axiom.jobs WHERE id = %s FOR KEY SHARE", (self.jc.job["id"],))
 
     def _update(self, conn, intent_id, **fields) -> None:
         sets = ", ".join(f"{k} = %({k})s" for k in fields)
@@ -146,8 +195,6 @@ class EffectGate:
                 event(conn, ctx, job["id"], "effect_denied", lease_token=jc.lease_token, detail={"reason": denial})
                 return EffectOutcome(Fail(f"denied before effect: {denial}"), None)
             fingerprint = conn.execute("SELECT axiom.db_fingerprint() AS f").fetchone()["f"]
-            acknowledged = conn.execute("SELECT 1 FROM axiom.recovery_acknowledgements WHERE fingerprint = %s",
-                                        (fingerprint,)).fetchone() is not None
             try:
                 behind = witness_check(conn, self.witness)
             except WitnessUnavailable as exc:
@@ -178,11 +225,7 @@ class EffectGate:
                                      intent["external_ref"], "recorded")
             if intent["state"] in ("failed", "abandoned"):
                 return EffectOutcome(Fail(f"effect previously {intent['state']}"), None)
-            last_ack = conn.execute("SELECT max(acknowledged_at) AS t FROM axiom.recovery_acknowledgements").fetchone()["t"]
-            carried = (last_ack is not None and job["created_at"] < last_ack
-                       and (job["recovery_cleared_at"] is None or job["recovery_cleared_at"] < last_ack))
-            restored = (intent["db_fingerprint"] != fingerprint or job["db_fingerprint"] != fingerprint
-                        or not acknowledged or carried)
+            restored = restore_doubt(conn, job, intent) is not None
             uncertain = restored or intent["state"] in ("executing", "unknown")
             if uncertain and lookup == "none" and not repeat_safe:
                 return self._park(conn, key, (
@@ -197,6 +240,7 @@ class EffectGate:
                 return EffectOutcome(Retry(f"lookup failed: {type(exc).__name__}: {exc}"), None)
             if found:
                 with jc.db.tenant_tx(ctx) as conn:
+                    self._job_key_share(conn)
                     current = self._intent(conn, key)
                     if current["state"] not in ("succeeded", "reconciled"):
                         self._update(conn, current["id"], state="reconciled", external_ref=found,
@@ -260,6 +304,7 @@ class EffectGate:
         was lost meanwhile; 'definitely not applied' only resets the intent if this attempt is still the latest."""
         jc = self.jc
         with jc.db.tenant_tx(jc.ctx) as conn:
+            self._job_key_share(conn)
             intent = self._intent(conn, key)
             if intent["state"] in ("succeeded", "reconciled", "failed", "abandoned"):
                 if ref and intent["external_ref"] != ref:
@@ -282,4 +327,5 @@ class EffectGate:
 
 
 __all__ = ["EffectGate", "EffectAdapter", "EffectOutcome", "DefinitelyNotApplied", "PermanentFailure",
-           "UnknownOutcome", "AlreadyExists", "RestoreWitness", "operation_key", "StaleLease", "capabilities"]
+           "UnknownOutcome", "AlreadyExists", "RestoreWitness", "operation_key", "StaleLease", "capabilities",
+           "restore_doubt", "unaccounted_dispatches"]

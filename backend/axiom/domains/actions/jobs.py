@@ -12,6 +12,9 @@ Two responsibilities are kept apart after the effect step:
   A worker that has lost the lease records what it observed as ``execution_transition_discarded`` and stops; the
   current lease holder reruns the step, and the gate reconciles from the recorded intent (a recorded success is
   adopted, never created again).
+* **Cancellation** is settled from the effect evidence by ``on_cancel`` (``service.settle_cancellation``), which the
+  worker calls at claim time or in the lease holder's final write. A cancelled job's step never decides on its own
+  that nothing happened.
 """
 from __future__ import annotations
 
@@ -22,7 +25,8 @@ from ...ingestion.sync import EnvSecretResolver, SecretResolver
 from ...integrations.jira_style import JiraStyleClient, JiraStyleTicketAdapter
 from ...jobs import Done, EffectGate, Fail, JobContext, NeedsOperator, Retry, StaleLease
 from ...jobs.core import event
-from .service import EXECUTE_KIND, TERMINAL_EXECUTION, check_execution, finish_execution, set_execution_state
+from .service import (EXECUTE_KIND, TERMINAL_EXECUTION, check_execution, effect_how, finish_execution,
+                      set_execution_state, settle_cancellation)
 
 AdapterFactory = Callable[[dict, SecretResolver], object]
 
@@ -46,27 +50,16 @@ def default_adapter_factory(connection: dict, secrets: SecretResolver):
     raise ValueError(f"no executor for adapter {connection['adapter']}")
 
 
-def _how(intent: dict | None, gate_how: str | None) -> str:
-    if gate_how in ("created", "adopted_by_lookup"):
-        return gate_how
-    resolution = (intent or {}).get("resolution") or ""
-    if resolution.startswith("adopt:"):
-        return "adopted_by_operator"
-    if resolution in ("adopted by lookup", "provider reported the existing object"):
-        return "adopted_by_lookup"
-    return "created"
-
-
-def _holds_lease(conn, jc: JobContext, observed: dict) -> bool:
-    """The authorization for one execution transition, inside its transaction. Without the lease the transition is
-    not applied; what this worker observed is recorded instead, and the caller stops the step."""
+def _holds_lease(conn, jc: JobContext, observed: dict) -> dict | None:
+    """The authorization for one execution transition, inside its transaction: the locked job row while this worker
+    holds the lease, else None. Without the lease the transition is not applied; what this worker observed is
+    recorded instead, and the caller stops the step."""
     try:
-        jc.fenced(conn)
-        return True
+        return jc.fenced(conn)
     except StaleLease:
         event(conn, jc.ctx, jc.job["id"], "execution_transition_discarded", lease_token=jc.lease_token,
               detail={"lease_token": jc.lease_token, **observed})
-        return False
+        return None
 
 
 class ActionExecuteHandler:
@@ -78,6 +71,10 @@ class ActionExecuteHandler:
                  secrets: SecretResolver | None = None):
         self.adapter_factory = adapter_factory
         self.secrets = secrets or EnvSecretResolver()
+
+    def on_cancel(self, conn, ctx, job: dict):
+        """Settle a requested cancellation from the effect evidence (``service.settle_cancellation``)."""
+        return settle_cancellation(conn, ctx, UUID(job["payload"]["execution_id"]), job)
 
     def step(self, jc: JobContext):
         execution_id = UUID(jc.job["payload"]["execution_id"])
@@ -115,7 +112,7 @@ class ActionExecuteHandler:
                 else:
                     intent = conn.execute("SELECT resolution FROM axiom.effect_intents WHERE operation_key = %s",
                                           (key,)).fetchone()
-                    how = _how(intent, outcome.how)
+                    how = effect_how(intent, outcome.how)
                     held = _holds_lease(conn, jc, {"intended": "succeeded", "external_ref": ref, "verified": True,
                                                    "how": how})
                     if held:
@@ -129,10 +126,11 @@ class ActionExecuteHandler:
         held = True
         with jc.db.tenant_tx(jc.ctx) as conn:
             if isinstance(step, Fail):
-                state = "cancelled" if "cancelled" in step.error else "failed"
-                held = _holds_lease(conn, jc, {"intended": state, "error": step.error})
-                if held:
-                    finish_execution(conn, jc.ctx, execution_id, state, detail={"error": step.error})
+                held = _holds_lease(conn, jc, {"intended": "failed", "error": step.error})
+                # With cancellation requested the worker's final write settles the execution from the effect
+                # evidence (on_cancel); this step does not decide that nothing happened.
+                if held and not held["cancel_requested"]:
+                    finish_execution(conn, jc.ctx, execution_id, "failed", detail={"error": step.error})
             elif isinstance(step, NeedsOperator):
                 held = _holds_lease(conn, jc, {"intended": "reconciling", "reason": step.reason})
                 if held:

@@ -17,6 +17,9 @@
   the job's outcome does not undo writes a handler already committed in its own fenced transactions, or effects
   outside the database.
 * Handlers declare the versions they run; jobs pinned to other versions are left for other workers.
+* A requested cancellation stops scheduling. For a handler with ``on_cancel`` it is settled from the handler's effect
+  record, at claim time or in the lease holder's final write, and may end the job succeeded or parked for an operator
+  instead of cancelled (``core.settle_cancelled_job``).
 """
 from __future__ import annotations
 
@@ -32,7 +35,7 @@ from psycopg.types.json import Jsonb
 from ..db import Database, TenantContext
 from .witness import check as witness_check
 from .core import (Done, Fail, Handler, JobContext, NeedsOperator, Retry, StaleLease, Wait, enqueue, event,
-                   lock_held_lease)
+                   lock_held_lease, settle_cancelled_job)
 
 log = logging.getLogger(__name__)
 
@@ -148,6 +151,16 @@ class Worker:
                      ORDER BY due_at, created_at LIMIT %s FOR UPDATE SKIP LOCKED""",
                 (*params, slots)).fetchall()
             for job in rows:
+                settle = getattr(self.handlers[job["kind"]], "on_cancel", None)
+                if job["cancel_requested"] and settle is not None:
+                    # the claim holds the row lock and no worker holds a valid lease: the handler settles the job
+                    # from what it has on record about its effect (see Handler, settle_cancelled_job)
+                    try:
+                        with conn.transaction():     # a savepoint: one job that cannot be settled stays as it is
+                            settle_cancelled_job(conn, ctx, job["id"], settle(conn, ctx, job), worker=self.worker_id)
+                    except Exception:  # noqa: BLE001 - left for the next claim; never cancelled without settling
+                        log.exception("cancellation could not be settled", extra={"job_id": str(job["id"])})
+                    continue
                 if job["cancel_requested"]:
                     conn.execute(
                         """UPDATE axiom.jobs SET state = 'cancelled', finished_at = clock_timestamp(), lease_owner = NULL,
@@ -264,6 +277,11 @@ class Worker:
                 self.counters["stale_results_discarded"] += 1
                 event(conn, ctx, job["id"], "stale_result_discarded", lease_token=token, worker=self.worker_id,
                       detail={"outcome": type(outcome).__name__})
+                return
+            settle = getattr(self.handlers[job["kind"]], "on_cancel", None)
+            if current["cancel_requested"] and not isinstance(outcome, Done) and settle is not None:
+                settle_cancelled_job(conn, ctx, job["id"], settle(conn, ctx, current), lease_token=token,
+                                     worker=self.worker_id)
                 return
             if current["cancel_requested"] and not isinstance(outcome, Done):
                 outcome = Fail("cancelled")

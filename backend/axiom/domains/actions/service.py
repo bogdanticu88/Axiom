@@ -11,6 +11,11 @@ Protocol (Plan S 7):
 
 A reserved use is never returned once the effect may have been attempted (database guard): timeouts do not restore
 approvals. Operators can reconcile, retry or abandon an execution, but cannot extend or re-mint approval.
+
+Cancelling an execution stops its scheduling; it does not establish that the external action was cancelled. The
+outcome is decided from the effect evidence (``effect_evidence``, ``settle_cancellation``): an execution is cancelled,
+and its use returned, only when the records show that no dispatch began; a recorded effect makes it succeeded; any
+other case keeps the use reserved and parks the execution for an operator.
 """
 from __future__ import annotations
 
@@ -26,7 +31,9 @@ from ... import audit, outbox
 from ...access import Authorizer
 from ...db import TenantContext
 from ...errors import Conflict, Forbidden, NotFound, ValidationFailed
-from ...jobs import enqueue
+from ...jobs import Done, Fail, NeedsOperator, enqueue
+from ...jobs.core import event, settle_cancelled_job
+from ...jobs.effects import restore_doubt, unaccounted_dispatches
 from .model import canonical_ticket_payload, effect_class
 
 EXECUTE_KIND = "action.execute"
@@ -375,23 +382,27 @@ class ActionService:
         return {**e, "external_references": refs, "intent": intent}
 
     def cancel_execution(self, execution_id: UUID, reason: str) -> dict:
-        e = self.conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s FOR UPDATE", (execution_id,)).fetchone()
+        """Request cancellation. A job no worker holds is settled now from the effect evidence
+        (``settle_cancellation``); a running job is flagged and settled by its worker, at its next claim or final
+        write. The result may be cancelled (use returned), succeeded (the effect is on record) or reconciling (the use
+        stays reserved until an operator establishes the outcome)."""
+        e = self.conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s", (execution_id,)).fetchone()
         if e is None:
             raise NotFound("execution not found", code="execution_not_found")
         proposal = self._proposal(e["proposal_id"])
         authority = self.authz.require(perm("execute", proposal["effect_class"]), proposal["scope_id"])
+        # lock the job before the execution, the order the worker uses (job row, then execution, then intent)
+        job = self.conn.execute("SELECT * FROM axiom.jobs WHERE id = %s FOR UPDATE", (e["job_id"],)).fetchone()
+        e = self.conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s FOR UPDATE", (execution_id,)).fetchone()
         if e["state"] in TERMINAL_EXECUTION:
             raise Conflict(f"execution is {e['state']}", code="execution_finished")
-        job = self.conn.execute("SELECT * FROM axiom.jobs WHERE id = %s FOR UPDATE", (e["job_id"],)).fetchone()
-        if job["state"] in ("queued", "waiting", "needs_operator"):
-            self.conn.execute(
-                """UPDATE axiom.jobs SET state = 'cancelled', cancel_requested = true, finished_at = clock_timestamp(),
-                          updated_at = clock_timestamp(), record_version = record_version + 1 WHERE id = %s""",
-                (job["id"],))
-            finish_execution(self.conn, self.ctx, e["id"], "cancelled", detail={"reason": reason})
-        elif job["state"] == "running":
+        if job["state"] in ("queued", "waiting", "needs_operator", "running"):
             self.conn.execute("""UPDATE axiom.jobs SET cancel_requested = true, updated_at = clock_timestamp(),
                                         record_version = record_version + 1 WHERE id = %s""", (job["id"],))
+            event(self.conn, self.ctx, job["id"], "cancel_requested", detail={"reason": reason})
+        if job["state"] in ("queued", "waiting", "needs_operator"):
+            settle_cancelled_job(self.conn, self.ctx, job["id"],
+                                 settle_cancellation(self.conn, self.ctx, execution_id, job, reason=reason))
         audit.record(self.conn, self.ctx, action="action.execution_cancel_requested", resource_type="action_execution",
                      resource_id=execution_id, detail={"reason": reason, "authority": authority.as_json()})
         return self.conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s", (execution_id,)).fetchone()
@@ -400,15 +411,17 @@ class ActionService:
                   ) -> dict:
         """Operator decision for an execution whose outcome could not be established (ACT-06).
 
-        Never changes the approval: 'not_applied' re-runs the *same* reserved use through the full re-check;
+        Never changes the approval: 'not_applied' re-runs the *same* reserved use through the full re-check (or, when
+        cancellation was requested, lets the cancellation settle from that evidence: cancelled, use returned);
         'abandon' ends it with the use consumed (the effect may exist)."""
-        e = self.conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s FOR UPDATE", (execution_id,)).fetchone()
+        e = self.conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s", (execution_id,)).fetchone()
         if e is None:
             raise NotFound("execution not found", code="execution_not_found")
         proposal = self._proposal(e["proposal_id"])
         from ...jobs import JobOperations
+        # resolve_effect locks the job row first; the execution row is locked after it (the worker's order)
         row = JobOperations(self.conn, self.ctx, self.authz, permission="action.reconcile",
-                            scope_id=proposal["scope_id"]).resolve_effect(
+                            scope_id=proposal["scope_id"], aggregate="action_execution").resolve_effect(
             e["job_id"], resolution=resolution, rationale=rationale, external_ref=external_ref)
         recorded = self.conn.execute(
             """SELECT external_ref FROM axiom.effect_intents WHERE operation_key = %s
@@ -418,12 +431,30 @@ class ActionService:
             # raising rolls back the whole decision, including the job change above
             raise Conflict(f"the recorded effect is {recorded['external_ref']}, not {external_ref}",
                            code="effect_evidence_conflict")
+        locked = self.conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s FOR UPDATE",
+                                   (execution_id,)).fetchone()
+        if resolution == "adopt" and row["state"] == "succeeded":
+            # No open intent was left to re-run, so the gate will not verify this reference. Finishing the execution
+            # from it is allowed only when it is the success the gate itself recorded and that record is not
+            # contested; an operator-typed reference with nothing recorded to agree with is refused (rolls back).
+            problem = (locked["outcome_detail"] or {}).get("problem")
+            if recorded is None or problem:
+                raise Conflict(
+                    ("the recorded object failed verification: " + problem) if problem else
+                    "no recorded effect to verify this reference against; abandon the execution (the use stays "
+                    "consumed) or resolve not_applied if nothing was sent", code="effect_evidence_missing")
         if resolution == "abandon":
-            finish_execution(self.conn, self.ctx, execution_id, "failed",
-                             detail={"abandoned_by_operator": True, "rationale": rationale})
+            # Abandoning records that the operator could not establish the outcome, not that nothing happened: the
+            # use is never returned, so the approval cannot authorize a second attempt at an effect that may exist.
+            # An operator who has established that nothing was sent cancels the execution and resolves not_applied.
+            finish_execution(self.conn, self.ctx, execution_id, "failed", return_use=False,
+                             detail={"abandoned_by_operator": True, "rationale": rationale,
+                                     "external_effect": "unknown",
+                                     "reservation": "consumed: an abandoned effect may exist, so its use is not "
+                                                    "returned"})
         elif resolution == "adopt" and row["state"] == "succeeded":
-            # No open effect intent was left to re-run (for example, a worker that lost its lease recorded the
-            # success but was not allowed to transition the execution): the job is finished, so the execution is too.
+            # A worker that lost its lease recorded the success but was not allowed to transition the execution:
+            # the job is finished, so the execution is too, from the recorded (and here matching) reference.
             finish_execution(self.conn, self.ctx, execution_id, "succeeded", external_ref=external_ref,
                              how="adopted_by_operator", detail={"operator_resolution": resolution,
                                                                  "rationale": rationale})
@@ -434,6 +465,101 @@ class ActionService:
 
 
 # ------------------------------------------------------------------------------ execution state helpers
+def effect_how(intent: dict | None, gate_how: str | None = None) -> str:
+    """How a recorded external reference was obtained, for ``external_references.how``."""
+    if gate_how in ("created", "adopted_by_lookup"):
+        return gate_how
+    resolution = (intent or {}).get("resolution") or ""
+    if resolution.startswith("adopt:"):
+        return "adopted_by_operator"
+    if resolution in ("adopted by lookup", "provider reported the existing object"):
+        return "adopted_by_lookup"
+    return "created"
+
+
+def effect_evidence(conn, e: dict) -> tuple[str, dict | None, str]:
+    """What the durable records establish about one execution's external effect: ``(kind, intent, why)``.
+
+    * ``succeeded``: an effect with an external reference is recorded (``succeeded`` or ``reconciled`` intent).
+    * ``failed`` / ``abandoned``: the intent says so; the effect was rejected or an operator abandoned it.
+    * ``never_began``: no dispatch began. Either no intent exists, or the intent is ``prepared`` and every dispatch
+      the gate authorized is accounted for as not applied (``unaccounted_dispatches``); and the database can vouch
+      that its effect records are complete (``restore_doubt``). The gate writes the intent, and marks it ``executing``
+      with an ``effect_attempt`` event, in a transaction that commits before any request is sent, so these records
+      are written ahead of every dispatch.
+    * ``may_have_begun``: anything else, including an outcome that is merely unknown. The absence of a response is
+      never treated as evidence that nothing happened.
+
+    Locks the intent row (after the job and execution rows, the order the gate and the worker use)."""
+    intent = conn.execute("SELECT * FROM axiom.effect_intents WHERE operation_key = %s FOR UPDATE",
+                          (e["external_operation_id"],)).fetchone()
+    if intent is not None:
+        if intent["state"] in ("succeeded", "reconciled") and intent["external_ref"]:
+            return "succeeded", intent, f"the effect {intent['external_ref']} is recorded"
+        if intent["state"] in ("failed", "abandoned"):
+            return intent["state"], intent, f"the effect intent is {intent['state']}"
+        if intent["state"] != "prepared":
+            return "may_have_begun", intent, (f"a dispatch was authorized (intent {intent['state']}) and its outcome "
+                                              "has not been established")
+    job = conn.execute("SELECT * FROM axiom.jobs WHERE id = %s", (e["job_id"],)).fetchone()
+    doubt = restore_doubt(conn, job, intent)
+    if doubt:
+        return "may_have_begun", intent, f"this database cannot vouch for its effect records: {doubt}"
+    open_attempts = unaccounted_dispatches(conn, e["job_id"])
+    if open_attempts:
+        return "may_have_begun", intent, (f"dispatches authorized under lease tokens {open_attempts} have no "
+                                          "recorded outcome")
+    if intent is None or intent["attempts"] == 0:
+        return "never_began", intent, "no dispatch was authorized"
+    return "never_began", intent, "every authorized dispatch was reported not applied"
+
+
+def settle_cancellation(conn, ctx: TenantContext, execution_id: UUID, job: dict, *,
+                        reason: str = "cancellation requested"):
+    """Settle a requested cancellation from the effect evidence (``effect_evidence``), in the caller's transaction.
+    Returns the job outcome for ``settle_cancelled_job``. Called by the worker that may write the job (at claim, or
+    in the lease holder's final write) and by ``ActionService.cancel_execution`` for a job no worker holds.
+
+    * never began: the execution is cancelled and its reservation released, in this one transaction;
+    * a recorded success: the execution succeeds from that record (unverified), not cancelled;
+    * a recorded failure or abandonment: the execution fails with the use consumed;
+    * otherwise: the execution is put into reconciliation with the use still reserved, and the job is parked for an
+      operator. The reservation keeps counting against the approval, so no fresh execution can reuse it."""
+    e = conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s FOR UPDATE", (execution_id,)).fetchone()
+    if e is None:
+        return Fail("cancelled: execution not found")
+    if e["state"] in TERMINAL_EXECUTION:
+        if e["state"] == "succeeded":
+            return Done({"execution_id": str(execution_id), "external_ref": e["external_ref"],
+                         "already_finished": True})
+        return Fail(f"cancelled: execution already {e['state']}")
+    kind, intent, why = effect_evidence(conn, e)
+    base = {"cancellation": reason, "evidence": why}
+    problem = (e["outcome_detail"] or {}).get("problem")
+    if kind == "succeeded" and problem:      # the recorded object failed verification: the record is contested
+        kind, why = "may_have_begun", f"{why}, but it failed verification ({problem})"
+    if kind == "succeeded":
+        ref, how = intent["external_ref"], effect_how(intent)
+        finish_execution(conn, ctx, execution_id, "succeeded", external_ref=ref, how=how, verified=False,
+                         detail={**base, "settled_from": "recorded effect"})
+        return Done({"execution_id": str(execution_id), "external_ref": ref, "how": how,
+                     "cancellation_requested": True})
+    if kind in ("failed", "abandoned"):
+        finish_execution(conn, ctx, execution_id, "failed", detail={**base, "error": why})
+        return Fail(f"cancelled: {why}")
+    if kind == "never_began" and e["state"] != "reconciling":
+        finish_execution(conn, ctx, execution_id, "cancelled", detail={**base, "external_effect": "none"})
+        return Fail(f"cancelled before any dispatch: {why}")
+    if kind == "never_began":
+        why = f"the execution is under reconciliation ({why}); an operator decides it"
+    held = ("held: the effect may exist, so the approval use stays reserved until an operator establishes the "
+            "outcome (adopt, not_applied or abandon)")
+    set_execution_state(conn, execution_id, "reconciling",
+                        {**base, "evidence": why, "external_effect": "unknown", "reservation": held})
+    earlier = f" Parked earlier: {job['operator_reason']}" if job.get("operator_reason") else ""
+    return NeedsOperator(f"cancellation requested, but {why}. The approval use stays reserved.{earlier}")
+
+
 def set_execution_state(conn, execution_id: UUID, state: str, detail: dict | None = None,
                         external_ref: str | None = None) -> dict | None:
     e = conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s FOR UPDATE", (execution_id,)).fetchone()
@@ -447,20 +573,23 @@ def set_execution_state(conn, execution_id: UUID, state: str, detail: dict | Non
 
 
 def finish_execution(conn, ctx: TenantContext, execution_id: UUID, state: str, *, external_ref: str | None = None,
-                     how: str | None = None, verified: bool = False, detail: dict | None = None) -> None:
+                     how: str | None = None, verified: bool = False, detail: dict | None = None,
+                     return_use: bool = True) -> None:
+    """Finish an execution and settle its reservation in the same transaction. A cancelled or failed execution
+    returns its use only when ``effect_evidence`` establishes that no dispatch began (and ``return_use``); otherwise
+    the use is consumed."""
     e = conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s FOR UPDATE", (execution_id,)).fetchone()
     if e["state"] in TERMINAL_EXECUTION:
         return
     set_execution_state(conn, execution_id, state, detail, external_ref)
     reservation = conn.execute("SELECT * FROM axiom.approval_reservations WHERE execution_id = %s FOR UPDATE",
                                (execution_id,)).fetchone()
-    attempted = conn.execute("SELECT 1 FROM axiom.effect_intents WHERE operation_key = %s AND state <> 'prepared'",
-                             (e["external_operation_id"],)).fetchone() is not None
     if reservation and reservation["status"] == "reserved":
-        if state in ("cancelled", "failed") and not attempted:
+        kind, _, why = effect_evidence(conn, e) if state in ("cancelled", "failed") else ("", None, "")
+        if return_use and kind == "never_began":
             conn.execute("""UPDATE axiom.approval_reservations SET status = 'released', release_reason = %s,
                                    record_version = record_version + 1 WHERE id = %s""",
-                         (f"execution {state} before any attempt", reservation["id"]))
+                         (f"execution {state}: {why}", reservation["id"]))
             conn.execute("""UPDATE axiom.approvals SET uses_released = uses_released + 1,
                                    record_version = record_version + 1 WHERE id = %s AND status = 'active'""",
                          (e["approval_id"],))
@@ -483,6 +612,6 @@ def finish_execution(conn, ctx: TenantContext, execution_id: UUID, state: str, *
                    aggregate_id=execution_id, payload={"external_ref": external_ref})
 
 
-__all__ = ["ActionService", "check_execution", "execution_operation_id", "finish_execution", "set_execution_state",
-           "EXECUTE_KIND"]
+__all__ = ["ActionService", "check_execution", "effect_evidence", "effect_how", "execution_operation_id",
+           "finish_execution", "set_execution_state", "settle_cancellation", "EXECUTE_KIND"]
 
