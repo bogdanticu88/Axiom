@@ -1,0 +1,80 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+Using CPython 3.13.16 interpreter at: /usr/bin/python3
+Creating virtual environment at: .venv
+   Building axiom @ file:///var/tmp/axiom-prev
+      Built axiom @ file:///var/tmp/axiom-prev
+Installed 44 packages in 112ms
+FFF.FF                                                                   [100%]
+=================================== FAILURES ===================================
+_ test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance[healthy] _
+tests/integration/test_action_cancellation.py:510: in test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance
+    assert facts(env, admin_conn, e, a) == {
+E   AssertionError: the API returned the use without restore-witness clearance
+E   assert {'job': 'canc...t': None, ...} == {'job': 'queu...t': None, ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'job': 'cancelled'} != {'job': 'queued'}
+E     {'reservation': 'released'} != {'reservation': 'reserved'}
+E     {'uses': (1, 1)} != {'uses': (1, 0)}
+E     {'execution': 'cancelled'} != {'execution': 'prepared'}
+E     Use -v to get more diff
+_ test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance[restore_detected] _
+tests/integration/test_action_cancellation.py:510: in test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance
+    assert facts(env, admin_conn, e, a) == {
+E   AssertionError: the API returned the use without restore-witness clearance
+E   assert {'job': 'canc...t': None, ...} == {'job': 'queu...t': None, ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'job': 'cancelled'} != {'job': 'queued'}
+E     {'reservation': 'released'} != {'reservation': 'reserved'}
+E     {'uses': (1, 1)} != {'uses': (1, 0)}
+E     {'execution': 'cancelled'} != {'execution': 'prepared'}
+E     Use -v to get more diff
+_ test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance[unavailable] _
+tests/integration/test_action_cancellation.py:510: in test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance
+    assert facts(env, admin_conn, e, a) == {
+E   AssertionError: the API returned the use without restore-witness clearance
+E   assert {'job': 'canc...t': None, ...} == {'job': 'queu...t': None, ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'job': 'cancelled'} != {'job': 'queued'}
+E     {'reservation': 'released'} != {'reservation': 'reserved'}
+E     {'uses': (1, 1)} != {'uses': (1, 0)}
+E     {'execution': 'cancelled'} != {'execution': 'prepared'}
+E     Use -v to get more diff
+_ test_lease_holder_returns_the_use_only_after_witness_clearance[restore_detected] _
+tests/integration/test_action_cancellation.py:553: in test_lease_holder_returns_the_use_only_after_witness_clearance
+    assert got == {**HELD, "intent": "prepared"}
+E   AssertionError: assert {'job': 'canc...repared', ...} == {'job': 'need...eserved', ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'job': 'cancelled'} != {'job': 'needs_operator'}
+E     {'reservation': 'released'} != {'reservation': 'reserved'}
+E     {'uses': (1, 1)} != {'uses': (1, 0)}
+E     {'execution': 'cancelled'} != {'execution': 'reconciling'}
+E     Use -v to get more diff
+_ test_lease_holder_returns_the_use_only_after_witness_clearance[unavailable] __
+tests/integration/test_action_cancellation.py:553: in test_lease_holder_returns_the_use_only_after_witness_clearance
+    assert got == {**HELD, "intent": "prepared"}
+E   AssertionError: assert {'job': 'canc...repared', ...} == {'job': 'need...eserved', ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'job': 'cancelled'} != {'job': 'needs_operator'}
+E     {'reservation': 'released'} != {'reservation': 'reserved'}
+E     {'uses': (1, 1)} != {'uses': (1, 0)}
+E     {'execution': 'cancelled'} != {'execution': 'reconciling'}
+E     Use -v to get more diff
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/integration/test_action_cancellation.py::test_lease_holder_returns_the_use_only_after_witness_clearance[healthy]
+FAILED tests/integration/test_action_cancellation.py::test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance[healthy]
+FAILED tests/integration/test_action_cancellation.py::test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance[restore_detected]
+FAILED tests/integration/test_action_cancellation.py::test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance[unavailable]
+FAILED tests/integration/test_action_cancellation.py::test_lease_holder_returns_the_use_only_after_witness_clearance[restore_detected]
+FAILED tests/integration/test_action_cancellation.py::test_lease_holder_returns_the_use_only_after_witness_clearance[unavailable]
+5 failed, 1 passed, 24 deselected in 3.64s

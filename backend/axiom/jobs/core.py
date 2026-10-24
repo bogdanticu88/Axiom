@@ -104,11 +104,12 @@ class JobContext:
 
 
 class Handler(Protocol):
-    """A job handler. It may also define ``on_cancel(conn, ctx, job) -> StepResult``: how to settle a job whose
-    cancellation was requested, decided from what the handler has on record about its effect. The worker calls it
-    with the job row locked, either while claiming the job (no worker holds a valid lease then) or in the final write
-    of the worker that holds the lease (``Worker._finish``). Its result is applied by ``settle_cancelled_job``. Without
-    ``on_cancel`` a cancelled job is simply marked cancelled."""
+    """A job handler. It may also define ``on_cancel(conn, ctx, job, witness) -> StepResult``: how to settle a job
+    whose cancellation was requested, decided from what the handler has on record about its effect. The worker calls
+    it with the job row locked, either while claiming the job (no worker holds a valid lease then) or in the final
+    write of the worker that holds the lease (``Worker._finish``), and passes its restore witness (``witness.
+    release_clearance``) for decisions that rely on records being complete. Its result is applied by
+    ``settle_cancelled_job``. Without ``on_cancel`` a cancelled job is simply marked cancelled."""
     kind: str
     versions: frozenset[int]
     current_version: int

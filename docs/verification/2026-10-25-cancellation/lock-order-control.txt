@@ -1,0 +1,52 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+Using CPython 3.13.16 interpreter at: /usr/bin/python3
+Creating virtual environment at: .venv
+   Building axiom @ file:///var/tmp/axiom-nokey
+      Built axiom @ file:///var/tmp/axiom-nokey
+Installed 44 packages in 124ms
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_ test_recording_a_provider_answer_while_a_cancellation_is_settled_completes_without_deadlock _
+tests/integration/test_action_cancellation.py:598: in test_recording_a_provider_answer_while_a_cancellation_is_settled_completes_without_deadlock
+    assert facts(env, admin_conn, e, a) == {
+E   AssertionError: assert {'job': 'need...ecuting', ...} == {'job': 'need...cceeded', ...}
+E     
+E     Omitting 7 identical items, use -vv to show
+E     Differing items:
+E     {'intent': 'executing'} != {'intent': 'succeeded'}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+ERROR    axiom.jobs.worker:worker.py:256 job step raised
+Traceback (most recent call last):
+  File "backend/axiom/jobs/worker.py", line 251, in execute
+    outcome = handler.step(jc)
+  File "backend/axiom/domains/actions/jobs.py", line 99, in step
+    outcome = EffectGate(jc).run(adapter, request, lambda c: check_execution(c, jc.ctx, execution_id), key=key)
+  File "backend/axiom/jobs/effects.py", line 298, in run
+    self._record(key, "succeeded", ref, None)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "backend/axiom/jobs/effects.py", line 325, in _record
+    event(conn, jc.ctx, jc.job["id"], f"effect_{state}", lease_token=jc.lease_token,
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+          detail={"external_ref": ref, "error": error})
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "backend/axiom/jobs/core.py", line 176, in event
+    conn.execute(
+    ~~~~~~~~~~~~^
+        """INSERT INTO axiom.job_events(tenant_id, job_id, id, event, lease_token, worker, detail)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        (ctx.tenant_id, job_id, uuid.uuid4(), name, lease_token, worker, Jsonb(detail or {})))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ".venv/lib/python3.13/site-packages/psycopg/connection.py", line 304, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.DeadlockDetected: deadlock detected
+DETAIL:  Process 24715 waits for ShareLock on transaction 296284; blocked by process 24763.
+Process 24763 waits for ShareLock on transaction 296286; blocked by process 24715.
+HINT:  See server log for query details.
+CONTEXT:  while locking tuple (0,5) in relation "jobs"
+SQL statement "SELECT 1 FROM ONLY "axiom"."jobs" x WHERE "tenant_id" OPERATOR(pg_catalog.=) $1 AND "id" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x"
+=========================== short test summary info ============================
+FAILED tests/integration/test_action_cancellation.py::test_recording_a_provider_answer_while_a_cancellation_is_settled_completes_without_deadlock
+1 failed, 29 deselected in 2.52s

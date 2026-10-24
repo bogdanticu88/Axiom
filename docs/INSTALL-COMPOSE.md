@@ -106,7 +106,9 @@ is recorded for it. Recovery, both paths tested in `tests/integration/test_princ
    find the job with `GET /api/v1/jobs?state=running`), then start the workers again. The reclaiming worker marks the
    job cancelled instead of running it. An action execution job is refused there: cancel it with
    `POST /api/v1/action-executions/{execution_id}/cancel`, which settles it from the effect evidence and may leave it
-   for an operator to reconcile when a request may already have been sent (ADR 0010, amendment of 2026-10-25). Reactivating with workers still running can let them reclaim the job before the
+   for an operator to reconcile when a request may already have been sent. When nothing was sent, the approval use is
+   returned only by a job worker, after it has checked the restore witness, so it stays reserved while the workers are
+   stopped (ADR 0010, amendment of 2026-10-25). Reactivating with workers still running can let them reclaim the job before the
    cancellation is recorded.
 
 While the tenant stays suspended, neither path is available: the job cannot be seen or cancelled through the API.

@@ -1138,7 +1138,7 @@ sleeps. Every test asserts the execution, the job, the effect intent and the app
   transition guard error.
 * **New tests** (`tests/integration/test_action_cancellation.py`, 23): on `5e17eff` 19 failed and 4 passed
   (`on-prior-pr-head.txt`); on `main` (`8f8a3e6`, with this change's test helpers) 19 failed and 4 passed
-  (`on-main.txt`); with the change 23 passed (`after-change.txt`). The four that pass everywhere guard behaviour that
+  (`on-main.txt`); with the change 23 passed (`after-change.txt`, regenerated in run 34). The four that pass everywhere guard behaviour that
   was already right: a worker that keeps its lease meets the cancellation at the authorization and returns the use; a
   dispatch reported not applied is accounted for; a request that succeeds after the cancellation was requested ends
   `succeeded` (two variants).
@@ -1168,4 +1168,32 @@ sleeps. Every test asserts the execution, the job, the effect intent and the app
 Accepted assumptions: the runtime credential is trusted (ADR 0012 amendment 4); external effects are at most one first
 attempt per operation key, with duplicates stopped only by provider deduplication or fencing (ADR 0010). Nothing here
 makes execution exactly-once.
+
+### Run 34: returning a use needs restore-witness clearance; observation lock order (2026-10-25)
+
+Records: `docs/verification/2026-10-25-cancellation/` (`witness-on-24e2dfd.txt`, `lock-order-control.txt`,
+`after-change.txt`). Same database and coordination as run 33; the witness is a real `FileWitness` in a temporary
+directory, set ahead of the database's effect watermark (a worker recorded an effect the rolled-back database no longer
+has), at it (healthy), or removed (unreadable).
+
+* **Reproduced on `24e2dfd`** (the head after run 33): with the witness ahead of the database and the execution's
+  intent absent, `cancel_execution` through the API cancelled the execution and released the use at once (job
+  `cancelled`, uses 1 reserved / 1 released); the same with the witness unreadable. The lease holder's final write
+  did the same with the witness ahead or unreadable. Of the 6 witness tests, 4 failed for that reason; the healthy API
+  case also failed, because the API now leaves the release to a worker by design; the healthy lease-holder case passed.
+* **Fix:** `release_clearance` in the releasing transaction (ADR 0010, amendment of 2026-10-25); the API never returns
+  a use on missing records and requeues the job for a worker; held when clearance is missing.
+* **Lock order.** `test_recording_a_provider_answer_while_a_cancellation_is_settled_completes_without_deadlock`: B's
+  claim holds the job row inside the settlement while A's provider call returns success; the test proceeds once
+  PostgreSQL reports A's backend blocked by B's. With the observation write's job-row lock removed (control), PostgreSQL
+  reported `deadlock detected`, aborted A's outcome record, and the intent stayed `executing` while the ticket existed.
+  With it, A waits, the settlement holds the use (`needs_operator`, `reconciling`, `reserved`), the success is recorded,
+  A's transition is discarded, and the operator's adoption then ends `succeeded`.
+* **Database guard review:** the release trigger enforces a structural invariant (no release once an intent has left
+  `prepared`) and no more; the restore, in-flight and witness rules are application-enforced (ADR 0010 amendment,
+  "The database guard on returning a use"). Documentation that described the guard as ensuring the effect was never
+  attempted is corrected.
+* **Existing tests changed:** `test_cancel_before_any_attempt_returns_the_use` and
+  `test_cancel_after_an_attempt_reported_not_applied_returns_the_use` now drive a worker before expecting the use back,
+  and the first also asserts the use is still reserved right after the API call.
 

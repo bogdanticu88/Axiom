@@ -1,13 +1,13 @@
 warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
-.......................                                                  [100%]
+..............................                                           [100%]
 ==================================== PASSES ====================================
 ______ test_cancel_with_an_earlier_dispatch_still_in_flight_holds_the_use ______
 ------------------------------ Captured log call -------------------------------
-ERROR    axiom.jobs.worker:worker.py:255 job step raised
+ERROR    axiom.jobs.worker:worker.py:256 job step raised
 Traceback (most recent call last):
-  File "backend/axiom/jobs/worker.py", line 250, in execute
+  File "backend/axiom/jobs/worker.py", line 251, in execute
     outcome = handler.step(jc)
-  File "backend/axiom/domains/actions/jobs.py", line 98, in step
+  File "backend/axiom/domains/actions/jobs.py", line 99, in step
     outcome = EffectGate(jc).run(adapter, request, lambda c: check_execution(c, jc.ctx, execution_id), key=key)
   File "backend/axiom/jobs/effects.py", line 298, in run
     self._record(key, "succeeded", ref, None)
@@ -48,4 +48,11 @@ PASSED tests/integration/test_action_cancellation.py::test_generic_job_operation
 PASSED tests/integration/test_action_cancellation.py::test_generic_job_operations_do_not_bypass_the_execution[resolve_effect]
 PASSED tests/integration/test_action_cancellation.py::test_adopt_without_a_verifiable_record_is_refused[witness_no_intent]
 PASSED tests/integration/test_action_cancellation.py::test_adopt_without_a_verifiable_record_is_refused[verification_failed]
-23 passed in 12.03s
+PASSED tests/integration/test_action_cancellation.py::test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance[healthy]
+PASSED tests/integration/test_action_cancellation.py::test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance[restore_detected]
+PASSED tests/integration/test_action_cancellation.py::test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance[unavailable]
+PASSED tests/integration/test_action_cancellation.py::test_lease_holder_returns_the_use_only_after_witness_clearance[healthy]
+PASSED tests/integration/test_action_cancellation.py::test_lease_holder_returns_the_use_only_after_witness_clearance[restore_detected]
+PASSED tests/integration/test_action_cancellation.py::test_lease_holder_returns_the_use_only_after_witness_clearance[unavailable]
+PASSED tests/integration/test_action_cancellation.py::test_recording_a_provider_answer_while_a_cancellation_is_settled_completes_without_deadlock
+30 passed in 15.57s

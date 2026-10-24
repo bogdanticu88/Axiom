@@ -72,9 +72,10 @@ class ActionExecuteHandler:
         self.adapter_factory = adapter_factory
         self.secrets = secrets or EnvSecretResolver()
 
-    def on_cancel(self, conn, ctx, job: dict):
-        """Settle a requested cancellation from the effect evidence (``service.settle_cancellation``)."""
-        return settle_cancellation(conn, ctx, UUID(job["payload"]["execution_id"]), job)
+    def on_cancel(self, conn, ctx, job: dict, witness):
+        """Settle a requested cancellation from the effect evidence (``service.settle_cancellation``), with the
+        worker's restore witness for the clearance a returned use needs."""
+        return settle_cancellation(conn, ctx, UUID(job["payload"]["execution_id"]), job, witness=witness)
 
     def step(self, jc: JobContext):
         execution_id = UUID(jc.job["payload"]["execution_id"])
@@ -130,7 +131,8 @@ class ActionExecuteHandler:
                 # With cancellation requested the worker's final write settles the execution from the effect
                 # evidence (on_cancel); this step does not decide that nothing happened.
                 if held and not held["cancel_requested"]:
-                    finish_execution(conn, jc.ctx, execution_id, "failed", detail={"error": step.error})
+                    finish_execution(conn, jc.ctx, execution_id, "failed", detail={"error": step.error},
+                                     witness=jc.witness)
             elif isinstance(step, NeedsOperator):
                 held = _holds_lease(conn, jc, {"intended": "reconciling", "reason": step.reason})
                 if held:

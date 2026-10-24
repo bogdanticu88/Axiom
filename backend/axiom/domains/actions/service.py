@@ -9,8 +9,9 @@ Protocol (Plan S 7):
 4. The job re-checks everything again at the effect boundary (``check_execution``) inside the effect gate's fenced
    transaction, records intent, executes and reconciles (``axiom.jobs.effects``).
 
-A reserved use is never returned once the effect may have been attempted (database guard): timeouts do not restore
-approvals. Operators can reconcile, retry or abandon an execution, but cannot extend or re-mint approval.
+A reserved use is never returned once an attempt is on record (database guard: the trigger refuses a release once
+the intent has left ``prepared``), so timeouts do not restore approvals. That the records are complete (no restore
+lost them, no dispatch is still in flight, restore-witness clearance) is checked by this module, not the database. Operators can reconcile, retry or abandon an execution, but cannot extend or re-mint approval.
 
 Cancelling an execution stops its scheduling; it does not establish that the external action was cancelled. The
 outcome is decided from the effect evidence (``effect_evidence``, ``settle_cancellation``): an execution is cancelled,
@@ -34,6 +35,7 @@ from ...errors import Conflict, Forbidden, NotFound, ValidationFailed
 from ...jobs import Done, Fail, NeedsOperator, enqueue
 from ...jobs.core import event, settle_cancelled_job
 from ...jobs.effects import restore_doubt, unaccounted_dispatches
+from ...jobs.witness import NO_WITNESS_ACCESS, release_clearance
 from .model import canonical_ticket_payload, effect_class
 
 EXECUTE_KIND = "action.execute"
@@ -382,10 +384,11 @@ class ActionService:
         return {**e, "external_references": refs, "intent": intent}
 
     def cancel_execution(self, execution_id: UUID, reason: str) -> dict:
-        """Request cancellation. A job no worker holds is settled now from the effect evidence
-        (``settle_cancellation``); a running job is flagged and settled by its worker, at its next claim or final
-        write. The result may be cancelled (use returned), succeeded (the effect is on record) or reconciling (the use
-        stays reserved until an operator establishes the outcome)."""
+        """Request cancellation. For a job no worker holds, outcomes that return no capacity are settled now from the
+        effect evidence (``settle_cancellation``): succeeded (the effect is on record), failed, or reconciling (the
+        use stays reserved until an operator establishes the outcome). Returning the use needs restore-witness
+        clearance, which this process does not have, so that case, like a running job, is settled by a worker at its
+        next claim or final write; the execution keeps its state and the use stays reserved until then."""
         e = self.conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s", (execution_id,)).fetchone()
         if e is None:
             raise NotFound("execution not found", code="execution_not_found")
@@ -401,8 +404,22 @@ class ActionService:
                                         record_version = record_version + 1 WHERE id = %s""", (job["id"],))
             event(self.conn, self.ctx, job["id"], "cancel_requested", detail={"reason": reason})
         if job["state"] in ("queued", "waiting", "needs_operator"):
-            settle_cancelled_job(self.conn, self.ctx, job["id"],
-                                 settle_cancellation(self.conn, self.ctx, execution_id, job, reason=reason))
+            outcome = settle_cancellation(self.conn, self.ctx, execution_id, job, reason=reason)
+            if outcome is None:
+                # No dispatch is recorded, but this process cannot read the restore witness, so it cannot tell a
+                # healthy database from a restored one that lost the records. A worker settles it at its next claim,
+                # checking the witness in the transaction that would return the use; until then the use is reserved.
+                set_execution_state(self.conn, execution_id, e["state"], {
+                    "cancellation": reason, "reservation": "held until a worker confirms with the restore witness "
+                                                           "that no dispatch began"})
+                self.conn.execute(
+                    """UPDATE axiom.jobs SET state = 'queued', due_at = clock_timestamp(), operator_reason = NULL,
+                              wait_reason = NULL, updated_at = clock_timestamp(), record_version = record_version + 1
+                        WHERE id = %s""", (job["id"],))
+                event(self.conn, self.ctx, job["id"], "cancel_left_to_worker",
+                      detail={"reason": "no dispatch recorded; returning the use needs restore-witness clearance"})
+            else:
+                settle_cancelled_job(self.conn, self.ctx, job["id"], outcome)
         audit.record(self.conn, self.ctx, action="action.execution_cancel_requested", resource_type="action_execution",
                      resource_id=execution_id, detail={"reason": reason, "authority": authority.as_json()})
         return self.conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s", (execution_id,)).fetchone()
@@ -514,13 +531,16 @@ def effect_evidence(conn, e: dict) -> tuple[str, dict | None, str]:
     return "never_began", intent, "every authorized dispatch was reported not applied"
 
 
-def settle_cancellation(conn, ctx: TenantContext, execution_id: UUID, job: dict, *,
+def settle_cancellation(conn, ctx: TenantContext, execution_id: UUID, job: dict, *, witness=NO_WITNESS_ACCESS,
                         reason: str = "cancellation requested"):
     """Settle a requested cancellation from the effect evidence (``effect_evidence``), in the caller's transaction.
     Returns the job outcome for ``settle_cancelled_job``. Called by the worker that may write the job (at claim, or
     in the lease holder's final write) and by ``ActionService.cancel_execution`` for a job no worker holds.
 
-    * never began: the execution is cancelled and its reservation released, in this one transaction;
+    * never began: the execution is cancelled and its reservation released, in this one transaction, but only when
+      ``release_clearance`` with the restore witness trusts the records here; without that clearance (witness behind,
+      unreadable or empty when it should not be) the cancellation is held like an uncertain one. Called without
+      witness access (the API), it returns None instead and the caller leaves the settlement to a worker;
     * a recorded success: the execution succeeds from that record (unverified), not cancelled;
     * a recorded failure or abandonment: the execution fails with the use consumed;
     * otherwise: the execution is put into reconciliation with the use still reserved, and the job is parked for an
@@ -548,9 +568,15 @@ def settle_cancellation(conn, ctx: TenantContext, execution_id: UUID, job: dict,
         finish_execution(conn, ctx, execution_id, "failed", detail={**base, "error": why})
         return Fail(f"cancelled: {why}")
     if kind == "never_began" and e["state"] != "reconciling":
-        finish_execution(conn, ctx, execution_id, "cancelled", detail={**base, "external_effect": "none"})
-        return Fail(f"cancelled before any dispatch: {why}")
-    if kind == "never_began":
+        if witness is NO_WITNESS_ACCESS:
+            return None           # only a process with the restore witness may return the use (cancel_execution)
+        blocked = release_clearance(conn, witness)
+        if blocked is None:
+            finish_execution(conn, ctx, execution_id, "cancelled", witness=_CLEARED,
+                             detail={**base, "external_effect": "none"})
+            return Fail(f"cancelled before any dispatch: {why}")
+        why = f"no dispatch is recorded, but the records cannot be trusted to be complete: {blocked}"
+    elif kind == "never_began":
         why = f"the execution is under reconciliation ({why}); an operator decides it"
     held = ("held: the effect may exist, so the approval use stays reserved until an operator establishes the "
             "outcome (adopt, not_applied or abandon)")
@@ -572,24 +598,38 @@ def set_execution_state(conn, execution_id: UUID, state: str, detail: dict | Non
         (state, external_ref, Jsonb(detail or {}), execution_id)).fetchone()
 
 
+# Passed by settle_cancellation once it has run release_clearance in the same transaction (one witness read).
+_CLEARED = object()
+
+
 def finish_execution(conn, ctx: TenantContext, execution_id: UUID, state: str, *, external_ref: str | None = None,
                      how: str | None = None, verified: bool = False, detail: dict | None = None,
-                     return_use: bool = True) -> None:
+                     return_use: bool = True, witness=NO_WITNESS_ACCESS) -> None:
     """Finish an execution and settle its reservation in the same transaction. A cancelled or failed execution
-    returns its use only when ``effect_evidence`` establishes that no dispatch began (and ``return_use``); otherwise
-    the use is consumed."""
+    returns its use only when ``effect_evidence`` establishes that no dispatch began, ``return_use`` is set, and
+    ``release_clearance`` with ``witness`` finds the records trustworthy in this transaction. Otherwise the use is
+    consumed. The default (no witness access) never returns a use."""
     e = conn.execute("SELECT * FROM axiom.action_executions WHERE id = %s FOR UPDATE", (execution_id,)).fetchone()
     if e["state"] in TERMINAL_EXECUTION:
         return
-    set_execution_state(conn, execution_id, state, detail, external_ref)
     reservation = conn.execute("SELECT * FROM axiom.approval_reservations WHERE execution_id = %s FOR UPDATE",
                                (execution_id,)).fetchone()
+    release_why = None
+    if reservation and reservation["status"] == "reserved" and return_use and state in ("cancelled", "failed"):
+        kind, _, why = effect_evidence(conn, e)
+        if kind == "never_began":
+            blocked = None if witness is _CLEARED else release_clearance(conn, witness)
+            if blocked is None:
+                release_why = why
+            else:
+                detail = {**(detail or {}), "reservation": f"consumed: no dispatch is recorded, but the use was not "
+                                                           f"returned because {blocked}"}
+    set_execution_state(conn, execution_id, state, detail, external_ref)
     if reservation and reservation["status"] == "reserved":
-        kind, _, why = effect_evidence(conn, e) if state in ("cancelled", "failed") else ("", None, "")
-        if return_use and kind == "never_began":
+        if release_why is not None:
             conn.execute("""UPDATE axiom.approval_reservations SET status = 'released', release_reason = %s,
                                    record_version = record_version + 1 WHERE id = %s""",
-                         (f"execution {state}: {why}", reservation["id"]))
+                         (f"execution {state}: {release_why}", reservation["id"]))
             conn.execute("""UPDATE axiom.approvals SET uses_released = uses_released + 1,
                                    record_version = record_version + 1 WHERE id = %s AND status = 'active'""",
                          (e["approval_id"],))

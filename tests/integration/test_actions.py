@@ -292,13 +292,17 @@ def test_material_change_after_approval_denies(env, admin_conn):
     assert env.fake.create_requests == 0
 
 
-def test_cancel_before_any_attempt_returns_the_use(env):
+def test_cancel_before_any_attempt_returns_the_use(env, admin_conn):
     p = env.propose()
     a = env.approve(p)
     e = env.execute(p, a)
     env.svc("analyst", lambda s: s.cancel_execution(e["id"], "duplicate request"))
-    got = env.execution(e["id"])
-    assert got["state"] == "cancelled"
+    # The API cannot read the restore witness, so it does not return the use itself; the next worker does.
+    assert env.execution(e["id"])["state"] == "prepared" and env.job(e["job_id"])["cancel_requested"]
+    with pytest.raises(Conflict):
+        env.execute(p, a)
+    assert env.drive(admin_conn, e["job_id"])["state"] == "cancelled"
+    assert env.execution(e["id"])["state"] == "cancelled"
     assert env.execute(p, a)["state"] == "prepared"           # the single use was returned, so this succeeds
 
 

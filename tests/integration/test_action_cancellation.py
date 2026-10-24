@@ -152,7 +152,8 @@ def test_cancel_after_an_attempt_reported_not_applied_returns_the_use(env, admin
     e = env.execute(p, a)
     env.worker("A", LONG).run_once(only_tenants={env.world.a.id})
     assert env.job(e["job_id"])["state"] == "queued"
-    assert cancel(env, e)["state"] == "cancelled"
+    cancel(env, e)
+    env.drive(admin_conn, e["job_id"], worker=env.worker("B", LONG))     # the worker returns the use
     assert facts(env, admin_conn, e, a) == {
         "job": "cancelled", "execution": "cancelled", "external_ref": None, "intent": "prepared",
         "reservation": "released", "uses": (1, 1), "creates": 1, "tickets": 0}
@@ -463,3 +464,144 @@ def test_adopt_without_a_verifiable_record_is_refused(env, admin_conn, park):
         env.svc("admin", lambda s: s.reconcile(e["id"], resolution="adopt", rationale="looks right", external_ref=ref))
     assert err.value.code == "effect_evidence_missing"
     assert facts(env, admin_conn, e, a) == before
+
+
+# --------------------------------------------------------------- restore-witness clearance for a returned use
+def witness_for(admin_conn, directory, state: str):
+    """A file restore witness in one of three states relative to this database's effect watermark: ``healthy`` (it
+    holds the database's own high-water mark, as after an acknowledged recovery), ``restore_detected`` (a worker
+    recorded a later watermark before the database was rolled back, so the database lost records the witness saw),
+    ``unavailable`` (its directory is gone, so it cannot be read)."""
+    import shutil
+
+    from axiom.jobs.witness import FileWitness
+    row = admin_conn.execute("SELECT last_value, is_called FROM axiom.effect_watermark_seq").fetchone()
+    db_mark = int(row["last_value"]) if row["is_called"] else 0
+    witness = FileWitness(directory, "settling-worker")
+    if state == "healthy" and db_mark > 0:
+        FileWitness(directory, "earlier-worker").advance(db_mark)
+    elif state == "restore_detected":
+        FileWitness(directory, "pre-restore-worker").advance(db_mark + 1000)
+    elif state == "unavailable":
+        shutil.rmtree(directory)
+    return witness
+
+
+HELD = {"job": "needs_operator", "execution": "reconciling", "external_ref": None, "reservation": "reserved",
+        "uses": (1, 0), "creates": 0, "tickets": 0}
+RETURNED = {"job": "cancelled", "execution": "cancelled", "external_ref": None, "reservation": "released",
+            "uses": (1, 1), "creates": 0, "tickets": 0}
+WHY_HELD = {"restore_detected": "is behind the external witness", "unavailable": "could not be read"}
+
+
+@pytest.mark.parametrize("witness_state", ["healthy", "restore_detected", "unavailable"])
+def test_api_cancel_of_a_never_run_execution_returns_the_use_only_after_witness_clearance(
+        env, admin_conn, tmp_path, witness_state):
+    """The execution never ran and has no intent. In ``restore_detected`` the database was rolled back to before its
+    intent was written: the missing record is not evidence that nothing was sent, and only the witness can tell. The
+    API cannot read the witness, so it must not return the use; the worker that claims the job settles it with the
+    witness, in the transaction that would return the use (here claimed directly, as after a restore that happened
+    after the worker's start-of-pass preflight)."""
+    p = env.propose()
+    a = env.approve(p, max_uses=1)
+    e = env.execute(p, a)
+    witness = witness_for(admin_conn, tmp_path / "witness", witness_state)
+    cancel(env, e)
+    assert facts(env, admin_conn, e, a) == {
+        "job": "queued", "execution": "prepared", "external_ref": None, "intent": None, "reservation": "reserved",
+        "uses": (1, 0), "creates": 0, "tickets": 0}, "the API returned the use without restore-witness clearance"
+    assert second_execution(env, p, a) == "refused:approval_exhausted"
+    worker = Worker(env.db, [ActionExecuteHandler(env.adapter)], worker_id="B", config=LONG, witness=witness)
+    assert worker.claim(env.ctx_for("system")) == []                 # settled at claim; nothing runs
+    got = facts(env, admin_conn, e, a)
+    if witness_state == "healthy":
+        assert got == {**RETURNED, "intent": None}
+        assert second_execution(env, p, a) == "allowed"
+        return
+    assert got == {**HELD, "intent": None}
+    assert WHY_HELD[witness_state] in env.job(e["job_id"])["operator_reason"]
+    assert env.execution(e["id"])["outcome_detail"]["reservation"].startswith("held:")
+    assert second_execution(env, p, a) == "refused:approval_exhausted"
+
+
+@pytest.mark.parametrize("witness_state", ["healthy", "restore_detected", "unavailable"])
+def test_lease_holder_returns_the_use_only_after_witness_clearance(env, admin_conn, tmp_path, threads,
+                                                                   witness_state):
+    """Worker A passed the gate's witness check, wrote its intent and is paused before the authorization; the
+    operator cancels; then the witness changes. A meets the cancellation at the authorization and its final write
+    settles it, checking the witness again in that transaction."""
+    p = env.propose()
+    a = env.approve(p, max_uses=1)
+    e = env.execute(p, a)
+    directory = tmp_path / "witness"
+    witness = witness_for(admin_conn, directory, "healthy")
+    at_find, proceed = threading.Event(), threading.Event()
+    worker_a = Worker(env.db, [ActionExecuteHandler(paused(env, "find", at_find, proceed))], worker_id="A",
+                      config=LONG, witness=witness)
+    job, token, ta = start(worker_a, env.ctx_for("system"), "A", threads, proceed)
+    assert at_find.wait(15)
+    cancel(env, e)
+    if witness_state != "healthy":
+        witness_for(admin_conn, directory, witness_state)
+    proceed.set()
+    ta.join(15)
+    assert not ta.is_alive()
+    got = facts(env, admin_conn, e, a)
+    if witness_state == "healthy":
+        assert got == {**RETURNED, "intent": "prepared"}
+        return
+    assert got == {**HELD, "intent": "prepared"}
+    assert WHY_HELD[witness_state] in env.job(e["job_id"])["operator_reason"]
+    assert second_execution(env, p, a) == "refused:approval_exhausted"
+
+
+# ---------------------------------------------------------- lock order: provider answer against settlement
+def test_recording_a_provider_answer_while_a_cancellation_is_settled_completes_without_deadlock(
+        env, admin_conn, threads, monkeypatch):
+    """Worker A's request is held by the provider; the operator cancels and A's lease expires. Worker B's claim locks
+    the job row and is paused inside the settlement, before it reads the intent. A's request then returns success and
+    A records the answer: that transaction must wait for B (job row before intent, the order every writer uses)
+    instead of taking the intent first. Coordination: B's pause, the provider's hold, and the database's own report
+    that A's backend is blocked by B's (pg_blocking_pids)."""
+    import axiom.domains.actions.service as service
+
+    from .test_jobs import wait_until
+    env.fake = JiraStyleFake(search_lag=3600)
+    env.fake.hold_armed = True
+    p = env.propose()
+    a = env.approve(p, max_uses=1)
+    e = env.execute(p, a)
+    job, token, ta = start(env.worker("A", LONG), env.ctx_for("system"), "A", threads, env.fake.release)
+    assert env.fake.at_boundary.wait(15)
+    cancel(env, e)
+    _expire_lease(admin_conn, job["id"])
+    real_evidence, in_settlement, proceed_b, b_pid = service.effect_evidence, threading.Event(), threading.Event(), {}
+
+    def paused_evidence(conn, execution):
+        if threading.current_thread().name == "B" and not in_settlement.is_set():
+            b_pid["pid"] = conn.info.backend_pid
+            in_settlement.set()
+            proceed_b.wait(15)
+        return real_evidence(conn, execution)
+    monkeypatch.setattr(service, "effect_evidence", paused_evidence)
+    tb = threading.Thread(target=take_over, args=(env,), name="B")
+    threads.append((tb, proceed_b))
+    tb.start()
+    assert in_settlement.wait(15)                                 # B holds the job row lock
+    env.fake.release.set()                                        # A's request returns; A records the answer
+    wait_until(admin_conn, "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE %s = ANY(pg_blocking_pids(pid))) "
+               "AS ok", (b_pid["pid"],))
+    proceed_b.set()
+    tb.join(30)
+    ta.join(30)
+    assert not ta.is_alive() and not tb.is_alive()
+    assert facts(env, admin_conn, e, a) == {
+        "job": "needs_operator", "execution": "reconciling", "external_ref": None, "intent": "succeeded",
+        "reservation": "reserved", "uses": (1, 0), "creates": 1, "tickets": 1}
+    ev = events(admin_conn, job["id"])
+    assert [r["worker"] for r in ev if r["event"] == "cancel_settled_needs_operator"] == ["B"]
+    assert [r["lease_token"] for r in ev if r["event"] == "effect_succeeded"] == [token]   # the answer was kept
+    assert [r["detail"]["intended"] for r in ev if r["event"] == "execution_transition_discarded"] == ["succeeded"]
+    env.svc("admin", lambda s: s.reconcile(e["id"], resolution="adopt", rationale="SEC-1 carries the label",
+                                           external_ref="SEC-1"))
+    assert facts(env, admin_conn, e, a)["execution"] == "succeeded"

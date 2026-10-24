@@ -157,7 +157,8 @@ class Worker:
                     # from what it has on record about its effect (see Handler, settle_cancelled_job)
                     try:
                         with conn.transaction():     # a savepoint: one job that cannot be settled stays as it is
-                            settle_cancelled_job(conn, ctx, job["id"], settle(conn, ctx, job), worker=self.worker_id)
+                            settle_cancelled_job(conn, ctx, job["id"], settle(conn, ctx, job, self.witness),
+                                                 worker=self.worker_id)
                     except Exception:  # noqa: BLE001 - left for the next claim; never cancelled without settling
                         log.exception("cancellation could not be settled", extra={"job_id": str(job["id"])})
                     continue
@@ -280,8 +281,8 @@ class Worker:
                 return
             settle = getattr(self.handlers[job["kind"]], "on_cancel", None)
             if current["cancel_requested"] and not isinstance(outcome, Done) and settle is not None:
-                settle_cancelled_job(conn, ctx, job["id"], settle(conn, ctx, current), lease_token=token,
-                                     worker=self.worker_id)
+                settle_cancelled_job(conn, ctx, job["id"], settle(conn, ctx, current, self.witness),
+                                     lease_token=token, worker=self.worker_id)
                 return
             if current["cancel_requested"] and not isinstance(outcome, Done):
                 outcome = Fail("cancelled")
