@@ -1,0 +1,29 @@
+test_stale_denial_cannot_fail_the_execution_and_return_the_use_while_the_current_worker_creates
+       lookup. A then marks the execution failed and, as no attempt existed yet, returns the approval use. B resumes
+       assert b_at_lookup.wait(15)                                   # B holds the lease and has passed its checks
+E       AssertionError: a stale worker's execution transition was applied: {'tickets': 1, 'execution': 'failed', 'external_ref_recorded': False, 'reservation': 'released', 'second_execution': 'allowed', 'tickets_after_second_attempt': 2}
+E         {'execution': 'failed'} != {'execution': 'succeeded'}
+test_execution_transition_after_the_lease_is_lost_is_discarded_and_the_observation_kept[succeeded]
+E       AssertionError: a worker without the lease changed the execution record: {'state': 'executing', 'detail': {}, 'ref': None, 'reservation': 'reserved', 'gate': 'Done'} -> {'state': 'succeeded', 'detail': {}, 'ref': 'SEC-1', 'reservation': 'consumed', 'gate': 'Done'}
+test_execution_transition_after_the_lease_is_lost_is_discarded_and_the_observation_kept[verify_mismatch]
+E       AssertionError: a worker without the lease changed the execution record: {'state': 'executing', 'detail': {}, 'ref': None, 'reservation': 'reserved', 'gate': 'Done'} -> {'state': 'reconciling', 'detail': {'problem': 'SEC-1 does not carry the operation label'}, 'ref': None, 'reservation': 'reserved', 'gate': 'Done'}
+test_execution_transition_after_the_lease_is_lost_is_discarded_and_the_observation_kept[denied]
+E       AssertionError: a worker without the lease changed the execution record: {'state': 'executing', 'detail': {}, 'ref': None, 'reservation': 'reserved', 'gate': 'Fail'} -> {'state': 'failed', 'detail': {'error': 'denied before effect: approver no longer holds action.approve:ticket_create for this scope'}, 'ref': None, 'reservation': 'released', 'gate': 'Fail'}
+E         {'state': 'failed'} != {'state': 'executing'}
+test_execution_transition_after_the_lease_is_lost_is_discarded_and_the_observation_kept[parked]
+E       AssertionError: a worker without the lease changed the execution record: {'state': 'executing', 'detail': {}, 'ref': None, 'reservation': 'reserved', 'gate': 'NeedsOperator'} -> {'state': 'reconciling', 'detail': {'reason': 'an earlier attempt may have reached the provider and lookup found nothing; the provider cannot deduplicate, so another create could duplicate the effect. Reconcile by hand'}, 'ref': None, 'reservation': 'reserved', 'gate': 'NeedsOperator'}
+test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence[adopt]
+E       AssertionError: worker A transitioned the execution to succeeded without the lease
+test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence[not_applied]
+E       AssertionError: worker A transitioned the execution to succeeded without the lease
+test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence[adopt_wrong_ref]
+E       AssertionError: worker A transitioned the execution to succeeded without the lease
+FAILED tests/integration/test_actions.py::test_stale_denial_cannot_fail_the_execution_and_return_the_use_while_the_current_worker_creates
+FAILED tests/integration/test_actions.py::test_execution_transition_after_the_lease_is_lost_is_discarded_and_the_observation_kept[succeeded]
+FAILED tests/integration/test_actions.py::test_execution_transition_after_the_lease_is_lost_is_discarded_and_the_observation_kept[verify_mismatch]
+FAILED tests/integration/test_actions.py::test_execution_transition_after_the_lease_is_lost_is_discarded_and_the_observation_kept[denied]
+FAILED tests/integration/test_actions.py::test_execution_transition_after_the_lease_is_lost_is_discarded_and_the_observation_kept[parked]
+FAILED tests/integration/test_actions.py::test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence[adopt]
+FAILED tests/integration/test_actions.py::test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence[not_applied]
+FAILED tests/integration/test_actions.py::test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence[adopt_wrong_ref]
+8 failed, 30 deselected in 4.91s

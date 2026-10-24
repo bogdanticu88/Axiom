@@ -1,0 +1,86 @@
+"""Probe (not committed as a test): what abandon and cancel do today when the database may be behind the effects."""
+from __future__ import annotations
+
+import pytest
+
+from axiom.domains.actions.jobs import ActionExecuteHandler
+from axiom.errors import Conflict
+from axiom.jobs import Worker
+
+from .test_actions import LONG, env  # noqa: F401
+
+pytestmark = pytest.mark.db
+
+
+class AheadWitness:
+    """An external witness that has seen a later effect watermark than this database holds (restored database)."""
+    def advance(self, watermark):
+        pass
+
+    def high_water(self):
+        return 10 ** 12
+
+
+def facts(env, admin_conn, e, p, a):
+    got = env.execution(e["id"])
+    appr = admin_conn.execute("SELECT uses_reserved, uses_released FROM axiom.approvals WHERE id = %s",
+                              (a["id"],)).fetchone()
+    res = admin_conn.execute("SELECT status FROM axiom.approval_reservations WHERE execution_id = %s",
+                             (e["id"],)).fetchone()["status"]
+    out = {"job": env.job(e["job_id"])["state"], "execution": got["state"],
+           "intent": got["intent"]["state"] if got["intent"] else None, "reservation": res,
+           "uses_reserved": appr["uses_reserved"], "uses_released": appr["uses_released"]}
+    try:
+        env.execute(p, a)
+        out["second_execution"] = "allowed"
+    except Conflict as exc:
+        out["second_execution"] = f"refused ({exc.code})"
+    return out
+
+
+def test_probe_abandon_after_witness_park(env, admin_conn):
+    p = env.propose()
+    a = env.approve(p, max_uses=1)
+    e = env.execute(p, a)
+    w = Worker(env.db, [ActionExecuteHandler(env.adapter)], worker_id="R", config=LONG, witness=AheadWitness())
+    sys_ctx = env.ctx_for("system")
+    [(job, token)] = w.claim(sys_ctx)
+    w.execute(sys_ctx, job, token)
+    print("parked:", env.job(e["job_id"])["state"], env.job(e["job_id"])["operator_reason"])
+    env.svc("admin", lambda s: s.reconcile(e["id"], resolution="abandon", rationale="cannot tell"))
+    print("ABANDON_AFTER_WITNESS_PARK", facts(env, admin_conn, e, p, a))
+
+
+def test_probe_abandon_after_carried_park(env, admin_conn):
+    p = env.propose()
+    a = env.approve(p, max_uses=1)
+    e = env.execute(p, a)
+    admin_conn.execute("INSERT INTO axiom.recovery_acknowledgements(fingerprint, acknowledged_by, note) "
+                       "VALUES ('probe-' || gen_random_uuid(), 'probe', 'later recovery')")
+    env.drive(admin_conn, e["job_id"], worker=env.worker("R", LONG))
+    print("parked:", env.job(e["job_id"])["state"], env.job(e["job_id"])["operator_reason"])
+    env.svc("admin", lambda s: s.reconcile(e["id"], resolution="abandon", rationale="cannot tell"))
+    print("ABANDON_AFTER_CARRIED_PARK", facts(env, admin_conn, e, p, a))
+
+
+def test_probe_cancel_after_carried_park(env, admin_conn):
+    p = env.propose()
+    a = env.approve(p, max_uses=1)
+    e = env.execute(p, a)
+    admin_conn.execute("INSERT INTO axiom.recovery_acknowledgements(fingerprint, acknowledged_by, note) "
+                       "VALUES ('probe-' || gen_random_uuid(), 'probe', 'later recovery')")
+    env.drive(admin_conn, e["job_id"], worker=env.worker("R", LONG))
+    print("parked:", env.job(e["job_id"])["state"], env.job(e["job_id"])["operator_reason"])
+    env.svc("analyst", lambda s: s.cancel_execution(e["id"], "no longer needed"))
+    print("CANCEL_AFTER_CARRIED_PARK", facts(env, admin_conn, e, p, a))
+
+
+def test_probe_cancel_after_unknown_outcome_with_lookup(env, admin_conn):
+    env.fake.lose_ack, env.fake.search_lag = 1, 3600
+    p = env.propose()
+    a = env.approve(p, max_uses=1)
+    e = env.execute(p, a)
+    env.worker("R", LONG).run_once(only_tenants={env.world.a.id})
+    print("after attempt:", env.job(e["job_id"])["state"])
+    env.svc("analyst", lambda s: s.cancel_execution(e["id"], "no longer needed"))
+    print("CANCEL_AFTER_UNKNOWN", facts(env, admin_conn, e, p, a), "tickets", len(env.fake.issues))

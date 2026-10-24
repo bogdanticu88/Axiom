@@ -1091,3 +1091,131 @@ blocked backend found through `pg_blocking_pids`), not on elapsed time.
 
 Discarding a job's outcome does not undo writes the handler committed earlier in fenced transactions, or external
 effects.
+
+### Run 32: action execution transitions after the effect are lease-fenced (2026-10-24)
+
+Records: `docs/verification/2026-10-24-execution-transitions/`. PostgreSQL test database; workers coordinated through
+events inside the effect gate and the adapter's lookup, lease timestamps moved with the database clock, no sleeps.
+
+* **Confirmed on `main` (`8f8a3e6`).** `test_stale_denial_cannot_fail_the_execution_and_return_the_use_while_the_current_worker_creates`:
+  worker A's gate denied (approver suspended) and sent nothing; A's lease expired, the membership was restored, worker
+  B reclaimed the job and reached its lookup; A marked the execution `failed` and returned the approval use; B created
+  the ticket. Observed: 1 ticket, execution `failed`, no external reference, reservation `released`; a second
+  execution of the same single-use approval was allowed and created a second ticket.
+* **Confirmed on `main`, every post-effect transition.**
+  `test_execution_transition_after_the_lease_is_lost_is_discarded_and_the_observation_kept`: with the lease lost right
+  after the gate returned, a worker without the lease set the execution `succeeded` (use consumed), `reconciling`
+  (verification mismatch, and a parked gate), or `failed` (denial, use returned).
+* **Fix:** each of those transitions commits only after `JobContext.fenced` in the same transaction; otherwise the
+  observation is recorded as `execution_transition_discarded` and the step stops. Effect-gate observations unchanged.
+* **Operator adoption** (`test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence`): with only the
+  fence, adopting a discarded stale success left the execution `reconciling` with no reference while the job was
+  `succeeded` (`fence-without-reconcile-fix.txt`). With the reconcile fix, `adopt` and `not_applied` both end
+  `succeeded` with the recorded reference, the use consumed and one create request; a contradicting reference is
+  refused.
+* **Results:** on `main` all 8 new tests failed for their intended reasons (`on-main.txt`); with the fix all 8 passed;
+  the action, action API, workflow adapter and job test files passed (107 passed).
+* **Reproduced, not fixed:** a cancellation applied at claim time after the previous worker's lease expired leaves the
+  execution `prepared` and the reservation `reserved` with the job `cancelled` (`probe-cancel-after-worker-loss.py.txt`).
+  Addressed in run 33.
+
+Accepted assumptions: the runtime credential is trusted (ADR 0012 amendment 4); external effects are at most one first
+attempt per operation key, with duplicates stopped only by provider deduplication or fencing (ADR 0010). Nothing here
+makes execution exactly-once.
+
+### Run 33: a cancellation is settled from the effect evidence (2026-10-25)
+
+Records: `docs/verification/2026-10-25-cancellation/`. PostgreSQL test database; workers coordinated through events
+inside the adapter (paused before the gate authorizes a dispatch, or after it and before the request is sent), inside
+the fake provider (request held) and after the gate returns, with lease timestamps moved by the database clock; no
+sleeps. Every test asserts the execution, the job, the effect intent and the approval accounting together.
+
+* **Established before changing it** (`probe-abandon-and-cancel.py.txt`, output `probe-on-prior-pr-head.txt`, on the
+  previous head of this change, `5e17eff`): abandoning a job the restore witness parked before any intent existed
+  ended `failed` with the use `released` and a second execution of the single-use approval allowed; abandoning a
+  carried job with a `prepared` intent consumed the use; cancelling a job queued after an unknown outcome (a ticket
+  existed) recorded the execution `cancelled`; cancelling a parked (`reconciling`) execution raised the database's
+  transition guard error.
+* **New tests** (`tests/integration/test_action_cancellation.py`, 23): on `5e17eff` 19 failed and 4 passed
+  (`on-prior-pr-head.txt`); on `main` (`8f8a3e6`, with this change's test helpers) 19 failed and 4 passed
+  (`on-main.txt`); with the change 23 passed (`after-change.txt`, regenerated in run 34). The four that pass everywhere guard behaviour that
+  was already right: a worker that keeps its lease meets the cancellation at the authorization and returns the use; a
+  dispatch reported not applied is accounted for; a request that succeeds after the cancellation was requested ends
+  `succeeded` (two variants).
+* **Failures on the previous head, by reason:** a claim-time cancellation left the execution `executing` and the use
+  `reserved` with the job `cancelled` (takeover before authorization, takeover after authorization, recorded success
+  before the claim, the stale-worker test); a lost acknowledgement after the cancellation ended the job `cancelled` with
+  the execution open and the outcome unknown (two variants); cancelling with an earlier dispatch still in flight
+  returned the use, and that request then created the ticket; cancelling a queued job with an unknown outcome recorded
+  `cancelled` (three operator variants); cancelling a carried, never-run job returned the use; cancelling a parked
+  execution, including one whose success was already recorded, raised the transition guard error; abandoning a
+  witness-parked job returned the use; the generic job operations did not refuse an action job (two). On `main`, where
+  post-effect transitions are not yet fenced, three fail differently: the stale worker itself cancelled the execution
+  and returned the use (stale-worker test); the stale worker marked the execution `succeeded` while the claim cancelled
+  the job (recorded success before the claim); and the precondition of the parked-execution variant does not arise
+  because the stale worker finished the execution itself.
+* **Adoption the gate cannot verify** (found by a review of the whole change, `adopt-on-earlier-code.txt`): on
+  `5e17eff` adopting a witness-parked execution with an invented reference (`SEC-7`, no ticket existed) ended the
+  execution `succeeded` with that reference, and adopting a recorded object that had failed verification closed it
+  `succeeded`; on `main` both left the job `succeeded` and the execution `reconciling`.
+  `test_adopt_without_a_verifiable_record_is_refused` (2) now expects `effect_evidence_missing` with nothing changed.
+* **Fix** (ADR 0010 amendment of 2026-10-25, ADR 0006 amendment 3): the settlement rule and the handler's
+  `on_cancel`, called at claim time and in the lease holder's final write; `cancel_execution` settles only jobs no
+  worker holds; abandon never returns the use and records `external_effect: unknown`; generic job cancel and
+  effect resolution refuse action execution jobs; adoption without an open intent needs a matching, uncontested
+  recorded success; the gate's observation writes lock the job row before the intent.
+
+Accepted assumptions: the runtime credential is trusted (ADR 0012 amendment 4); external effects are at most one first
+attempt per operation key, with duplicates stopped only by provider deduplication or fencing (ADR 0010). Nothing here
+makes execution exactly-once.
+
+### Run 34: returning a use needs restore-witness clearance; observation lock order (2026-10-25)
+
+Records: `docs/verification/2026-10-25-cancellation/` (`witness-on-24e2dfd.txt`, `lock-order-control.txt`,
+`after-change.txt`). Same database and coordination as run 33; the witness is a real `FileWitness` in a temporary
+directory, set ahead of the database's effect watermark (a worker recorded an effect the rolled-back database no longer
+has), at it (healthy), or removed (unreadable).
+
+* **Reproduced on `24e2dfd`** (the head after run 33): with the witness ahead of the database and the execution's
+  intent absent, `cancel_execution` through the API cancelled the execution and released the use at once (job
+  `cancelled`, uses 1 reserved / 1 released); the same with the witness unreadable. The lease holder's final write
+  did the same with the witness ahead or unreadable. Of the 6 witness tests, 4 failed for that reason; the healthy API
+  case also failed, because the API now leaves the release to a worker by design; the healthy lease-holder case passed.
+* **Fix:** `release_clearance` in the releasing transaction (ADR 0010, amendment of 2026-10-25); the API never returns
+  a use on missing records and requeues the job for a worker; held when clearance is missing.
+* **Lock order.** `test_recording_a_provider_answer_while_a_cancellation_is_settled_completes_without_deadlock`: B's
+  claim holds the job row inside the settlement while A's provider call returns success; the test proceeds once
+  PostgreSQL reports A's backend blocked by B's. With the observation write's job-row lock removed (control), PostgreSQL
+  reported `deadlock detected`, aborted A's outcome record, and the intent stayed `executing` while the ticket existed.
+  With it, A waits, the settlement holds the use (`needs_operator`, `reconciling`, `reserved`), the success is recorded,
+  A's transition is discarded, and the operator's adoption then ends `succeeded`.
+* **Database guard review:** the release trigger enforces a structural invariant (no release once an intent has left
+  `prepared`) and no more; the restore, in-flight and witness rules are application-enforced (ADR 0010 amendment,
+  "The database guard on returning a use"). Documentation that described the guard as ensuring the effect was never
+  attempted is corrected.
+* **Existing tests changed:** `test_cancel_before_any_attempt_returns_the_use` and
+  `test_cancel_after_an_attempt_reported_not_applied_returns_the_use` now drive a worker before expecting the use back,
+  and the first also asserts the use is still reserved right after the API call.
+
+### Run 35: approval use across a physical rollback (2026-10-25)
+
+Records: `docs/verification/2026-10-25-cancellation/` (`rollback-drill-final.txt`, `rollback-drill-on-24e2dfd.txt`).
+`tests/drills/test_action_restore_boundary.py` (opt-in drill, part of the CI restore-drill stage) starts its own
+cluster and runs `tests/drills/action_restore_child.py` against it: a real execution request, a stopped-cluster
+snapshot, the execution (one ticket, witness advanced to watermark 1), an application session opened, cluster stopped,
+data directory rolled back, cluster started.
+
+* **Both runs:** the open session failed on its next statement (`OperationalError`); the restored database showed the
+  execution `prepared`, the job `queued`, no intent and the use reserved, while the ticket existed.
+* **On `24e2dfd`:** the API cancellation cancelled the execution and released the use (uses 1 reserved / 1 released);
+  after `acknowledge-recovery`, a fresh execution of the single-use approval was allowed and created a **second
+  ticket**.
+* **Final head:** the API cancellation left everything unchanged; a worker's `run_once` refused (`behind the external
+  witness`); a worker claiming as if past its preflight held the cancellation (`needs_operator`, `reconciling`, use
+  reserved, reason "database effect watermark 0 is behind the external witness 1"); after `acknowledge-recovery` a
+  fresh execution was refused (`approval_exhausted`); one ticket.
+* **What the existing physical drill did not cover:** it runs a generic ticket job, not the action path, and closes its
+  connection pool before each stop, so neither approval release nor a session open across the rollback was tested.
+* **Not covered:** in-place restores into a live database, restoring while workers run, proxies, failover and
+  point-in-time recovery (ADR 0010 amendment of 2026-10-25, "Supported restore boundary").
+

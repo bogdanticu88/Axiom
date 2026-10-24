@@ -1,0 +1,7 @@
+BEFORE_ROLLBACK {'execution': 'succeeded', 'job': 'succeeded', 'reservation': 'consumed', 'uses': (1, 0), 'intent': 'succeeded', 'tickets': 1}
+AFTER_ROLLBACK {'execution': 'prepared', 'job': 'queued', 'reservation': 'reserved', 'uses': (1, 0), 'intent': None, 'tickets': 1}
+AFTER_API_CANCEL {'execution': 'prepared', 'job': 'queued', 'reservation': 'reserved', 'uses': (1, 0), 'intent': None, 'tickets': 1}
+AFTER_WORKER_CLAIM {'execution': 'reconciling', 'job': 'needs_operator', 'reservation': 'reserved', 'uses': (1, 0), 'intent': None, 'tickets': 1} | cancellation requested, but no dispatch is recorded, but the records cannot be trusted to be complete: database effect watermark 0 is behind the external witness 1: the database was restored or rolled back after effects were recorded. The approval use stays reserved. | claimed: 0
+AFTER_ACKNOWLEDGEMENT {'execution': 'reconciling', 'job': 'needs_operator', 'reservation': 'reserved', 'uses': (1, 0), 'intent': None, 'tickets': 1} | second execution: refused:approval_exhausted
+1 passed in 4.10s
+2 passed in 8.96s

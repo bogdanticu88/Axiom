@@ -192,6 +192,50 @@ def database_watermark(conn: psycopg.Connection) -> int:
     return int(row["last_value"]) if row["is_called"] else 0
 
 
+class _NoAccess:
+    def __repr__(self) -> str:
+        return "NO_WITNESS_ACCESS"
+
+
+# Passed by a process that is not given the installation's witness (the API). It can never clear a release.
+NO_WITNESS_ACCESS = _NoAccess()
+
+
+def release_clearance(conn: psycopg.Connection, witness) -> str | None:
+    """Why this transaction cannot trust the database's effect records to be complete, or None when it can.
+
+    Used before returning an approval use on the strength of *missing* records (no intent, or no unaccounted
+    dispatch). Call it in the transaction that writes the release, after locking the rows the release depends on:
+
+    * the witness is read **before** the database watermark. Every watermark in the witness was drawn from this
+      database's sequence before it was recorded there, and the sequence never goes back on a live database, so in
+      healthy operation the second read is never lower; a concurrent dispatch elsewhere cannot make a healthy
+      database look restored. A database restored to an earlier point has a lower sequence than the witness.
+    * the release is then written through the same connection. If the database is replaced by a restore after the
+      check, the connection is lost and the release does not commit there; if the restore happens after the commit,
+      the restored database no longer has the release (the use is reserved again), which fails safe.
+    * an unreadable or empty-but-expected witness, and a process without the witness, give no clearance (fail closed).
+
+    ``witness`` is None only in an installation configured without one, which production refuses (ADR 0010); the
+    database's own signals (``effects.restore_doubt``) are then the only check, as for the effect gate."""
+    if witness is NO_WITNESS_ACCESS:
+        return "this process has no access to the external restore witness"
+    if witness is None:
+        return None
+    try:
+        external = witness.high_water()
+    except WitnessUnavailable as exc:
+        return f"the external restore witness could not be read: {exc}"
+    db_value = database_watermark(conn)
+    if external is None:
+        return (f"the external restore witness is empty but the database has issued effect watermark {db_value}"
+                if db_value > 0 else None)
+    if external > db_value:
+        return (f"database effect watermark {db_value} is behind the external witness {external}: the database was "
+                "restored or rolled back after effects were recorded")
+    return None
+
+
 def check(conn: psycopg.Connection, witness) -> str | None:
     """Return why effects must not run (restore or rollback detected), or None. Compares the database watermark
     with the external witness. An unreadable witness raises ``WitnessUnavailable`` (fail closed, but transient:

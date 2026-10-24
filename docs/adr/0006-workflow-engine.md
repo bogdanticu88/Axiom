@@ -146,7 +146,8 @@ about the external world. One is a known gap, unchanged here: after the effect s
 updates the execution record (`succeeded`, `failed`, `cancelled` or `reconciling`) without re-checking the lease
 (`domains/actions/jobs.py`). A worker that lost its lease after the effect can still write that record. Terminal
 records are not overwritten, and the recorded facts were established while the lease was held or observed externally,
-but it is not lease-fenced.
+but it is not lease-fenced. (Closed by amendment 2, which also shows that a denial established while the lease was held
+can be outdated by the time a stale worker writes it.)
 
 **Outcome versus effects.** A discarded outcome leaves the job `running` for another worker to reclaim. It does not undo
 writes the handler committed in its own fenced transactions before the lease was lost, or effects outside the database;
@@ -158,3 +159,25 @@ expiry could not stop its holder, who could move the expiry first. That holder i
 principal (ADR 0012 amendment 4). Leases coordinate cooperating workers against crashes, hangs and pauses, not against the
 credential holder. The trigger keeps enforcing the structural rules: the token and counters never decrease, a finished
 job cannot change, and job events are append-only. Verification run 31.
+
+## Amendment 2 (2026-10-24): action execution transitions are fenced
+
+The gap named in amendment 1 is closed for the action execution handler. After the effect step, every transition of
+the execution record (succeeded, reconciling, failed, cancelled, and the approval use it consumes or returns) commits
+only in a transaction that first passes `JobContext.fenced`. A worker without the lease records what it observed as the
+job event `execution_transition_discarded` and stops; the effect gate's own records of the provider's answer are
+unchanged and still written after lease loss. Details, reproductions and remaining gaps: ADR 0010 (amendment of
+2026-10-24) and verification run 32.
+
+## Amendment 3 (2026-10-25): a requested cancellation is settled by the handler
+
+Requesting cancellation stops scheduling; for a job with an external effect it does not establish that the effect was
+cancelled. A handler may define `on_cancel(conn, ctx, job, witness)`, which decides the job's outcome from what the
+handler has on record; the worker passes its restore witness, which a decision relying on records being complete must
+check in the same transaction (`witness.release_clearance`). The worker calls it with the job row locked in two places: while claiming a job whose cancellation was
+requested (no worker holds a valid lease then), and in the lease holder's final write when cancellation was requested
+and the step did not finish `Done`. `jobs.core.settle_cancelled_job` applies the result: `Fail` cancels the job, `Done`
+marks it succeeded, `NeedsOperator` parks it for an operator instead of cancelling it. A claim-time settlement that
+raises is rolled back to a savepoint and the job is left for the next claim. Handlers without `on_cancel` are unchanged.
+The action execution handler is the only one that defines it (ADR 0010, amendment of 2026-10-25).
+

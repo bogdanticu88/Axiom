@@ -1,0 +1,227 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+.F.FFFF..FFFFFFFFFFFFFF                                                  [100%]
+=================================== FAILURES ===================================
+____ test_cancel_while_paused_before_the_gate_authorizes_sending[takeover] _____
+tests/integration/test_action_cancellation.py:136: in test_cancel_while_paused_before_the_gate_authorizes_sending
+    assert facts(env, admin_conn, e, a) == {
+E   AssertionError: assert {'job': 'canc...repared', ...} == {'job': 'canc...repared', ...}
+E     
+E     Omitting 5 identical items, use -vv to show
+E     Differing items:
+E     {'execution': 'executing'} != {'execution': 'cancelled'}
+E     {'reservation': 'reserved'} != {'reservation': 'released'}
+E     {'uses': (1, 0)} != {'uses': (1, 1)}
+E     Use -v to get more diff
+__ test_cancel_after_the_gate_authorized_sending[outcome_unknown-before_send] __
+tests/integration/test_action_cancellation.py:203: in test_cancel_after_the_gate_authorized_sending
+    assert got == {"job": "needs_operator", "execution": "reconciling", "external_ref": None, "intent": "unknown",
+E   AssertionError: assert {'job': 'canc...unknown', ...} == {'job': 'need...unknown', ...}
+E     
+E     Omitting 6 identical items, use -vv to show
+E     Differing items:
+E     {'execution': 'executing'} != {'execution': 'reconciling'}
+E     {'job': 'cancelled'} != {'job': 'needs_operator'}
+E     Use -v to get more diff
+__ test_cancel_after_the_gate_authorized_sending[outcome_unknown-in_provider] __
+tests/integration/test_action_cancellation.py:203: in test_cancel_after_the_gate_authorized_sending
+    assert got == {"job": "needs_operator", "execution": "reconciling", "external_ref": None, "intent": "unknown",
+E   AssertionError: assert {'job': 'canc...unknown', ...} == {'job': 'need...unknown', ...}
+E     
+E     Omitting 6 identical items, use -vv to show
+E     Differing items:
+E     {'execution': 'executing'} != {'execution': 'reconciling'}
+E     {'job': 'cancelled'} != {'job': 'needs_operator'}
+E     Use -v to get more diff
+_ test_cancel_after_the_gate_authorized_sending[takeover_then_success-before_send] _
+tests/integration/test_action_cancellation.py:191: in test_cancel_after_the_gate_authorized_sending
+    assert facts(env, admin_conn, e, a) == {
+E   AssertionError: assert {'job': 'canc...ecuting', ...} == {'job': 'need...ecuting', ...}
+E     
+E     Omitting 6 identical items, use -vv to show
+E     Differing items:
+E     {'execution': 'executing'} != {'execution': 'reconciling'}
+E     {'job': 'cancelled'} != {'job': 'needs_operator'}
+E     Use -v to get more diff
+_ test_cancel_after_the_gate_authorized_sending[takeover_then_success-in_provider] _
+tests/integration/test_action_cancellation.py:191: in test_cancel_after_the_gate_authorized_sending
+    assert facts(env, admin_conn, e, a) == {
+E   AssertionError: assert {'job': 'canc...ecuting', ...} == {'job': 'need...ecuting', ...}
+E     
+E     Omitting 6 identical items, use -vv to show
+E     Differing items:
+E     {'execution': 'executing'} != {'execution': 'reconciling'}
+E     {'job': 'cancelled'} != {'job': 'needs_operator'}
+E     Use -v to get more diff
+______ test_cancel_with_an_earlier_dispatch_still_in_flight_holds_the_use ______
+tests/integration/test_action_cancellation.py:246: in test_cancel_with_an_earlier_dispatch_still_in_flight_holds_the_use
+    assert held == {"job": "needs_operator", "execution": "reconciling", "external_ref": None, "intent": "prepared",
+E   AssertionError: assert {'job': 'canc...repared', ...} == {'job': 'need...repared', ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'execution': 'cancelled'} != {'execution': 'reconciling'}
+E     {'reservation': 'released'} != {'reservation': 'reserved'}
+E     {'uses': (1, 1)} != {'uses': (1, 0)}
+E     {'job': 'cancelled'} != {'job': 'needs_operator'}
+E     Use -v to get more diff
+------------------------------ Captured log call -------------------------------
+ERROR    axiom.jobs.worker:worker.py:242 job step raised
+Traceback (most recent call last):
+  File "backend/axiom/jobs/worker.py", line 237, in execute
+    outcome = handler.step(jc)
+  File "backend/axiom/domains/actions/jobs.py", line 74, in step
+    outcome = EffectGate(jc).run(adapter, request, lambda c: check_execution(c, jc.ctx, execution_id), key=key)
+  File "backend/axiom/jobs/effects.py", line 254, in run
+    self._record(key, "succeeded", ref, None)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "backend/axiom/jobs/effects.py", line 279, in _record
+    self._update(conn, intent["id"], **fields)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "backend/axiom/jobs/effects.py", line 123, in _update
+    conn.execute(f"UPDATE axiom.effect_intents SET {sets}, updated_at = clock_timestamp(), "
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 f"record_version = record_version + 1 WHERE id = %(id)s", {**fields, "id": intent_id})
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ".venv/lib/python3.13/site-packages/psycopg/connection.py", line 304, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.CheckViolation: effect intent prepared -> succeeded not permitted
+CONTEXT:  PL/pgSQL function axiom.effect_intents_guard() line 24 at RAISE
+_____ test_a_recorded_success_settles_the_cancellation_as_succeeded[claim] _____
+tests/integration/test_action_cancellation.py:286: in test_a_recorded_success_settles_the_cancellation_as_succeeded
+    assert facts(env, admin_conn, e, a) == {
+E   AssertionError: assert {'job': 'canc...cceeded', ...} == {'job': 'succ...cceeded', ...}
+E     
+E     Omitting 7 identical items, use -vv to show
+E     Differing items:
+E     {'job': 'cancelled'} != {'job': 'succeeded'}
+E     Use -v to get more diff
+_ test_a_recorded_success_settles_the_cancellation_as_succeeded[operator_cancel] _
+tests/integration/test_action_cancellation.py:282: in test_a_recorded_success_settles_the_cancellation_as_succeeded
+    assert env.execution(e["id"])["state"] == "reconciling"
+E   AssertionError: assert 'succeeded' == 'reconciling'
+E     
+E     - reconciling
+E     + succeeded
+_________ test_operator_reconciles_a_held_cancellation[lose_ack-adopt] _________
+tests/integration/test_action_cancellation.py:311: in test_operator_reconciles_a_held_cancellation
+    assert cancel(env, e)["state"] == "reconciling"
+E   AssertionError: assert 'cancelled' == 'reconciling'
+E     
+E     - reconciling
+E     + cancelled
+__ test_operator_reconciles_a_held_cancellation[fail_unprocessed-not_applied] __
+tests/integration/test_action_cancellation.py:311: in test_operator_reconciles_a_held_cancellation
+    assert cancel(env, e)["state"] == "reconciling"
+E   AssertionError: assert 'cancelled' == 'reconciling'
+E     
+E     - reconciling
+E     + cancelled
+____ test_operator_reconciles_a_held_cancellation[fail_unprocessed-abandon] ____
+tests/integration/test_action_cancellation.py:311: in test_operator_reconciles_a_held_cancellation
+    assert cancel(env, e)["state"] == "reconciling"
+E   AssertionError: assert 'cancelled' == 'reconciling'
+E     
+E     - reconciling
+E     + cancelled
+___________ test_restore_doubt_keeps_the_use_reserved[cancel_queued] ___________
+tests/integration/test_action_cancellation.py:364: in test_restore_doubt_keeps_the_use_reserved
+    assert facts(env, admin_conn, e, a) == {
+E   AssertionError: assert {'job': 'canc...t': None, ...} == {'job': 'need...t': None, ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'execution': 'cancelled'} != {'execution': 'reconciling'}
+E     {'reservation': 'released'} != {'reservation': 'reserved'}
+E     {'uses': (1, 1)} != {'uses': (1, 0)}
+E     {'job': 'cancelled'} != {'job': 'needs_operator'}
+E     Use -v to get more diff
+___________ test_restore_doubt_keeps_the_use_reserved[cancel_parked] ___________
+tests/integration/test_action_cancellation.py:363: in test_restore_doubt_keeps_the_use_reserved
+    cancel(env, e)
+tests/integration/test_action_cancellation.py:92: in cancel
+    return env.svc(who, lambda s: s.cancel_execution(e["id"], "no longer wanted"))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/integration/test_actions.py:64: in svc
+    return fn(ActionService(conn, ctx, Authorizer(conn, ctx)))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/integration/test_action_cancellation.py:92: in <lambda>
+    return env.svc(who, lambda s: s.cancel_execution(e["id"], "no longer wanted"))
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+backend/axiom/domains/actions/service.py:391: in cancel_execution
+    finish_execution(self.conn, self.ctx, e["id"], "cancelled", detail={"reason": reason})
+backend/axiom/domains/actions/service.py:440: in finish_execution
+    set_execution_state(conn, execution_id, state, detail, external_ref)
+backend/axiom/domains/actions/service.py:428: in set_execution_state
+    return conn.execute(
+.venv/lib/python3.13/site-packages/psycopg/connection.py:304: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.CheckViolation: execution reconciling -> cancelled not permitted
+E   CONTEXT:  PL/pgSQL function axiom.action_executions_guard() line 35 at RAISE
+_______ test_restore_doubt_keeps_the_use_reserved[abandon_witness_park] ________
+tests/integration/test_action_cancellation.py:353: in test_restore_doubt_keeps_the_use_reserved
+    assert facts(env, admin_conn, e, a) == {
+E   AssertionError: assert {'job': 'fail...t': None, ...} == {'job': 'fail...t': None, ...}
+E     
+E     Omitting 6 identical items, use -vv to show
+E     Differing items:
+E     {'reservation': 'released'} != {'reservation': 'consumed'}
+E     {'uses': (1, 1)} != {'uses': (1, 0)}
+E     Use -v to get more diff
+____________ test_stale_worker_cannot_return_the_use_after_takeover ____________
+tests/integration/test_action_cancellation.py:404: in test_stale_worker_cannot_return_the_use_after_takeover
+    assert facts(env, admin_conn, e, a) == {
+E   AssertionError: assert {'job': 'canc...repared', ...} == {'job': 'need...repared', ...}
+E     
+E     Omitting 4 identical items, use -vv to show
+E     Differing items:
+E     {'execution': 'cancelled'} != {'execution': 'reconciling'}
+E     {'reservation': 'released'} != {'reservation': 'reserved'}
+E     {'uses': (1, 1)} != {'uses': (1, 0)}
+E     {'job': 'cancelled'} != {'job': 'needs_operator'}
+E     Use -v to get more diff
+_______ test_generic_job_operations_do_not_bypass_the_execution[cancel] ________
+tests/integration/test_action_cancellation.py:427: in test_generic_job_operations_do_not_bypass_the_execution
+    with pytest.raises(Conflict) as err:
+         ^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE Conflict
+___ test_generic_job_operations_do_not_bypass_the_execution[resolve_effect] ____
+tests/integration/test_action_cancellation.py:427: in test_generic_job_operations_do_not_bypass_the_execution
+    with pytest.raises(Conflict) as err:
+         ^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE Conflict
+_____ test_adopt_without_a_verifiable_record_is_refused[witness_no_intent] _____
+tests/integration/test_action_cancellation.py:462: in test_adopt_without_a_verifiable_record_is_refused
+    with pytest.raises(Conflict) as err:
+         ^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE Conflict
+____ test_adopt_without_a_verifiable_record_is_refused[verification_failed] ____
+tests/integration/test_action_cancellation.py:462: in test_adopt_without_a_verifiable_record_is_refused
+    with pytest.raises(Conflict) as err:
+         ^^^^^^^^^^^^^^^^^^^^^^^
+E   Failed: DID NOT RAISE Conflict
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/integration/test_action_cancellation.py::test_cancel_while_paused_before_the_gate_authorizes_sending[worker_resumes]
+PASSED tests/integration/test_action_cancellation.py::test_cancel_after_an_attempt_reported_not_applied_returns_the_use
+PASSED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[success-before_send]
+PASSED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[success-in_provider]
+FAILED tests/integration/test_action_cancellation.py::test_cancel_while_paused_before_the_gate_authorizes_sending[takeover]
+FAILED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[outcome_unknown-before_send]
+FAILED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[outcome_unknown-in_provider]
+FAILED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[takeover_then_success-before_send]
+FAILED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[takeover_then_success-in_provider]
+FAILED tests/integration/test_action_cancellation.py::test_cancel_with_an_earlier_dispatch_still_in_flight_holds_the_use
+FAILED tests/integration/test_action_cancellation.py::test_a_recorded_success_settles_the_cancellation_as_succeeded[claim]
+FAILED tests/integration/test_action_cancellation.py::test_a_recorded_success_settles_the_cancellation_as_succeeded[operator_cancel]
+FAILED tests/integration/test_action_cancellation.py::test_operator_reconciles_a_held_cancellation[lose_ack-adopt]
+FAILED tests/integration/test_action_cancellation.py::test_operator_reconciles_a_held_cancellation[fail_unprocessed-not_applied]
+FAILED tests/integration/test_action_cancellation.py::test_operator_reconciles_a_held_cancellation[fail_unprocessed-abandon]
+FAILED tests/integration/test_action_cancellation.py::test_restore_doubt_keeps_the_use_reserved[cancel_queued]
+FAILED tests/integration/test_action_cancellation.py::test_restore_doubt_keeps_the_use_reserved[cancel_parked]
+FAILED tests/integration/test_action_cancellation.py::test_restore_doubt_keeps_the_use_reserved[abandon_witness_park]
+FAILED tests/integration/test_action_cancellation.py::test_stale_worker_cannot_return_the_use_after_takeover
+FAILED tests/integration/test_action_cancellation.py::test_generic_job_operations_do_not_bypass_the_execution[cancel]
+FAILED tests/integration/test_action_cancellation.py::test_generic_job_operations_do_not_bypass_the_execution[resolve_effect]
+FAILED tests/integration/test_action_cancellation.py::test_adopt_without_a_verifiable_record_is_refused[witness_no_intent]
+FAILED tests/integration/test_action_cancellation.py::test_adopt_without_a_verifiable_record_is_refused[verification_failed]
+19 failed, 4 passed in 12.15s

@@ -23,6 +23,8 @@ from ..db import Database, TenantContext
 from ..errors import Conflict, NotFound, ValidationFailed
 
 TERMINAL = ("succeeded", "failed", "dead_lettered", "cancelled")
+# Jobs whose cancellation and effect resolution go through their domain record (JobOperations._settled_elsewhere)
+SETTLED_WITH_AGGREGATE = {"action_execution": "/action-executions/{execution_id}/cancel or /reconcile"}
 
 
 @dataclass(frozen=True)
@@ -102,11 +104,48 @@ class JobContext:
 
 
 class Handler(Protocol):
+    """A job handler. It may also define ``on_cancel(conn, ctx, job, witness) -> StepResult``: how to settle a job
+    whose cancellation was requested, decided from what the handler has on record about its effect. The worker calls
+    it with the job row locked, either while claiming the job (no worker holds a valid lease then) or in the final
+    write of the worker that holds the lease (``Worker._finish``), and passes its restore witness (``witness.
+    release_clearance``) for decisions that rely on records being complete. Its result is applied by
+    ``settle_cancelled_job``. Without ``on_cancel`` a cancelled job is simply marked cancelled."""
     kind: str
     versions: frozenset[int]
     current_version: int
 
     def step(self, jc: JobContext) -> StepResult: ...
+
+
+def settle_cancelled_job(conn: psycopg.Connection, ctx: TenantContext, job_id: UUID, outcome: StepResult, *,
+                         lease_token: int | None = None, worker: str | None = None) -> None:
+    """Final state of a job whose cancellation was requested, from its handler's ``on_cancel`` settlement. Requesting
+    cancellation stops further scheduling; it does not establish that an external action was cancelled, so:
+
+    * ``Fail``: nothing was dispatched (or the effect is known to have failed); the job is cancelled.
+    * ``Done``: the effect is on record; the job succeeded, because it did.
+    * ``NeedsOperator``: a dispatch may have happened and its outcome is unknown; the job is parked for an operator,
+      never silently cancelled. ``cancel_requested`` stays set, so the operator's resolution settles it again.
+
+    The caller holds the job row lock and the right to write it (claim, lease holder, or an operator on a job no
+    worker holds)."""
+    common = ("lease_owner = NULL, lease_expires_at = NULL, step_deadline_at = NULL, updated_at = clock_timestamp(), "
+              "record_version = record_version + 1")
+    if isinstance(outcome, Done):
+        conn.execute(f"UPDATE axiom.jobs SET state = 'succeeded', result = %s, finished_at = clock_timestamp(), "
+                     f"{common} WHERE id = %s", (Jsonb(outcome.result), job_id))
+        name, detail = "cancel_settled_succeeded", {"result": outcome.result}
+    elif isinstance(outcome, NeedsOperator):
+        conn.execute(f"UPDATE axiom.jobs SET state = 'needs_operator', operator_reason = %s, {common} WHERE id = %s",
+                     (outcome.reason[:2000], job_id))
+        name, detail = "cancel_settled_needs_operator", {"reason": outcome.reason}
+    elif isinstance(outcome, Fail):
+        conn.execute(f"UPDATE axiom.jobs SET state = 'cancelled', last_error = %s, finished_at = clock_timestamp(), "
+                     f"{common} WHERE id = %s", (outcome.error[:2000], job_id))
+        name, detail = "cancelled", {"error": outcome.error}
+    else:
+        raise TypeError(f"a cancellation settles as Done, Fail or NeedsOperator, not {outcome!r}")
+    event(conn, ctx, job_id, name, lease_token=lease_token, worker=worker, detail=detail)
 
 
 def enqueue(conn: psycopg.Connection, ctx: TenantContext, *, kind: str, version: int, payload: dict[str, Any],
@@ -144,12 +183,22 @@ class JobOperations:
     """Human operations on jobs: inspect, cancel, resolve parked effects, migrate handler versions."""
 
     def __init__(self, conn: psycopg.Connection, ctx: TenantContext, authz: Authorizer, *,
-                 permission: str = "job.operate", scope_id: UUID | None = None):
+                 permission: str = "job.operate", scope_id: UUID | None = None, aggregate: str | None = None):
         """``permission``/``scope_id`` let a domain (e.g. action reconciliation) authorise an operator action with
-        its own narrower permission at the resource's scope instead of tenant-wide ``job.operate``."""
+        its own narrower permission at the resource's scope instead of tenant-wide ``job.operate``. ``aggregate``
+        names the domain record the caller settles together with the job (see ``SETTLED_WITH_AGGREGATE``)."""
         self.conn, self.ctx, self.authz = conn, ctx, authz
         self.operate_permission = permission
         self.operate_scope = scope_id
+        self.aggregate = aggregate
+
+    def _settled_elsewhere(self, job: dict) -> None:
+        """Cancelling or resolving the effect of a job that owns a domain record (an action execution and its approval
+        use) must change that record in the same transaction; done on the job alone it would leave the record open."""
+        where = SETTLED_WITH_AGGREGATE.get(job["aggregate_type"])
+        if where and self.aggregate != job["aggregate_type"]:
+            raise Conflict(f"this job belongs to {job['aggregate_type']} {job['aggregate_id']}; use {where}",
+                           code="settled_with_aggregate")
 
     def _root(self) -> UUID:
         return self.conn.execute("SELECT id FROM axiom.scopes WHERE kind = 'tenant_root'").fetchone()["id"]
@@ -227,6 +276,7 @@ class JobOperations:
     def request_cancel(self, job_id: UUID, reason: str) -> dict:
         authority = self._operate()
         job = self._job(job_id)
+        self._settled_elsewhere(job)
         if job["state"] in TERMINAL:
             raise Conflict("job already finished", code="job_finished")
         if job["state"] in ("queued", "waiting", "needs_operator"):
@@ -256,6 +306,7 @@ class JobOperations:
         if not rationale.strip():
             raise ValidationFailed("a rationale is required")
         job = self._job(job_id)
+        self._settled_elsewhere(job)
         if job["state"] != "needs_operator":
             raise Conflict("job is not waiting for an operator", code="invalid_state")
         intent = self.conn.execute(

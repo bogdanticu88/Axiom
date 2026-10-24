@@ -1,0 +1,11 @@
+# Probe only (not committed): cancellation requested while the job's worker is gone (lease expired, not reclaimed).
+def test_probe_cancel_after_worker_loss(env, admin_conn):
+    p = env.propose()
+    e = env.execute(p, env.approve(p))
+    sys_ctx = env.ctx_for("system")
+    [(job, token)] = env.worker("A", LONG).claim(sys_ctx)          # A claims, then disappears without running
+    env.svc("analyst", lambda s: s.cancel_execution(e["id"], "no longer needed"))   # job running: flag only
+    _expire_lease(admin_conn, job["id"])
+    env.worker("B", LONG).run_once(only_tenants={env.world.a.id})  # the claim applies the cancellation
+    print("PROBE job:", env.job(job["id"])["state"], "| execution:", env.execution(e["id"])["state"],
+          "| reservation:", _reservation(admin_conn, e["id"]), "| tickets:", len(env.fake.issues))

@@ -1,0 +1,7 @@
+test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence[adopt]
+E       AssertionError: assert ('succeeded',...ciling', None) == ('succeeded',...ded', 'SEC-1')
+test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence[adopt_wrong_ref]
+PASSED tests/integration/test_actions.py::test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence[not_applied]
+FAILED tests/integration/test_actions.py::test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence[adopt]
+FAILED tests/integration/test_actions.py::test_operator_reconciles_a_discarded_stale_success_from_the_recorded_evidence[adopt_wrong_ref]
+2 failed, 1 passed, 35 deselected in 2.51s
