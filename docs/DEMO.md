@@ -25,8 +25,9 @@ also shows that the same verification refuses to pass two deployments that were 
   (`quay.io/keycloak/keycloak:26.4.2`) that the UI tests start.
 * Free local ports: 5000 (registry), 18081 and 18082 (demo services), 18443 (check service), plus the ports the UI
   tests use for Keycloak and the API.
-* Network access on the first run only: the base image `public.ecr.aws/docker/library/python:3.13-slim`, the
-  registry and Trivy images from `mirror.gcr.io`, two wheels from PyPI (hash-pinned), and the Trivy vulnerability
+* Network access on the first run only: the base image `mirror.gcr.io/library/python:3.13-slim` and the
+  Dockerfile frontend `mirror.gcr.io/docker/dockerfile:1.7` (both pinned by digest), the registry and Trivy images
+  from `mirror.gcr.io`, two wheels from PyPI (hash-pinned), and the Trivy vulnerability
   database (`mirror.gcr.io/aquasec/trivy-db:2`). Behind a TLS-intercepting proxy, set `BUILD_CA` to that proxy's CA
   bundle; otherwise leave it unset.
 

@@ -1,0 +1,28 @@
+# Manifest checks, 2026-10-24T03:33Z
+# For each reference: the raw manifest fetched and hashed locally, compared with the pinned digest.
+mirror.gcr.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
+   digest MATCH  type=v1+json  linux/amd64=sha256:b5f3b260a967
+   platforms: linux/386, linux/amd64, linux/arm/v7, linux/arm64, linux/mips, linux/mips64, linux/mips64le, linux/mipsle, linux/ppc64le, linux/riscv64, linux/s390x
+mirror.gcr.io/library/python:3.13-slim@sha256:cf50a4f6ac4f026458b08d5222023d700ac806410dff5e9ca8728fa44f2b850f
+   digest MATCH  type=v1+json  linux/amd64=sha256:08b493e9c2f9
+   platforms: linux/386, linux/amd64, linux/arm/v5, linux/arm/v7, linux/arm64/v8, linux/ppc64le, linux/riscv64, linux/s390x
+mirror.gcr.io/library/node:22.20.0-slim@sha256:b21fe589dfbe5cc39365d0544b9be3f1f33f55f3c86c87a76ff65a02f8f5848e
+   digest MATCH  type=v1+json  linux/amd64=sha256:c385ec44d77c
+   platforms: linux/amd64, linux/arm/v7, linux/arm64/v8, linux/ppc64le, linux/s390x
+mirror.gcr.io/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+   digest MATCH  type=v1+json  linux/amd64=sha256:f9d1e581cde3
+   platforms: linux/386, linux/amd64, linux/arm/v5, linux/arm/v7, linux/arm64/v8, linux/ppc64le, linux/riscv64, linux/s390x
+mirror.gcr.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+   digest MATCH  type=v1+json  linux/amd64=sha256:aba492e2a4e4
+   platforms: linux/386, linux/amd64, linux/arm/v7, linux/arm64
+quay.io/keycloak/keycloak:26.4.2@sha256:3617b09bb4b7510a8d8d9b9fc5707399e2d70688dbcc2f8fb013a144829be1b9
+   digest MATCH  type=v1+json  linux/amd64=sha256:d06f9d34c617
+   platforms: linux/amd64, linux/arm64
+# (TLS test image; its digest is split across two string literals in the test file)
+mirror.gcr.io/library/nginx:1.29.2-alpine@sha256:61e01287e546aac28a3f56839c136b31f590273f3b41187a36f46f6a03bbfe22
+   digest MATCH  type=v1+json  linux/amd64=sha256:b03ccb7431a2
+   platforms: linux/386, linux/amd64, linux/arm/v6, linux/arm/v7, linux/arm64/v8, linux/ppc64le, linux/riscv64, linux/s390x
+# linux/amd64 content retrievable from mirror.gcr.io for the moved images and the frontend
+mirror.gcr.io/library/python: linux/amd64 manifest sha256:08b493e9c2f9 verified by hash; config + 4 layers: 5/5 retrievable, 43 MB
+mirror.gcr.io/library/postgres: linux/amd64 manifest sha256:f9d1e581cde3 verified by hash; config + 14 layers: 15/15 retrievable, 160 MB
+mirror.gcr.io/docker/dockerfile: linux/amd64 manifest sha256:b5f3b260a967 verified by hash; config + 1 layers: 2/2 retrievable, 12 MB

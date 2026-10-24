@@ -24,7 +24,7 @@ x-backend: &backend
 
 services:
   postgres:
-    image: public.ecr.aws/docker/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+    image: mirror.gcr.io/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
     environment:
       POSTGRES_PASSWORD: ${AXIOM_PG_SUPERUSER_PASSWORD:?set AXIOM_PG_SUPERUSER_PASSWORD}
     volumes: [pgdata:/var/lib/postgresql/data]
@@ -50,7 +50,7 @@ services:
 
   # One-shot: cluster roles and the application database (runs as the PostgreSQL superuser).
   db-init:
-    image: public.ecr.aws/docker/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+    image: mirror.gcr.io/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
     depends_on:
       postgres: {condition: service_healthy}
     environment:

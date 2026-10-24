@@ -1,0 +1,5 @@
+[    0.3s] image pull failed: mirror.gcr.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e; its output:
+[    0.3s] Error response from daemon: failed to resolve reference "mirror.gcr.io/docker/dockerfile@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e": failed to do request: Head "https://mirror.gcr.io/v2/docker/dockerfile/manifests/sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e": proxyconnect tcp: dial tcp 127.0.0.1:9: connect: connection refused
+[    0.3s] SMOKE FAIL: image pull
+[    0.4s] exit status 1
+[    0.4s] (stream closed)

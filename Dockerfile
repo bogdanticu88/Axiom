@@ -1,7 +1,7 @@
-# syntax=docker/dockerfile:1.7
+# syntax=mirror.gcr.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 # Backend image: API (with the built analyst UI), migrations, provisioning and workers share this image.
 # Base images pinned by digest (python 3.13-slim resolved 2026-10-22; node 22.20.0-slim published 2025-09-24).
-ARG PYTHON_IMAGE=public.ecr.aws/docker/library/python:3.13-slim@sha256:cf50a4f6ac4f026458b08d5222023d700ac806410dff5e9ca8728fa44f2b850f
+ARG PYTHON_IMAGE=mirror.gcr.io/library/python:3.13-slim@sha256:cf50a4f6ac4f026458b08d5222023d700ac806410dff5e9ca8728fa44f2b850f
 ARG NODE_IMAGE=mirror.gcr.io/library/node:22.20.0-slim@sha256:b21fe589dfbe5cc39365d0544b9be3f1f33f55f3c86c87a76ff65a02f8f5848e
 
 # Analyst UI: locked install (package-lock.json), type check and production build. Only the static output is kept.
