@@ -56,14 +56,14 @@ redact() {
   python3 "$ROOT/scripts/verify/smoke_redact.py" "$ENVF" 2>/dev/null || echo "(redaction failed; output withheld)"
 }
 # --- images. Every image the test needs is pulled once, one at a time, by the digest it is pinned to, before the build
-# and before 'docker compose up': the Dockerfile's base images (with BUILD=1) and the Compose services' images, read
-# from those files so that the digests have one source. Compose names the PostgreSQL image for two services and would
-# otherwise request it twice at once. An image already present under its pinned reference is not pulled again; on a
-# fresh runner nothing is present, so the install stays cold. The build and 'up' then find every pinned image locally
-# (the build still resolves the Dockerfile syntax image by its tag). A failed pull ends the test with its output.
+# and before 'docker compose up': with BUILD=1 the Dockerfile's syntax (frontend) image and base images, and always the
+# Compose services' images, read from those files so that the digests have one source. Compose names the PostgreSQL
+# image for two services and would otherwise request it twice at once. An image already present under its pinned
+# reference is not pulled again; on a fresh runner nothing is present, so the install stays cold. The build and 'up'
+# then find every pinned image locally. A failed pull ends the test with its output; there is no retry or fallback.
 images=()
 if [ "${BUILD:-0}" = "1" ]; then
-  while IFS= read -r ref; do images+=("$ref"); done < <(sed -n 's/^ARG [A-Z_]*_IMAGE=//p' "$ROOT/Dockerfile")
+  while IFS= read -r ref; do images+=("$ref"); done < <(sed -n -e 's/^# *syntax=//p' -e 's/^ARG [A-Z_]*_IMAGE=//p' "$ROOT/Dockerfile")
 fi
 cimages=$(docker compose -p "$P" -f "$CDIR/compose.yaml" --env-file "$ENVF" config --images 2>&1) \
   || { echo "SMOKE FAIL: could not list the Compose images:"; echo "$cimages" | redact | tail -20; exit 1; }

@@ -1,12 +1,11 @@
 # Implementation status
 
-This is the single entry point for the current state. Two revisions matter and are kept apart here:
-
-* **Last revision with passing hosted CI:** `a05c01f7cf81b1bfd162c302cbe1177254bd11f6` on `main` (the merge of pull
-  request 1, GitHub Actions run 39950928655). "Current status" below describes this code.
-* **Current `main`:** `305b0fc` (the merge of pull request 2, documentation and screenshots only). Its hosted run,
-  39975479973, failed in the Compose smoke stage because the image registry refused a pull, so `main` has not shown a
-  passing hosted run since `a05c01f`.
+This is the single entry point for the current state. The test results quoted in "Current status" come from `3d4d997`
+(the merge of pull request 5; GitHub Actions run 40054331646 on its tested head and run 40055087635 on `main`,
+2026-10-24). A later commit on `main`, including the image-source change of verification run 30, is not covered by
+those results; whether it passed is shown by its own hosted run on the Actions page. History of earlier `main` results: `a05c01f`
+passed (run 39950928655); `305b0fc` failed in the Compose smoke stage because the image registry refused a pull (run
+39975479973).
 
 The sections after "Current status" are the
 detailed status by area from the review of 2026-10-22, kept as written except where marked; where they disagree with
@@ -15,8 +14,8 @@ detailed status by area from the review of 2026-10-22, kept as written except wh
 ## Current status
 
 ### Implemented and tested
-Exercised by tests that were run. The latest full run on `main` is GitHub Actions run 39950928655 at `a05c01f`:
-every stage passed, 692 tests passed and 3 were skipped (the physical restore drill, which runs as its own stage and
+Exercised by tests that were run. The latest full run on `main` is GitHub Actions run 40055087635 at `3d4d997`:
+every stage passed, 699 tests passed and 3 were skipped (the physical restore drill, which runs as its own stage and
 passed; the opt-in real-provider test, never run; the opt-in demonstration). These counts describe that run only.
 
 * Tenant isolation: application authorisation, composite tenant-aware foreign keys, forced row-level security,
@@ -134,13 +133,13 @@ the browser check. Collection ends within 120 s and cleanup within 70 s, and the
 the generated secrets and known secret shapes, which is not a guarantee (verification runs 23, 25 and 27). The
 browser-check race above is not fixed by that change.
 
-### Registry throttling (assessed; nothing changed yet)
+### Registry throttling (assessed 2026-10-23; changes in runs 29 and 30 below)
 * **What was refused:** three runs between 15:07 and 15:40 UTC on 2026-10-23, all by `public.ecr.aws`: the Python base
   image's manifest twice (HTTP 429; once "Data limit exceeded") and the PostgreSQL image once ("Rate exceeded"). None
   of the thirteen earlier runs shows a refusal, but one of them (39884012334) failed its build with the output
   discarded, so for that one it is unknown.
 * **Pulls per run:** a GitHub runner starts with no images and the workflow caches none, so every run pulls everything,
-  and every smoke run is a cold install. From `public.ecr.aws`: `python:3.13-slim` (both build stages; BuildKit
+  and every smoke run is a cold install. As assessed, before run 30: from `public.ecr.aws`: `python:3.13-slim` (both build stages; BuildKit
   resolves it once) and `postgres:16.15` (two Compose services; the failing log shows Compose starting two pulls of
   it at once). Elsewhere: Docker Hub for the Dockerfile syntax image, `mirror.gcr.io` for Node, SeaweedFS and
   others, `quay.io` for Keycloak (pulled by the foundation tests and reused by the smoke).
@@ -153,7 +152,7 @@ browser-check race above is not fixed by that change.
   from the runner's address. That is an inference, not established.
 * **Local runs here** use images already on this machine. They are cached runs and say nothing about pulls.
 
-**Mitigation applied (verification run 29):** the smoke test now pulls each distinct image it needs once, one at a
+**First mitigation (verification run 29):** the smoke test now pulls each distinct image it needs once, one at a
 time, by the digest it is pinned to, before the build and before `docker compose up`, and stops with the pull's output
 if one fails. That removes the second, simultaneous request for the PostgreSQL image. Registries and digests are
 unchanged, and nothing is cached between runs, so on GitHub the smoke is still a cold install. It cannot prevent a
@@ -161,6 +160,15 @@ data-limit refusal. Still resolved by tag on every build: the Dockerfile syntax 
 Hub), which is not pinned by digest; unchanged here. If refusals continue, the choices are authenticated pulls (a CI
 credential), another registry for the two images (the same digests would need to be confirmed there), or caching
 images between runs, which would make those smoke runs cached rather than cold and would need to be labelled as such.
+
+**Source changed (verification run 30):** after `public.ecr.aws` refused a sequential pull of the Python image with
+"Data limit exceeded" (run 40056023921), the Python and PostgreSQL images moved to `mirror.gcr.io/library` with the
+same digests, verified byte-identical there before the move. The Dockerfile frontend is now pinned by digest and also
+comes from `mirror.gcr.io`, and the smoke test pulls it with the other images. Every image CI pulls is now pinned by
+digest. This moves away from a currently throttled source; it does not guarantee availability. `mirror.gcr.io`
+documents no quota but caches only frequently requested images, with no promise to keep them. There is still no
+retry, fallback, credential or cache between runs; if a pull is refused, the smoke test stops with the registry's own
+message.
 
 ### Statements this supersedes
 Historical records are kept as written. These statements in them are no longer correct:

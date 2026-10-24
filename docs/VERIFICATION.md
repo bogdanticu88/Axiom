@@ -1031,3 +1031,25 @@ Checked locally: with the registry unreachable, the build used a present pinned 
 registry; the pull-failure path stopped the test with exit 1 and the registry error; a normal run with a rebuild
 passed. These were cached runs, not cold installs. The Dockerfile syntax image is still resolved by tag from Docker Hub
 on every build.
+
+Hosted CI (run 29's change merged with runs 27 and 28 in pull request 5): on the tested head `a35aab3`, run
+40054331646 passed every stage (699 passed, 3 skipped). On that fresh runner the smoke test pulled the Python, Node and
+PostgreSQL images once each, in sequence; Keycloak and SeaweedFS were already present, pulled earlier in the same run
+by the foundation stage, and nothing was cached between runs. Merged as `3d4d997`, whose tree is identical to
+`a35aab3`; the push run on `main`, 40055087635, passed every stage (699 passed, 3 skipped). Pull requests 3 and 4 were
+closed as superseded. Runs 39884012334, 39946416834 and 39955949204 remain unexplained.
+
+### Run 30: Python and PostgreSQL from `mirror.gcr.io`, Dockerfile frontend pinned (2026-10-24)
+
+Records: `docs/verification/2026-10-24-image-sources/`. `public.ecr.aws` kept refusing the pinned Python and
+PostgreSQL images with "Data limit exceeded", including a sequential pull in run 40056023921. Both images now come
+from `mirror.gcr.io/library` with unchanged digests, verified byte-identical there before the move, with every
+linux/amd64 layer retrieved. The Dockerfile frontend, previously resolved by tag from Docker Hub on every build, is
+pinned in both Dockerfiles as `mirror.gcr.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e`,
+the digest the tag resolved to on both registries. The smoke test's sequential pull now includes it. Every image CI
+pulls is pinned by digest.
+
+Checked locally with registry access cut: with the images present the build and smoke passed, so no pinned reference
+needs the registry once pulled; with the frontend removed, the pull step stopped the test with exit 1 and the registry
+error. A normal run passed. These were cached runs. No retry, fallback, credential or cross-run cache was added; this
+moves away from a source that was refusing pulls and does not guarantee the new one stays available.
