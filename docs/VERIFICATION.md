@@ -1012,3 +1012,22 @@ reload finished: unstable feedback for a user, and a race for the check that wai
   not a cold install.
 
 Run 39946416834 had the same symptom without diagnostics. It is consistent with this cause but not confirmed by it.
+
+### Run 29: one sequential pull per pinned image in the Compose smoke test (2026-10-24)
+
+Records: `docs/verification/2026-10-24-image-prepull/`. Before the build and before `docker compose up`, the smoke test
+now pulls each distinct image it needs once, one at a time, by its pinned digest: the Dockerfile's two base images
+(with `BUILD=1`) and the Compose services' images, read from those files. An image already present under its pinned
+reference is not pulled again; a failed pull stops the test with exit 1 and the pull's output, filtered like all other
+failure output. An image reference without a digest stops the test. Registries, digests, timeouts and checks are
+unchanged, there is no retry, and nothing is cached between runs.
+
+Why: in run 39977205040 Compose started two simultaneous pulls of the same PostgreSQL image (`postgres` and `db-init`),
+and the registry answered "Rate exceeded". Sequential, de-duplicated pulls remove that duplicate request. They do not
+reduce the data downloaded, so they cannot prevent a "Data limit exceeded" refusal like those of runs 39980128200 and
+40009459095.
+
+Checked locally: with the registry unreachable, the build used a present pinned base image without contacting the
+registry; the pull-failure path stopped the test with exit 1 and the registry error; a normal run with a rebuild
+passed. These were cached runs, not cold installs. The Dockerfile syntax image is still resolved by tag from Docker Hub
+on every build.

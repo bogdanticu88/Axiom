@@ -1,0 +1,28 @@
+[    0.3s] image present: public.ecr.aws/docker/library/python:3.13-slim@sha256:cf50a4f6ac4f026458b08d5222023d700ac806410dff5e9ca8728fa44f2b850f
+[    0.3s] image present: mirror.gcr.io/library/node:22.20.0-slim@sha256:b21fe589dfbe5cc39365d0544b9be3f1f33f55f3c86c87a76ff65a02f8f5848e
+[    0.4s] image present: public.ecr.aws/docker/library/postgres:16.15@sha256:a902560563d3a5661228585f53474c5065e7f273b21ffd77e555a8b5682c5690
+[    0.4s] image present: quay.io/keycloak/keycloak:26.4.2@sha256:3617b09bb4b7510a8d8d9b9fc5707399e2d70688dbcc2f8fb013a144829be1b9
+[    6.2s] image pulled in 6 s: mirror.gcr.io/chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+[   10.0s] image built: sha256:85e6e130f8c94e3ace390409e9e893054676a57e6aff400428302b820e089ba4
+[   10.0s] project axiom-smoke-021552
+[   46.2s] ok   fresh install: migrations applied, api healthy
+[   47.2s] ok   no token -> 401
+[   47.9s] ok   evidence upload -> verified -> download via S3 (SeaweedFS)
+[   48.3s] ok   digest mismatch -> rejected
+[   48.3s] ok   case create, start-investigation, stale version -> 409
+[   48.4s] ok   consultant in other tenant -> 404; non-member tenant selection -> 403
+[   48.6s] ok   case events linked to audit rows: 2
+[   52.9s] ok   Trivy import via API + job-worker: completed complete 30; cases visible: 30
+[   59.6s] ok   re-running init: migrations 'applied: none', seed 'already seeded'
+[   82.4s] ok   UI served by the API at /ui with a restrictive Content-Security-Policy
+[   82.4s] ok   alice signed in through the local Keycloak login page
+[   82.4s] ok   case queue lists imported cases (29 received)
+[   82.4s] ok   alice moved a case to investigating through the UI; the confirmation stayed visible and a fresh load shows the new workflow
+[   82.4s] ok   audrey (auditor) was refused by the server: permission_denied; the case did not change
+[   82.4s] ok   sign-out revoked the platform session server-side (old cookie replayed: 401)
+[   82.5s] ok   the server recorded that decision as alice's (human principal, resolved from the Keycloak subject)
+[   84.1s] ok   AXIOM_ENV=production with the development identity refuses to start (inline JWKS not permitted)
+[   85.8s] ok   a missing OIDC client secret stops start-up (fails closed)
+[   85.8s] SMOKE PASS (axiom-smoke-021552)
+[  106.4s] exit status 0
+[  106.4s] (stream closed)

@@ -1,7 +1,14 @@
 # Implementation status
 
-This is the single entry point for the current state. "Current status" below describes `main` at
-`a05c01f7cf81b1bfd162c302cbe1177254bd11f6` (2026-10-23, the merge of pull request 1). The sections after it are the
+This is the single entry point for the current state. Two revisions matter and are kept apart here:
+
+* **Last revision with passing hosted CI:** `a05c01f7cf81b1bfd162c302cbe1177254bd11f6` on `main` (the merge of pull
+  request 1, GitHub Actions run 39950928655). "Current status" below describes this code.
+* **Current `main`:** `305b0fc` (the merge of pull request 2, documentation and screenshots only). Its hosted run,
+  39975479973, failed in the Compose smoke stage because the image registry refused a pull, so `main` has not shown a
+  passing hosted run since `a05c01f`.
+
+The sections after "Current status" are the
 detailed status by area from the review of 2026-10-22, kept as written except where marked; where they disagree with
 "Current status", "Current status" wins. Requirement-level detail is in REQUIREMENTS.md.
 
@@ -37,18 +44,23 @@ passed; the opt-in real-provider test, never run; the opt-in demonstration). The
   `docs/verification/2026-10-23-demo-main/`.
 
 ### Tested only against fixtures, fakes or local services
-* Scanner and context sources: Trivy and SARIF with recorded real output; Tenable and Azure Resource Graph with
-  synthetic data and local fakes. None validated against a live service.
+* Scanner and context sources: Trivy has run for real, scanning controlled local containers in the demonstration
+  (Trivy 0.76.1 against images built and deployed by `scripts/demo`; docs/DEMO.md), and SARIF uses recorded real
+  output. Tenable and Azure Resource Graph use synthetic data and local fakes. No scanner or context source has been
+  run against a live external service.
 * Ticket integrations (Jira-style, ServiceNow-style, GitHub Issues): local fakes only.
 * Investigation: the deterministic fake model only. No language model has been called.
 * Verification worker: a TLS test fixture and the local demonstration check service (`scripts/demo`), which is not a
   supported component.
-* Sign-in: a local Keycloak; TLS: a local nginx with a throwaway CA.
+* Sign-in: a local Keycloak. TLS has run end to end through a local nginx with certificates from a local CA, in
+  production mode (`tests/integration/test_tls_deployment.py`); no public certificate has been used.
 * S3 storage and the restore witness: SeaweedFS.
 
 ### Not tested
-* Any hosted identity provider (for example Microsoft Entra ID), a public CA or a real reverse proxy deployment.
-* Any language model, any real check service, any live scanner, tracker or cloud API.
+* Any hosted identity provider (for example Microsoft Entra ID), a public certificate or a real reverse proxy
+  deployment.
+* Any external connector: no live scanner, tracker, cloud API or real check service.
+* Any real language model: real-model execution is disabled and has never run.
 * Load, scale and long-running operation; backup and restore of a real installation.
 * Browsers other than Chromium; an accessibility audit; usability testing.
 * Independent review of the trust boundaries or of the evaluation labels (docs/INDEPENDENT-REVIEW.md).
@@ -56,8 +68,9 @@ passed; the opt-in real-provider test, never run; the opt-in demonstration). The
 ### Known limitations
 * **The shared application database credential has cross-tenant authority.** One runtime login serves every tenant;
   whoever holds it can read and change any tenant's data, act as any user and attribute audit records to anyone. It
-  cannot rewrite recorded history. Tenants that need stronger separation need a dedicated installation (ADR 0012
-  amendment 4, docs/DEPLOYMENT-TRUST-BOUNDARY.md).
+  cannot rewrite recorded history. A dedicated installation keeps other customers' tenants out of reach, but does not
+  remove this authority within that installation: whoever holds its credential can still act as any of its users
+  (ADR 0012 amendment 4, docs/DEPLOYMENT-TRUST-BOUNDARY.md).
 * **A check endpoint can report false results.** Axiom binds each answer to the request, asset and reported
   deployment, but cannot prove it true; a dishonest endpoint can cause a false pass or a false failure (docs/DEMO.md).
 * **Timestamps accepted before ADR 0015.** Asset versions recorded by hand before the correction may hold an
@@ -135,16 +148,19 @@ browser-check race above is not fixed by that change.
   `main` only), no re-runs; two overlapped (15:07 and 15:08).
 * **Quotas:** AWS documents unauthenticated ECR Public pulls at 1 per second and 500 GB of data per month, neither
   adjustable, and 10 per second for authenticated pulls. This project's own traffic from that registry is under 1 GB per run (the two
-  images take 0.8 GB unpacked here; the download is smaller), so sixteen runs are far below 500 GB, so "Data limit exceeded" suggests the quota is shared with other traffic
+  images take 0.8 GB unpacked here; the download is smaller), and sixteen runs are far below 500 GB. "Data limit
+  exceeded" therefore suggests the quota is shared with other traffic
   from the runner's address. That is an inference, not established.
 * **Local runs here** use images already on this machine. They are cached runs and say nothing about pulls.
 
-Smallest mitigation proposed, not implemented: before `docker compose up`, pull each distinct image once, one at a
-time, by its pinned digest, and report which one failed. That removes the second, simultaneous request for the
-PostgreSQL image, keeps every registry and digest as they are, and keeps the smoke a cold install. It cannot prevent a
-data-limit refusal. If refusals continue, the choices are authenticated pulls (a CI credential), another registry for
-the two images (the same digests would need to be confirmed there), or caching images between runs, which would make
-those smoke runs cached rather than cold and would need to be labelled as such.
+**Mitigation applied (verification run 29):** the smoke test now pulls each distinct image it needs once, one at a
+time, by the digest it is pinned to, before the build and before `docker compose up`, and stops with the pull's output
+if one fails. That removes the second, simultaneous request for the PostgreSQL image. Registries and digests are
+unchanged, and nothing is cached between runs, so on GitHub the smoke is still a cold install. It cannot prevent a
+data-limit refusal. Still resolved by tag on every build: the Dockerfile syntax image (`docker/dockerfile:1.7`, Docker
+Hub), which is not pinned by digest; unchanged here. If refusals continue, the choices are authenticated pulls (a CI
+credential), another registry for the two images (the same digests would need to be confirmed there), or caching
+images between runs, which would make those smoke runs cached rather than cold and would need to be labelled as such.
 
 ### Statements this supersedes
 Historical records are kept as written. These statements in them are no longer correct:
