@@ -58,6 +58,30 @@ class StaleLease(Exception):
     """The worker no longer holds the job's lease; it must stop and write nothing further."""
 
 
+def lock_held_lease(conn: psycopg.Connection, job_id, token: int) -> dict | None:
+    """The lease authorization check for writes to the job row (the attempt counter, the heartbeat and the final
+    write) and for handler transactions that call ``JobContext.fenced``. Call inside a transaction; returns the locked
+    job row while this token holds an unexpired lease, otherwise None. Handler writes made without ``fenced`` are not
+    covered (see ADR 0006 amendment 1).
+
+    Two steps, because PostgreSQL (READ COMMITTED) evaluates a locking query's WHERE clause before it waits for a
+    row lock and, if the transaction it waited for only locked the row, does not evaluate it again. An expiry test
+    inside the locking query could therefore pass before a wait and stand after the lease expired during that wait.
+    So the row is first locked by token and state, which are re-checked if a transaction it waited for changed them,
+    and then, with the lock held, the expiry is tested by the database clock (``clock_timestamp()``, the time of that
+    statement). The guarantee is that the lease was valid at that locked check. It does not extend to the commit: the
+    lease may expire after the check, but while this transaction holds the lock no other worker can reclaim the job
+    (a reclaim needs the same row lock), so whatever this transaction writes is written by the only lease holder."""
+    row = conn.execute(
+        "SELECT * FROM axiom.jobs WHERE id = %s AND lease_token = %s AND state = 'running' FOR UPDATE",
+        (job_id, token)).fetchone()
+    if row is None:
+        return None
+    live = conn.execute("SELECT lease_expires_at > clock_timestamp() AS live FROM axiom.jobs WHERE id = %s",
+                        (job_id,)).fetchone()["live"]
+    return row if live else None
+
+
 @dataclass
 class JobContext:
     db: Database
@@ -68,11 +92,10 @@ class JobContext:
     witness: Any = None     # external restore witness (axiom.jobs.witness), passed to the effect gate
 
     def fenced(self, conn: psycopg.Connection) -> dict:
-        """Lock the job row and verify this worker still holds the lease. Call inside a transaction."""
-        row = conn.execute(
-            """SELECT * FROM axiom.jobs WHERE id = %s AND lease_token = %s AND state = 'running'
-                 AND lease_expires_at > clock_timestamp() FOR UPDATE""",
-            (self.job["id"], self.lease_token)).fetchone()
+        """Lock the job row and verify this worker still holds the lease (``lock_held_lease``). Call inside a
+        transaction. Writes the handler commits in that transaction stay committed even if the job's outcome is later
+        discarded; the lease check does not undo them."""
+        row = lock_held_lease(conn, self.job["id"], self.lease_token)
         if row is None:
             raise StaleLease(f"lease {self.lease_token} on job {self.job['id']} is no longer held")
         return row

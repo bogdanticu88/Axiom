@@ -1,0 +1,12 @@
+test_running_heartbeat_does_not_revive_an_expired_lease_for_the_final_write
+E       AssertionError: the heartbeat renewed a lease that had already expired
+test_lease_that_expires_while_waiting_for_the_row_lock_is_not_accepted[blocker-only-locks-finish]
+E       AssertionError: an outcome was accepted although the lease expired before the row lock was acquired: succeeded
+test_lease_that_expires_while_waiting_for_the_row_lock_is_not_accepted[blocker-only-locks-renew]
+E       AssertionError: the heartbeat renewed an expired lease
+test_lease_that_expires_while_waiting_for_the_row_lock_is_not_accepted[blocker-updates-row-renew]
+E       AssertionError: the heartbeat renewed an expired lease
+test_heartbeat_after_expiry_without_reclaim_reports_the_loss_and_does_not_renew
+E       AssertionError: assert True is False
+test_attempted_heartbeat_revival_then_final_write_is_discarded
+E       AssertionError: the heartbeat revived an expired lease

@@ -1,0 +1,21 @@
+PASSED tests/integration/test_jobs.py::expired-result[done-plain]
+PASSED tests/integration/test_jobs.py::expired-result[done-cancel-requested]
+PASSED tests/integration/test_jobs.py::expired-result[fail-plain]
+PASSED tests/integration/test_jobs.py::expired-result[fail-cancel-requested]
+PASSED tests/integration/test_jobs.py::expired-result[retry-plain]
+PASSED tests/integration/test_jobs.py::expired-result[retry-cancel-requested]
+PASSED tests/integration/test_jobs.py::expired-result[wait-plain]
+PASSED tests/integration/test_jobs.py::expired-result[wait-cancel-requested]
+PASSED tests/integration/test_jobs.py::expired-result[needs_operator-plain]
+PASSED tests/integration/test_jobs.py::expired-result[needs_operator-cancel-requested]
+PASSED tests/integration/test_jobs.py::test_a_worker_whose_lease_is_still_valid_finishes_normally
+PASSED tests/integration/test_jobs.py::test_lease_that_expires_while_waiting_for_the_row_lock_is_not_accepted[blocker-updates-row-finish]
+PASSED tests/integration/test_jobs.py::test_heartbeat_renews_a_lease_that_is_still_held_and_never_past_the_step_deadline
+PASSED tests/integration/test_jobs.py::test_heartbeat_after_another_worker_reclaimed_the_job_leaves_the_new_lease_alone
+FAILED tests/integration/test_jobs.py::test_running_heartbeat_does_not_revive_an_expired_lease_for_the_final_write
+FAILED tests/integration/test_jobs.py::test_lease_that_expires_while_waiting_for_the_row_lock_is_not_accepted[blocker-only-locks-finish]
+FAILED tests/integration/test_jobs.py::test_lease_that_expires_while_waiting_for_the_row_lock_is_not_accepted[blocker-only-locks-renew]
+FAILED tests/integration/test_jobs.py::test_lease_that_expires_while_waiting_for_the_row_lock_is_not_accepted[blocker-updates-row-renew]
+FAILED tests/integration/test_jobs.py::test_heartbeat_after_expiry_without_reclaim_reports_the_loss_and_does_not_renew
+FAILED tests/integration/test_jobs.py::test_attempted_heartbeat_revival_then_final_write_is_discarded
+6 failed, 14 passed, 25 deselected in 16.67s

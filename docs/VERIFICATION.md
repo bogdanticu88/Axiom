@@ -1053,3 +1053,41 @@ Checked locally with registry access cut: with the images present the build and 
 needs the registry once pulled; with the frontend removed, the pull step stopped the test with exit 1 and the registry
 error. A normal run passed. These were cached runs. No retry, fallback, credential or cross-run cache was added; this
 moves away from a source that was refusing pulls and does not guarantee the new one stays available.
+
+### Run 31: an expired lease is lost at every write (2026-10-24)
+
+Records: `docs/verification/2026-10-24-expired-lease/`. All results are from the PostgreSQL test database
+(`scripts/dev/test-db.sh`); coordination is on database state (lease timestamps moved with the database clock, the
+blocked backend found through `pg_blocking_pids`), not on elapsed time.
+
+* **Final write after expiry.** `test_result_returned_after_the_lease_expired_is_discarded_and_the_job_stays_reclaimable`,
+  every outcome with and without a cancellation request: on `main` at `5be8aee`, 10 of 10 failed with "the expired
+  worker's outcome was written".
+* **Heartbeat revival.** `test_running_heartbeat_does_not_revive_an_expired_lease_for_the_final_write`, with the worker's
+  own heartbeat thread: on the first head of this change (`0b86a5c`, final write already fixed) the heartbeat renewed the
+  expired lease and the final write then recorded `succeeded`.
+* **Expiry while waiting for the row lock.** `test_lease_that_expires_while_waiting_for_the_row_lock_is_not_accepted`:
+  with the expiry test inside the locking query, a lease valid when the final write started waiting and expired during
+  the wait was accepted when the blocking transaction had only locked the row ("succeeded"); it was rejected when that
+  transaction had changed the row, because PostgreSQL evaluated the condition again on the new row version.
+* **Fix:** one authorization check for the job-row writes (attempt counter, heartbeat, final write) and for handler
+  transactions that call `JobContext.fenced` (`lock_held_lease`: lock by token and state, then test expiry with the
+  lock held); the heartbeat reports `heartbeat_lease_lost` and never revives a lease
+  (ADR 0006 amendment 1).
+* **With the fix:** all 21 lease tests pass, including valid renewal capped at the step deadline, heartbeat after expiry
+  without reclaim, heartbeat after a reclaim, and an attempted revival followed by the final write. The 21 test files
+  that drive the job runner passed (231 passed, 1 opt-in demonstration skipped).
+* **Fix removed:** with the previous authorization semantics put back into the new code (heartbeat without the expiry
+  test; expiry inside the locking query), the 20 lease tests that existed at that point were run: 6 failed, each for
+  its intended reason: "the heartbeat
+  renewed a lease that had already expired" (three), "an outcome was accepted although the lease expired before the row
+  lock was acquired", "the heartbeat revived an expired lease", and a heartbeat after expiry that returned True. The
+  other 14 passed, as they test cases the previous code already handled. The 21st, the database-boundary test below,
+  was added afterwards and was not run with the previous semantics; it writes through the runtime credential directly
+  and does not exercise the changed checks.
+* **Database boundary:** `test_lease_expiry_is_enforced_by_the_worker_not_by_the_database` shows the runtime credential
+  can finish a job whose lease expired, and cannot change it once finished. Lease expiry is application-enforced,
+  consistent with the trusted runtime credential (ADR 0006 amendment 1, ADR 0012 amendment 4).
+
+Discarding a job's outcome does not undo writes the handler committed earlier in fenced transactions, or external
+effects.
