@@ -1,0 +1,26 @@
+# Probe only (not committed): the existing stale-past-the-boundary interleaving, then the operator reconciles.
+@pytest.mark.parametrize("resolution", ["adopt", "not_applied"])
+def test_probe_reconcile_after_stale_success(env, admin_conn, resolution):
+    env.fake = JiraStyleFake(search_lag=3600)
+    env.fake.hold_armed = True
+    p = env.propose()
+    e = env.execute(p, env.approve(p))
+    a_worker = env.worker("A", WorkerConfig(lease_seconds=0.5, step_timeout_seconds=30, max_backoff_seconds=0.01))
+    [(job, token)] = a_worker.claim(env.ctx_for("system"))
+    t = threading.Thread(target=a_worker.execute, args=(env.ctx_for("system"), job, token))
+    t.start()
+    assert env.fake.at_boundary.wait(10)
+    _expire_lease(admin_conn, job["id"])
+    admin_conn.execute("UPDATE axiom.jobs SET step_deadline_at = clock_timestamp() - interval '1 second', "
+                       "record_version = record_version + 1 WHERE id = %s", (job["id"],))
+    env.worker("B").run_once(only_tenants={env.world.a.id})
+    env.fake.release.set()
+    t.join(30)
+    print("PROBE before:", env.job(job["id"])["state"], env.execution(e["id"])["state"], env.fake.keys())
+    ref = env.fake.keys()[0]
+    env.svc("admin", lambda s: s.reconcile(e["id"], resolution=resolution, rationale="checked the tracker",
+                                           external_ref=ref if resolution == "adopt" else None))
+    env.drive(admin_conn, e["job_id"])
+    got = env.execution(e["id"])
+    print("PROBE after", resolution, ":", env.job(job["id"])["state"], got["state"], got["external_ref"],
+          _reservation(admin_conn, e["id"]), "creates:", env.fake.create_requests)

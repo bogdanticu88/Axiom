@@ -1,0 +1,7 @@
+parked: needs_operator database effect watermark 0 is behind the external witness 1000000000000: the database was restored or rolled back after effects were recorded
+ABANDON_AFTER_WITNESS_PARK {'job': 'failed', 'execution': 'failed', 'intent': None, 'reservation': 'released', 'uses_reserved': 1, 'uses_released': 1, 'second_execution': 'allowed'}
+ABANDON_AFTER_CARRIED_PARK {'job': 'failed', 'execution': 'failed', 'intent': 'abandoned', 'reservation': 'consumed', 'uses_reserved': 1, 'uses_released': 0, 'second_execution': 'refused (approval_exhausted)'}
+CANCEL_AFTER_UNKNOWN {'job': 'cancelled', 'execution': 'cancelled', 'intent': 'unknown', 'reservation': 'consumed', 'uses_reserved': 1, 'uses_released': 0, 'second_execution': 'refused (approval_exhausted)'} tickets 1
+E   psycopg.errors.CheckViolation: execution reconciling -> cancelled not permitted
+.venv/lib/python3.13/site-packages/psycopg/connection.py:304: psycopg.errors.CheckViolation: execution reconciling -> cancelled not permitted
+1 failed, 3 passed in 3.08s

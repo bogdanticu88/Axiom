@@ -104,7 +104,9 @@ is recorded for it. Recovery, both paths tested in `tests/integration/test_princ
 2. **Discard the work.** Stop the job workers (`docker compose stop job-worker`), reactivate the tenant, request
    cancellation as a user with `job.operate` at the tenant root (`POST /api/v1/jobs/{job_id}/cancel` with a reason;
    find the job with `GET /api/v1/jobs?state=running`), then start the workers again. The reclaiming worker marks the
-   job cancelled instead of running it. Reactivating with workers still running can let them reclaim the job before the
+   job cancelled instead of running it. An action execution job is refused there: cancel it with
+   `POST /api/v1/action-executions/{execution_id}/cancel`, which settles it from the effect evidence and may leave it
+   for an operator to reconcile when a request may already have been sent (ADR 0010, amendment of 2026-10-25). Reactivating with workers still running can let them reclaim the job before the
    cancellation is recorded.
 
 While the tenant stays suspended, neither path is available: the job cannot be seen or cancelled through the API.

@@ -1,0 +1,4 @@
+prior: ADOPT_RESULT witness_no_intent {'job': 'succeeded', 'execution': 'succeeded', 'external_ref': 'SEC-7', 'intent': None, 'reservation': 'consumed', 'uses': (1, 0), 'creates': 0, 'tickets': 0}
+prior: ADOPT_RESULT verification_failed {'job': 'succeeded', 'execution': 'succeeded', 'external_ref': 'SEC-1', 'intent': 'succeeded', 'reservation': 'consumed', 'uses': (1, 0), 'creates': 1, 'tickets': 1}
+main: ADOPT_RESULT witness_no_intent {'job': 'succeeded', 'execution': 'reconciling', 'external_ref': None, 'intent': None, 'reservation': 'reserved', 'uses': (1, 0), 'creates': 0, 'tickets': 0}
+main: ADOPT_RESULT verification_failed {'job': 'succeeded', 'execution': 'reconciling', 'external_ref': None, 'intent': 'succeeded', 'reservation': 'reserved', 'uses': (1, 0), 'creates': 1, 'tickets': 1}

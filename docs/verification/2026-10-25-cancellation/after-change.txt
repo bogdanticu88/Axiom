@@ -1,0 +1,51 @@
+warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
+.......................                                                  [100%]
+==================================== PASSES ====================================
+______ test_cancel_with_an_earlier_dispatch_still_in_flight_holds_the_use ______
+------------------------------ Captured log call -------------------------------
+ERROR    axiom.jobs.worker:worker.py:255 job step raised
+Traceback (most recent call last):
+  File "backend/axiom/jobs/worker.py", line 250, in execute
+    outcome = handler.step(jc)
+  File "backend/axiom/domains/actions/jobs.py", line 98, in step
+    outcome = EffectGate(jc).run(adapter, request, lambda c: check_execution(c, jc.ctx, execution_id), key=key)
+  File "backend/axiom/jobs/effects.py", line 298, in run
+    self._record(key, "succeeded", ref, None)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "backend/axiom/jobs/effects.py", line 324, in _record
+    self._update(conn, intent["id"], **fields)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "backend/axiom/jobs/effects.py", line 172, in _update
+    conn.execute(f"UPDATE axiom.effect_intents SET {sets}, updated_at = clock_timestamp(), "
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                 f"record_version = record_version + 1 WHERE id = %(id)s", {**fields, "id": intent_id})
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File ".venv/lib/python3.13/site-packages/psycopg/connection.py", line 304, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.CheckViolation: effect intent prepared -> succeeded not permitted
+CONTEXT:  PL/pgSQL function axiom.effect_intents_guard() line 24 at RAISE
+=========================== short test summary info ============================
+PASSED tests/integration/test_action_cancellation.py::test_cancel_while_paused_before_the_gate_authorizes_sending[worker_resumes]
+PASSED tests/integration/test_action_cancellation.py::test_cancel_while_paused_before_the_gate_authorizes_sending[takeover]
+PASSED tests/integration/test_action_cancellation.py::test_cancel_after_an_attempt_reported_not_applied_returns_the_use
+PASSED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[outcome_unknown-before_send]
+PASSED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[outcome_unknown-in_provider]
+PASSED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[takeover_then_success-before_send]
+PASSED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[takeover_then_success-in_provider]
+PASSED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[success-before_send]
+PASSED tests/integration/test_action_cancellation.py::test_cancel_after_the_gate_authorized_sending[success-in_provider]
+PASSED tests/integration/test_action_cancellation.py::test_cancel_with_an_earlier_dispatch_still_in_flight_holds_the_use
+PASSED tests/integration/test_action_cancellation.py::test_a_recorded_success_settles_the_cancellation_as_succeeded[claim]
+PASSED tests/integration/test_action_cancellation.py::test_a_recorded_success_settles_the_cancellation_as_succeeded[operator_cancel]
+PASSED tests/integration/test_action_cancellation.py::test_operator_reconciles_a_held_cancellation[lose_ack-adopt]
+PASSED tests/integration/test_action_cancellation.py::test_operator_reconciles_a_held_cancellation[fail_unprocessed-not_applied]
+PASSED tests/integration/test_action_cancellation.py::test_operator_reconciles_a_held_cancellation[fail_unprocessed-abandon]
+PASSED tests/integration/test_action_cancellation.py::test_restore_doubt_keeps_the_use_reserved[cancel_queued]
+PASSED tests/integration/test_action_cancellation.py::test_restore_doubt_keeps_the_use_reserved[cancel_parked]
+PASSED tests/integration/test_action_cancellation.py::test_restore_doubt_keeps_the_use_reserved[abandon_witness_park]
+PASSED tests/integration/test_action_cancellation.py::test_stale_worker_cannot_return_the_use_after_takeover
+PASSED tests/integration/test_action_cancellation.py::test_generic_job_operations_do_not_bypass_the_execution[cancel]
+PASSED tests/integration/test_action_cancellation.py::test_generic_job_operations_do_not_bypass_the_execution[resolve_effect]
+PASSED tests/integration/test_action_cancellation.py::test_adopt_without_a_verifiable_record_is_refused[witness_no_intent]
+PASSED tests/integration/test_action_cancellation.py::test_adopt_without_a_verifiable_record_is_refused[verification_failed]
+23 passed in 12.03s

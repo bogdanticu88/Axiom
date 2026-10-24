@@ -165,6 +165,127 @@ All three ticket integrations are **fixture-tested** against local fakes and hav
 None declares deduplication, so the same rule applies: adopt on a lookup hit, otherwise park after an uncertain create
 (`wf::*`, 6 scenarios x 3 adapters). Inbound polling records ticket state append-only and never moves the case.
 
+### Amendment (2026-10-24): who may transition an execution after the effect
+
+Two responsibilities are separated after the effect step.
+
+* **Observations** of the provider's answer (created, adopted, rejected, outcome unknown) are recorded by the effect
+  gate in `effect_intents` and job events even after the worker's lease is lost, because the effect may exist and
+  that fact must not be lost. Unchanged.
+* **Transitions of the execution record** are decisions taken for the job: `succeeded` (with the external reference,
+  consuming the approval use), `reconciling`, `failed` or `cancelled` (returning the use if no attempt was made). Each
+  now commits only in a transaction that first passes the job's lease check (`JobContext.fenced`), so it is made by
+  the holder of the current lease token. An execution belongs to one job (`job_id` is immutable), so that token
+  identifies the attempt. A worker that has lost the lease records its observation as `execution_transition_discarded`
+  and stops; the current lease holder reruns the step and the gate reconciles from the recorded intent (a recorded
+  success is adopted, never created again).
+
+**What was wrong (confirmed against PostgreSQL, verification run 32).** Without the fence, a worker whose lease had
+expired could transition the execution after another worker had reclaimed the job. In the reproduced interleaving the
+first worker's gate denied (the approver's membership was suspended), its lease expired, the membership was restored,
+and the second worker passed its checks; the first worker then marked the execution `failed` and returned the approval
+use, and the second created the ticket. The record said `failed` with no external reference while the ticket existed,
+and the single-use approval ran again and created a second ticket.
+
+**Operator adoption.** With the stale success no longer applied, a job parked by the current worker stays parked while
+the recorded intent already says `succeeded`. Adopting then left the job `succeeded` and the execution `reconciling`
+with no reference, because no open intent remained to re-run; on `main` the same path was reachable after a restore
+park. Adoption that finishes the job now finishes the execution (`succeeded`, `adopted_by_operator`, unverified), and an
+adopted reference that contradicts a recorded success is refused (`effect_evidence_conflict`). `not_applied` already
+reconciled from the recorded success without a second create.
+
+**Not changed, known.** A cancellation that the job runner applies at claim time (the previous worker's lease expired
+while `cancel_requested` was set) cancels the job but leaves the execution open (`prepared` or `executing`) and its
+reservation `reserved`; nothing finishes it. Reproduced (verification run 32); fixing it needs a decision on the record
+when an attempt may already have reached the provider, where `cancelled` would be false. Separately, `abandon` still
+records `failed` although the effect may exist, as documented above. None of this is exactly-once execution: a request
+already sent cannot be withdrawn, and only provider deduplication or fencing stops a second one (above). (Both
+addressed by the amendment of 2026-10-25 below.)
+
+### Amendment (2026-10-25): cancelling does not establish that an effect was cancelled
+
+**Rule.** Cancelling an execution stops its scheduling. It does not establish that the external action was cancelled,
+and the absence of a response is never evidence that nothing happened. The execution's outcome is decided from the
+effect evidence, in one transaction with the approval accounting.
+
+**Evidence** (`effect_evidence` in `domains/actions/service.py`). The gate writes the intent, and marks it
+`executing` with an `effect_attempt` job event, in a transaction that commits before any request is sent; so those
+records are written ahead of every dispatch.
+
+| Evidence | Established when |
+|---|---|
+| recorded success | the intent is `succeeded` or `reconciled` with an external reference |
+| recorded failure | the intent is `failed` (provider rejected) or `abandoned` (operator) |
+| never began | no intent, or a `prepared` intent whose every authorized dispatch is accounted for as not applied (the provider reported it definitely not applied under that dispatch's lease token, or an operator later resolved `not_applied`); **and** the database can vouch for its effect records (no fingerprint change, fingerprint acknowledged, job not carried across a recovery acknowledgement) |
+| may have begun | anything else: an `executing` or `unknown` intent, an unaccounted dispatch (for example a stale worker's request still in flight after a repeat was refused), or restore doubt |
+
+**Settlement** (`settle_cancellation`), resulting states:
+
+| Evidence | Execution | Reservation | Job |
+|---|---|---|---|
+| never began | `cancelled` | `released` (use returned), same transaction | `cancelled` |
+| recorded success | `succeeded` from the record, reference marked unverified | `consumed` | `succeeded` |
+| recorded failure | `failed` | `consumed` | `cancelled` |
+| may have begun, or the execution is already `reconciling` | `reconciling`, with `external_effect: unknown` and why the reservation is held in `outcome_detail` | stays `reserved` and keeps counting against the approval, so no fresh execution can reuse it | `needs_operator`, reason states the use stays reserved |
+
+A recorded success whose object failed verification is held, not settled as succeeded.
+
+**Where it runs.** `cancel_execution` sets `cancel_requested` and settles at once only a job no worker holds
+(`queued`, `waiting`, `needs_operator`). A running job is settled by the worker: at claim time, when the previous lease
+has expired (the claim holds the job's row lock and no lease is valid), or in the lease holder's final write. Both go
+through the handler's `on_cancel` and `jobs.core.settle_cancelled_job` (ADR 0006 amendment 3). The handler's own step
+no longer decides on its own that a cancelled execution sent nothing. `cancel_requested` stays set, so after an operator
+resolves a held cancellation the next claim settles it again from the new evidence: `adopt` ends `succeeded`,
+`not_applied` ends `cancelled` with the use returned, `abandon` ends `failed` with the use consumed. With cancellation
+requested, `not_applied` does not re-run the effect.
+
+**Races.** Cancel against the gate's authorization: the gate re-reads the job row under its lock at the authorization
+(step 3) and stops if cancellation was requested; a settlement reads the intent under lock after locking the job row.
+So either the authorization committed first (intent `executing`, the cancellation is held) or the settlement did (the
+job is no longer running under that token and the gate's fenced authorization fails; nothing is sent). A worker paused
+before the authorization therefore sends nothing; a worker paused after it may still send, and its late answer is
+recorded on the intent as an observation without the authority to transition the execution (amendment of 2026-10-24).
+`cancel_execution` and `reconcile` now lock the job row before the execution row, the order the worker uses.
+
+**Abandon** (established before the change, verification run 33). Abandoning records that the operator could not
+establish the outcome. Before this change it returned the use when no intent existed, which is the case for a job the
+restore witness parked before writing an intent: the single-use approval then authorized a fresh execution. Abandon now
+always consumes the use and records `external_effect: unknown`. An operator who has established that nothing was sent
+cancels the execution and resolves `not_applied`, which returns the use through the evidence rule above.
+
+**Generic job operations.** `/jobs/{id}/cancel` and `/jobs/{id}/resolve-effect` changed an action job without its
+execution and approval use (for example a cancelled job with a `prepared` execution and a `reserved` use). They now
+refuse action execution jobs (`settled_with_aggregate`); `/action-executions/{id}/cancel` and `/reconcile` settle both
+together. This narrows what `job.operate` can do; no permission was added.
+
+**Adoption the gate cannot verify (review finding on this change's earlier head).** The adoption fix of 2026-10-24
+finished the execution `succeeded` from whatever reference the operator typed whenever no open intent was left. Before,
+an adopted reference was always checked by the gate and `adapter.verify` before the execution succeeded. On `5e17eff` an
+operator could mark a witness-parked execution (no intent, no ticket) `succeeded` with an invented reference, and close
+one whose recorded object had failed verification. Adoption without an open intent now finishes the execution only from
+a recorded success that matches the reference and is not contested; otherwise it is refused
+(`effect_evidence_missing`) and nothing changes. Unverified adoption remains possible only through what the gate
+records. A requested cancellation settled from an operator's adoption (`reconciled` intent) is recorded unverified.
+
+**Lock order of observations.** The gate's unfenced observation writes (the outcome record and a lookup adoption) now
+take the job row in `KEY SHARE` mode before the intent, the order every other writer uses, so an observation and a
+cancellation settlement cannot deadlock. Not covered by a dedicated test.
+
+**Residual limitations.**
+* A witness-parked execution with no intent cannot be adopted; the operator abandons it (use consumed) or resolves
+  `not_applied` after establishing that nothing was sent.
+* The settlement in the API path (`cancel_execution` on a job no worker holds) uses only the database's own restore
+  signals; it does not read the external restore witness, which the worker's preflight and the gate do. After a
+  same-identity restore that only the witness detects, cancelling a never-run job there would return its use.
+* A held cancellation always needs an operator; a lookup-capable integration does not reconcile a cancelled job by
+  lookup on its own.
+* A success settled from the record is not verified against the provider (`verified = false` on the reference).
+* The database guard on releasing a use still checks only that no intent left `prepared`; restore doubt and
+  unaccounted dispatches are enforced by the application under the trusted runtime credential (ADR 0012 a4).
+* Handlers without `on_cancel` keep the previous cancellation behaviour.
+* Abandon cannot return a use even when nothing was sent; use cancel and `not_applied` for that.
+* Not exactly-once: a request already sent cannot be withdrawn; only provider deduplication or fencing stops a second.
+
 ## Consequences
 Parks are more frequent than with a naive lookup-then-create policy (every uncertain Jira-style create needs an
 operator unless the index has caught up). That is the price of not creating duplicates. A provider with
