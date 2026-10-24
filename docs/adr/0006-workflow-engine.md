@@ -112,3 +112,16 @@ an idempotency key or fencing token, or be marked lookup-only with operator park
 Production Temporal cluster and its persistence; Temporal authoriser/mTLS configuration; load and throughput;
 replication and failover; point-in-time recovery; network partitions; cancellation after an external call started;
 multi-step workflows.
+
+## Amendment 1 (2026-10-24): an expired lease is lost at the final write too
+
+A lease is held only while its token matches, the job is `running` and `lease_expires_at` is in the future by the
+database clock. `JobContext.fenced` and `claim` already applied that rule, but the worker's final write (`_finish`)
+checked only the token and the state. A handler that returned after its lease expired, before another worker
+reclaimed the job, therefore had its outcome written: success, failure, retry scheduling, a wait, operator parking or
+cancellation. The final write now applies the same rule, using `clock_timestamp()`; such an outcome is discarded
+(`stale_result_discarded`) and the job stays reclaimable. The check holds the row lock until commit and a reclaim needs
+that lock, so expiry between the check and the commit cannot let another worker in. The `jobs_guard` trigger still
+does not test expiry, and the heartbeat still extends a lease that has expired but not been reclaimed, as long as the
+step deadline has not passed; neither is changed here. Discarding the outcome does not undo writes a handler committed
+in its own fenced transactions before expiry, or effects outside the database. Verification run 31.

@@ -189,6 +189,72 @@ def test_hung_step_loses_lease_at_deadline_and_its_late_result_is_fenced_out(db,
     assert "stale_result_discarded" in ev
 
 
+def expire_lease_now(admin_conn, job_id, *, cancel=False):
+    """Fault injection with the database clock: the lease and the step deadline end before the handler returns, and
+    no other worker has reclaimed the job. The deadline is moved too, so no heartbeat can extend the lease again."""
+    admin_conn.execute(
+        """UPDATE axiom.jobs SET lease_expires_at = clock_timestamp() - interval '1 second',
+                  step_deadline_at = clock_timestamp() - interval '1 second', cancel_requested = cancel_requested OR %s,
+                  record_version = record_version + 1 WHERE id = %s""", (cancel, job_id))
+
+
+OUTCOMES = {
+    "done": Done({"by": "expired worker"}),
+    "fail": Fail("failed by expired worker"),
+    "retry": Retry("retry from expired worker"),
+    "wait": Wait(datetime(2099, 1, 1, tzinfo=timezone.utc), "wait from expired worker"),
+    "needs_operator": NeedsOperator("operator from expired worker"),
+}
+
+
+@pytest.mark.parametrize("cancel", [False, True], ids=["plain", "cancel-requested"])
+@pytest.mark.parametrize("name", list(OUTCOMES))
+def test_result_returned_after_the_lease_expired_is_discarded_and_the_job_stays_reclaimable(
+        db, world, sys_ctx, admin_conn, name, cancel):
+    """The interval the late-worker test above does not cover: the lease has expired but nobody has reclaimed the job
+    yet when the original handler returns. The expired worker no longer holds the lease (JobContext.fenced and claim
+    both say so), so its outcome must not be written, and the job must stay claimable."""
+    cfg = WorkerConfig(lease_seconds=60, step_timeout_seconds=120, per_tenant_running_limit=10)
+    j = put(db, sys_ctx, kind="test.scripted")
+
+    def expire_then_return(jc):
+        expire_lease_now(admin_conn, j["id"], cancel=cancel)
+        return OUTCOMES[name]
+    first = Worker(db, [ScriptedHandler([expire_then_return])], worker_id="expired", config=cfg)
+    [(claimed, token)] = first.claim(sys_ctx)
+    first.execute(sys_ctx, claimed, token)
+
+    row = job(db, sys_ctx, j["id"])
+    assert (row["state"], row["lease_token"], row["result"], row["last_error"], row["finished_at"]) == \
+        ("running", token, None, None, None), "the expired worker's outcome was written"
+    assert row["lease_expires_at"] < datetime.now(timezone.utc)
+    assert events(db, sys_ctx, j["id"])[-1] == "stale_result_discarded"
+    assert first.counters["stale_results_discarded"] == 1
+
+    second = Worker(db, [ScriptedHandler([Done({"by": "second worker"})])], worker_id="second", config=cfg)
+    reclaimed = second.claim(sys_ctx)
+    row = job(db, sys_ctx, j["id"])
+    if cancel:   # a cancellation requested meanwhile is applied by the claim, not by the expired worker
+        assert reclaimed == [] and row["state"] == "cancelled" and row["lease_token"] == token
+        return
+    [(again, token2)] = reclaimed
+    assert token2 == token + 1 and again["lease_owner"] == "second"
+    second.execute(sys_ctx, again, token2)
+    row = job(db, sys_ctx, j["id"])
+    assert row["state"] == "succeeded" and row["result"] == {"by": "second worker"}
+
+
+def test_a_worker_whose_lease_is_still_valid_finishes_normally(db, world, sys_ctx):
+    cfg = WorkerConfig(lease_seconds=60, step_timeout_seconds=120, per_tenant_running_limit=10)
+    j = put(db, sys_ctx, kind="test.scripted")
+    w = Worker(db, [ScriptedHandler([Done({"by": "valid worker"})])], worker_id="valid", config=cfg)
+    [(claimed, token)] = w.claim(sys_ctx)
+    w.execute(sys_ctx, claimed, token)
+    row = job(db, sys_ctx, j["id"])
+    assert row["state"] == "succeeded" and row["result"] == {"by": "valid worker"} and row["lease_token"] == token
+    assert "stale_result_discarded" not in events(db, sys_ctx, j["id"])
+
+
 def test_stale_token_cannot_write_even_bypassing_python(db, world, sys_ctx):
     j = put(db, sys_ctx, kind="test.scripted")
     w = Worker(db, [ScriptedHandler([])], config=FAST)

@@ -6,7 +6,10 @@
   times is dead-lettered as poison, even if every previous claim crashed before reaching the handler.
 * A heartbeat thread extends the lease only until the step deadline. A step that hangs past its deadline loses
   the lease; another worker may then take the job, and anything the hung worker writes later is fenced out.
-* Results are written with ``WHERE lease_token = mine``; a lost lease discards the result.
+* Results are written only while the lease is held: token, ``running`` state and an unexpired ``lease_expires_at``
+  by the database clock, the same test as ``JobContext.fenced``. A lost or expired lease discards the result and
+  leaves the job for another worker to reclaim. Discarding the job's outcome does not undo writes a handler already
+  committed in its own fenced transactions, or effects outside the database.
 * Handlers declare the versions they run; jobs pinned to other versions are left for other workers.
 """
 from __future__ import annotations
@@ -225,8 +228,15 @@ class Worker:
     def _finish(self, ctx: TenantContext, job: dict, token: int, outcome) -> None:
         cfg = self.config
         with self.db.tenant_tx(ctx) as conn:
+            # The final write boundary: the same test as JobContext.fenced. The lease counts as held only while its
+            # token matches, the job is running and lease_expires_at is still in the future by the database clock
+            # (clock_timestamp(), the time of this statement, not of the transaction start). The row lock taken here
+            # is held until this transaction commits, and a reclaim needs the same lock (claim uses FOR UPDATE SKIP
+            # LOCKED), so a lease that expires between this check and the commit cannot be taken by another worker
+            # in between: the outcome is written as if it had finished at the moment of the check.
             current = conn.execute(
-                "SELECT * FROM axiom.jobs WHERE id = %s AND lease_token = %s AND state = 'running' FOR UPDATE",
+                """SELECT * FROM axiom.jobs WHERE id = %s AND lease_token = %s AND state = 'running'
+                     AND lease_expires_at > clock_timestamp() FOR UPDATE""",
                 (job["id"], token)).fetchone()
             if current is None:
                 self.counters["stale_results_discarded"] += 1

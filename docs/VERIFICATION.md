@@ -1053,3 +1053,27 @@ Checked locally with registry access cut: with the images present the build and 
 needs the registry once pulled; with the frontend removed, the pull step stopped the test with exit 1 and the registry
 error. A normal run passed. These were cached runs. No retry, fallback, credential or cross-run cache was added; this
 moves away from a source that was refusing pulls and does not guarantee the new one stays available.
+
+### Run 31: an outcome returned after the lease expired is discarded (2026-10-24)
+
+Records: `docs/verification/2026-10-24-expired-lease/`. A code review suspected that `Worker._finish` wrote a
+handler's outcome after its lease had expired, as long as no other worker had reclaimed the job yet: it checked the
+lease token and the `running` state but not `lease_expires_at`, unlike `JobContext.fenced` and `claim`. Confirmed
+against the PostgreSQL test database with a new test
+(`test_result_returned_after_the_lease_expired_is_discarded_and_the_job_stays_reclaimable`). The handler moves the
+lease expiry and step deadline into the past with the database clock, then returns; no sleep is involved.
+
+* **Before the fix:** 10 of 10 cases failed with "the expired worker's outcome was written", one per outcome (done,
+  fail, retry, wait, needs operator), each with and without a cancellation request. The job became `succeeded`,
+  `failed`, `queued`, `waiting`, `needs_operator` or `cancelled`. The control
+  (`test_a_worker_whose_lease_is_still_valid_finishes_normally`) passed.
+* **Fix:** the final write's locking query also requires `lease_expires_at > clock_timestamp()`, the same test as
+  `JobContext.fenced` (ADR 0006 amendment 1).
+* **After the fix:** 11 of 11 passed. The outcome is discarded with a `stale_result_discarded` event, the job stays
+  `running` with an expired lease, another worker reclaims it with the next lease token and finishes it, and a
+  cancellation requested meanwhile is applied at that claim. The 20 test files that drive the job runner passed
+  (209 passed, 1 opt-in demonstration skipped).
+
+Not changed: the `jobs_guard` trigger does not test expiry, and the heartbeat can extend a lease that has expired but
+not been reclaimed before the step deadline. Discarding the outcome does not undo handler writes committed earlier in
+fenced transactions, or external effects.
