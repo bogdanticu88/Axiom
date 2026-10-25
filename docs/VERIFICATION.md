@@ -1219,3 +1219,29 @@ data directory rolled back, cluster started.
 * **Not covered:** in-place restores into a live database, restoring while workers run, proxies, failover and
   point-in-time recovery (ADR 0010 amendment of 2026-10-25, "Supported restore boundary").
 
+### Run 36: GitHub Issues opt-in test prepared; unreadable credential at create (2026-10-25)
+
+Local only; nothing contacted the target repository and no real credential was used.
+
+* **Confirmed on `main` (`fa25f6c`):** with the credential readable for the lookup and unreadable when the create was
+  built, no request was sent but the intent was recorded `unknown` (the job would then park for an operator).
+  `test_github_credential_unreadable_at_create_is_not_an_unknown_outcome` failed with `('queued', 'unknown', 0)`.
+* **Fix:** the adapter resolves the credential before sending and reports `DefinitelyNotApplied` when it cannot; the
+  test passes (the job retries and then creates one issue against the fake).
+* **Opt-in test** `tests/integration/test_github_issues_optin.py` and manual workflow
+  `.github/workflows/github-issues-optin.yml`: plan in `docs/integration-tests/github-issues.md`. Not yet run against
+  GitHub; the adapter stays fixture-tested.
+* **Rehearsal isolation, a mistake and its regression check.** The first manual rehearsal installed the local fake in a
+  function-scoped fixture, after the module-scoped precondition check had already run, so that check sent 6 real
+  requests (`GET /repos/acme/payments`, an unrelated repository) to `api.github.com` with a placeholder token; each
+  returned 403. The committed rehearsal (`test_github_optin_rehearsal.py`) blocks real HTTP at configuration time and
+  uses the non-routable `api.github.test.invalid`: without opt-in 8 skipped and 0 network attempts; normal (6 passed,
+  4 fake issues created and closed), readonly and revoked pass with 0 attempts; an unapproved target is refused
+  before any request; a control reproducing the late fake fails with the attempt refused.
+* **Review hardening:** the target must equal an explicitly approved repository and GitHub must answer for that same
+  full name without a redirect; every request is restricted to the API host and no redirect is followed
+  (`tests/unit/test_github_issues_redirects.py`); a held request is sent only on the test's instruction and is
+  withdrawn, never sent, on failure or timeout; secret checks no longer let an assertion print the token. The
+  workflow runs only on `main` at the dispatcher's `expected_sha`, checks the approved repository before checkout,
+  removes the token file in an always-run step and uploads the log only if the token search found nothing.
+

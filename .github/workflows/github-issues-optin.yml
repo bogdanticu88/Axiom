@@ -1,0 +1,112 @@
+# Manual, opt-in: the real GitHub Issues integration test (tests/integration/test_github_issues_optin.py).
+#
+# Runs only when dispatched by hand (workflow_dispatch; no push, pull_request or pull_request_target trigger), only on
+# main, only at the main commit the dispatcher names as expected_sha, and only after a required reviewer approves
+# the protected environment "github-issues-integration" in this repository (Axiom). The environment holds the token
+# (secret AXIOM_TEST_GITHUB_TOKEN) and the approved target (variable AXIOM_TEST_GITHUB_REPO); its secrets reach the
+# job only after approval. The token is written to a 0600 file, read by the platform through secretref:file/, never
+# given to the test process as an environment variable, and removed in an always-run step.
+#
+# Pinned: actions to the same full commit hashes as ci.yml (ADR 0007), uv to a version, Python packages by uv.lock.
+# Not pinned: the Ubuntu postgresql-16 package and the runner image (as in ci.yml).
+name: github-issues-optin
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "normal (creates 4 issues, then closes them), readonly (token edited to Issues read-only), revoked (token deleted)"
+        required: true
+        type: choice
+        options: [normal, readonly, revoked]
+      approved_repo:
+        description: "the target repository, owner/name; must equal the environment variable AXIOM_TEST_GITHUB_REPO"
+        required: true
+        type: string
+      expected_sha:
+        description: "the reviewed main commit (full 40-character hash) to run"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: github-issues-optin
+  cancel-in-progress: false
+jobs:
+  optin:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: github-issues-integration
+    steps:
+      - name: Check the run is the reviewed main commit and the approved repository
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          APPROVED_REPO: ${{ inputs.approved_repo }}
+          CONFIGURED_REPO: ${{ vars.AXIOM_TEST_GITHUB_REPO }}
+          RUN_SHA: ${{ github.sha }}
+          RUN_REF: ${{ github.ref }}
+        run: |
+          [ "$RUN_REF" = "refs/heads/main" ] || { echo "not main: $RUN_REF"; exit 1; }
+          [ "$RUN_SHA" = "$EXPECTED_SHA" ] || { echo "run commit $RUN_SHA is not the expected $EXPECTED_SHA"; exit 1; }
+          [ -n "$CONFIGURED_REPO" ] || { echo "the environment variable AXIOM_TEST_GITHUB_REPO is not set"; exit 1; }
+          [ "$APPROVED_REPO" = "$CONFIGURED_REPO" ] || { echo "approved_repo does not match the configured target"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install uv and PostgreSQL 16 server
+        run: |
+          python -m pip install "uv==0.11.32"
+          sudo apt-get update
+          sudo apt-get install -y postgresql-16
+          sudo systemctl stop postgresql || true
+          uv sync --frozen
+      - name: Write the token to a private file
+        env:
+          TOKEN: ${{ secrets.AXIOM_TEST_GITHUB_TOKEN }}
+        run: |
+          [ -n "$TOKEN" ] || { echo "the environment secret AXIOM_TEST_GITHUB_TOKEN is not set"; exit 1; }
+          umask 077
+          mkdir -p "$RUNNER_TEMP/axiom-secrets"
+          printf '%s' "$TOKEN" > "$RUNNER_TEMP/axiom-secrets/github-token"
+      - name: Run the opt-in test
+        env:
+          AXIOM_TEST_GITHUB_REPO: ${{ vars.AXIOM_TEST_GITHUB_REPO }}
+          AXIOM_TEST_GITHUB_APPROVED_REPO: ${{ inputs.approved_repo }}
+          AXIOM_TEST_GITHUB_MODE: ${{ inputs.mode }}
+        run: |
+          mkdir -p .var/optin
+          sudo -E env "PATH=$PATH" bash -c '
+            set -o pipefail
+            scripts/dev/test-db.sh start
+            set -a; . ./.env.test; set +a
+            AXIOM_TEST_GITHUB_ISSUES=1 AXIOM_TEST_GITHUB_TOKEN_FILE="$RUNNER_TEMP/axiom-secrets/github-token" \
+              uv run --frozen pytest -rA -s -p no:cacheprovider tests/integration/test_github_issues_optin.py \
+              2>&1 | tee .var/optin/pytest.log'
+      - name: Check the log does not contain the token
+        id: leakcheck
+        if: always()
+        run: |
+          [ -f .var/optin/pytest.log ] || exit 0
+          if [ -s "$RUNNER_TEMP/axiom-secrets/github-token" ] \
+             && sudo grep -qF -f "$RUNNER_TEMP/axiom-secrets/github-token" .var/optin/pytest.log; then
+            echo "the token appears in the test log; it will not be uploaded"
+            sudo rm -f .var/optin/pytest.log
+            exit 1
+          fi
+      - name: Remove the token file
+        if: always()
+        run: |
+          sudo rm -rf "$RUNNER_TEMP/axiom-secrets"
+          [ ! -e "$RUNNER_TEMP/axiom-secrets" ]
+      - name: Keep the log
+        if: always() && steps.leakcheck.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: github-issues-optin-${{ inputs.mode }}
+          path: .var/optin/
+          if-no-files-found: ignore
+          retention-days: 14
