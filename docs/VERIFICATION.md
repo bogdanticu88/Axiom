@@ -1229,7 +1229,19 @@ Local only; nothing contacted the target repository and no real credential was u
 * **Fix:** the adapter resolves the credential before sending and reports `DefinitelyNotApplied` when it cannot; the
   test passes (the job retries and then creates one issue against the fake).
 * **Opt-in test** `tests/integration/test_github_issues_optin.py` and manual workflow
-  `.github/workflows/github-issues-optin.yml`: plan in `docs/integration-tests/github-issues.md`. Rehearsed against
-  the local GitHub fake with real network blocked: normal 6 passed (4 fake issues), readonly 1 passed, revoked 1
-  passed. Not yet run against GitHub; the adapter stays fixture-tested.
+  `.github/workflows/github-issues-optin.yml`: plan in `docs/integration-tests/github-issues.md`. Not yet run against
+  GitHub; the adapter stays fixture-tested.
+* **Rehearsal isolation, a mistake and its regression check.** The first manual rehearsal installed the local fake in a
+  function-scoped fixture, after the module-scoped precondition check had already run, so that check sent 6 real
+  requests (`GET /repos/acme/payments`, an unrelated repository) to `api.github.com` with a placeholder token; each
+  returned 403. The committed rehearsal (`test_github_optin_rehearsal.py`) blocks real HTTP at configuration time and
+  uses the non-routable `api.github.test.invalid`: without opt-in 8 skipped and 0 network attempts; normal (6 passed,
+  4 fake issues created and closed), readonly and revoked pass with 0 attempts; an unapproved target is refused
+  before any request; a control reproducing the late fake fails with the attempt refused.
+* **Review hardening:** the target must equal an explicitly approved repository and GitHub must answer for that same
+  full name without a redirect; every request is restricted to the API host and no redirect is followed
+  (`tests/unit/test_github_issues_redirects.py`); a held request is sent only on the test's instruction and is
+  withdrawn, never sent, on failure or timeout; secret checks no longer let an assertion print the token. The
+  workflow runs only on `main` at the dispatcher's `expected_sha`, checks the approved repository before checkout,
+  removes the token file in an always-run step and uploads the log only if the token search found nothing.
 

@@ -4,8 +4,13 @@ Skipped unless explicitly enabled. Running it creates issues in the named reposi
 
     AXIOM_TEST_GITHUB_ISSUES=1
     AXIOM_TEST_GITHUB_REPO=<owner>/<name>          # a private, disposable repository with Issues enabled
+    AXIOM_TEST_GITHUB_APPROVED_REPO=<owner>/<name> # the repository approved for this run; must equal the above
     AXIOM_TEST_GITHUB_TOKEN_FILE=<absolute path>   # fine-grained token, file mode 0600, read via secretref:file/
     AXIOM_TEST_GITHUB_MODE=normal | readonly | revoked   (default normal)
+
+Before any write the test checks that GitHub answers for exactly that repository (no redirect, same full name) and
+that it is private with Issues enabled. Every request, the platform's and the test's own, may go only to the API host;
+a redirect is never followed, so the token cannot be forwarded to another host.
 
 ``normal`` needs Issues read and write on that one repository and creates 4 issues (scenarios marked [creates 1]),
 closing them at the end. ``readonly`` (the same token edited to Issues read-only) and ``revoked`` (after the token
@@ -36,6 +41,7 @@ import pytest
 
 ENABLED = os.environ.get("AXIOM_TEST_GITHUB_ISSUES") == "1"
 REPO = os.environ.get("AXIOM_TEST_GITHUB_REPO", "")
+APPROVED_REPO = os.environ.get("AXIOM_TEST_GITHUB_APPROVED_REPO", "")
 TOKEN_FILE = os.environ.get("AXIOM_TEST_GITHUB_TOKEN_FILE", "")
 MODE = os.environ.get("AXIOM_TEST_GITHUB_MODE", "normal")
 API = "https://api.github.com"
@@ -54,10 +60,32 @@ def only(mode: str):
 
 
 # ----------------------------------------------------------------------------------------------- transport
+class Held:
+    """A request held before it leaves. It is sent only if the test calls ``send()``; a failed test calls
+    ``withdraw()``, and if neither happens within the wait the request is withdrawn too. A withdrawn request is
+    refused locally as a connection failure, so it never reaches GitHub."""
+
+    def __init__(self, thread: str, method: str):
+        self.thread, self.method = thread, method
+        self.reached, self.decided, self.allowed = threading.Event(), threading.Event(), False
+
+    def send(self):
+        self.allowed = True
+        self.decided.set()
+
+    def withdraw(self):
+        self.allowed = False
+        self.decided.set()
+
+
+def _api_host() -> str:
+    return httpx.URL(API).host
+
+
 class Recorder(httpx.BaseTransport):
     """The real HTTPS transport, recording method, path and status (never headers or bodies), with local
     simulations: hold a request before it leaves, discard one create response after GitHub processed it, hide
-    issues from the list the adapter reads."""
+    issues from the list the adapter reads. It refuses any request to a host other than the API host."""
 
     def __init__(self):
         proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
@@ -66,7 +94,7 @@ class Recorder(httpx.BaseTransport):
         self.lose_next_create = False
         self.hidden: set[int] = set()
         self.discarded: list[int] = []
-        self.hold: tuple[str, str, threading.Event, threading.Event] | None = None   # (thread, method, reached, go)
+        self.hold: Held | None = None
         self.refusals: list[dict] = []
 
     def creates(self) -> int:
@@ -74,11 +102,14 @@ class Recorder(httpx.BaseTransport):
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         method, path = request.method, request.url.path
-        if self.hold and threading.current_thread().name == self.hold[0] and method == self.hold[1]:
-            _, _, reached, go = self.hold
-            self.hold = None
-            reached.set()
-            go.wait(60)
+        if request.url.host != _api_host():
+            raise AssertionError(f"refusing a request to {request.url.host}: only {_api_host()} is allowed")
+        if self.hold and threading.current_thread().name == self.hold.thread and method == self.hold.method:
+            held, self.hold = self.hold, None
+            held.reached.set()
+            if not held.decided.wait(60) or not held.allowed:
+                self.log.append((method, path, "withdrawn"))
+                raise httpx.ConnectError("held request withdrawn by the test; it was not sent", request=request)
         try:
             response = self.inner.handle_request(request)
         except httpx.HTTPError as exc:
@@ -111,9 +142,9 @@ def _token() -> str:
 
 
 def _direct(method: str, path: str, **kw) -> httpx.Response:
-    """A request outside the platform, for preconditions and cleanup only."""
+    """A request outside the platform, for preconditions and cleanup only. Never follows a redirect."""
     proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
-    with httpx.Client(proxy=proxy, timeout=20.0) as c:
+    with httpx.Client(proxy=proxy, timeout=20.0, follow_redirects=False) as c:
         return c.request(method, f"{API}{path}", headers={
             "Authorization": f"Bearer {_token()}", "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28"}, **kw)
@@ -124,12 +155,14 @@ def target_repository():
     path = Path(TOKEN_FILE)
     assert path.is_absolute() and path.is_file(), "AXIOM_TEST_GITHUB_TOKEN_FILE must be an absolute path to a file"
     assert stat.S_IMODE(path.stat().st_mode) & 0o077 == 0, "the token file must not be readable by group or others"
+    assert REPO and REPO == APPROVED_REPO, "AXIOM_TEST_GITHUB_REPO must equal AXIOM_TEST_GITHUB_APPROVED_REPO"
     if MODE == "revoked":
         yield
         return
     r = _direct("GET", f"/repos/{REPO}")
-    assert r.status_code == 200, f"cannot read {REPO}: HTTP {r.status_code}"
+    assert r.status_code == 200, f"cannot read {REPO}: HTTP {r.status_code} (a redirect is not followed)"
     repo = r.json()
+    assert repo["full_name"].lower() == REPO.lower(), "GitHub answered for a different repository"
     assert repo["private"] is True, "refusing to write to a repository that is not private"
     assert repo["has_issues"] is True, "the repository has Issues disabled"
     yield
@@ -171,13 +204,16 @@ def gh(db, world, ctx_for, dbinfo, run, admin_conn, tmp_path, monkeypatch, caplo
                                     "description": "Synthetic issue created by the Axiom opt-in integration test. "
                                                    "No client data.", "labels": []}
     yield env
+    # The checks below compare booleans and counts only, so a failure cannot print the token itself.
     secret = _token()
-    assert secret not in caplog.text, "the token appeared in a log record"
+    in_logs = secret in caplog.text
+    assert not in_logs, "the token appeared in a log record"
     leaked = admin_conn.execute(
         """SELECT (SELECT count(*) FROM axiom.job_events WHERE detail::text LIKE %(s)s)
                 + (SELECT count(*) FROM axiom.action_executions WHERE outcome_detail::text LIKE %(s)s)
                 + (SELECT count(*) FROM axiom.effect_intents WHERE coalesce(last_error, '') LIKE %(s)s) AS n""",
         {"s": f"%{secret}%"}).fetchone()["n"]
+    del secret
     assert leaked == 0, "the token appeared in a database record"
     print(f"\nREQUESTS {env.recorder.log}")
 
@@ -309,14 +345,16 @@ def test_cancellation_before_dispatch_returns_the_use(gh, admin_conn):
     p = gh.propose(gh.payload("cancel-before"))
     a = gh.approve(p, max_uses=1)
     e = gh.execute(p, a)
-    reached, go = threading.Event(), threading.Event()
-    gh.recorder.hold = ("A", "GET", reached, go)
+    held = gh.recorder.hold = Held("A", "GET")
     job, token, t = start(gh, "A", e)
     try:
-        assert reached.wait(30)
+        assert held.reached.wait(30)
         gh.svc("analyst", lambda s: s.cancel_execution(e["id"], "no longer wanted"))
+        held.send()
+    except BaseException:
+        held.withdraw()                     # a failed test never lets the held request leave
+        raise
     finally:
-        go.set()
         t.join(60)
     got = facts(gh, admin_conn, e, a)
     assert (got["job"], got["execution"], got["reservation"], got["uses"], got["creates"]) == (
@@ -334,20 +372,22 @@ def test_cancellation_and_takeover_after_dispatch_is_authorized(gh, admin_conn):
     p = gh.propose(gh.payload("cancel-takeover"))
     a = gh.approve(p, max_uses=1)
     e = gh.execute(p, a)
-    reached, go = threading.Event(), threading.Event()
-    gh.recorder.hold = ("A", "POST", reached, go)
+    held = gh.recorder.hold = Held("A", "POST")
     job, token, t = start(gh, "A", e)
     try:
-        assert reached.wait(30)
+        assert held.reached.wait(30)
         gh.svc("analyst", lambda s: s.cancel_execution(e["id"], "no longer wanted"))
         expire(admin_conn, job["id"])
         gh.make_worker("B").run_once(only_tenants={gh.world.a.id})
-        held = facts(gh, admin_conn, e, a)
+        before = facts(gh, admin_conn, e, a)
+        assert (before["job"], before["execution"], before["reservation"], before["uses"], before["creates"]) == (
+            "needs_operator", "reconciling", "reserved", (1, 0), 0)
+        held.send()                         # only now may A's one create leave
+    except BaseException:
+        held.withdraw()
+        raise
     finally:
-        go.set()
         t.join(60)
-    assert (held["job"], held["execution"], held["reservation"], held["uses"], held["creates"]) == (
-        "needs_operator", "reconciling", "reserved", (1, 0), 0)
     [number] = issues_with_marker(e)
     after = facts(gh, admin_conn, e, a)
     assert (after["intent"], after["execution"], after["creates"]) == ("succeeded", "reconciling", 1)

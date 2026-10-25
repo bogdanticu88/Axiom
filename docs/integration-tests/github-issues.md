@@ -52,60 +52,123 @@ log record and no row it wrote; the workflow checks its log before uploading it.
 
 ## Scenarios
 
-| # | Scenario | Issues created | Provider behaviour tested directly | Simulated locally |
-|---|---|---|---|---|
-| 1 | One approved action creates one issue; the reference `owner/repo#N` is stored, verified, use consumed | 1 | create, lookup miss before it, read back | nothing |
-| 2 | Lost response, then replay: the next attempt looks the issue up instead of creating | 1 | whether the list already shows a just-created issue (recorded either way) | the response to the one create is discarded |
-| 3 | Uncertain create the lookup cannot see: the job parks, the operator adopts, verification reads it back | 1 | read back of the adopted issue | lost response; the issue hidden from the list (stale index) |
-| 4 | Cancellation before dispatch: the use is returned after the witness check | 0 | the lookup | worker paused at its lookup |
-| 5 | Cancellation and worker takeover after the create is authorized: the use stays reserved; the late success is recorded; the operator adopts; the approval cannot run again | 1 | the create, sent once, after the takeover | worker paused before its request leaves; lease expiry |
-| 6 | Unavailable credential: nothing is sent | 0 | none (GitHub not contacted) | the secret file does not exist |
-| 7 | `readonly` run: the create is refused (403 expected); the job parks, the operator abandons, the use stays consumed; the refusal's status and accepted-permissions header are recorded | 0 | permission refusal | nothing (token edited to read-only) |
-| 8 | `revoked` run: the lookup is refused (401 expected); no create is attempted | 0 | revoked token | nothing (token deleted) |
+The normal run has four scenarios that create an issue, two that create none, and creates **4 issues** in total.
+Requests are the platform's, through the recording transport. The test's own reads (the precondition check, the
+marker search used for assertions) and the final `PATCH` that closes each created issue come on top.
 
-Normal run: **4 issues**, each created by exactly one request; the test closes them at the end (`not_planned`) and
-prints their numbers. No scenario sends a second create for the same operation, and none induces duplicate requests.
-The test checks that the platform sends at most one create per operation; it does not make creation exactly-once.
+| # | Scenario | Issues | Platform requests expected | How uncertainty is induced |
+|---|---|---|---|---|
+| 1 | One approved action creates one issue; reference `owner/repo#N` stored, verified, use consumed | 1 | `GET` list (lookup, miss), `POST` (201), `GET` issue (verify) | none |
+| 2 | Replay after a lost response: the next attempt looks the issue up instead of creating | 1 | `GET` list, `POST` (201, response discarded); then `GET` list (hit) and `GET` issue. If GitHub's list does not show the issue yet: the job parks, the operator adopts, `GET` issue | the `POST` is sent once and its response discarded locally |
+| 3 | Uncertain create the lookup cannot see: parks, operator adopts, read back | 1 | `GET` list, `POST` (201, discarded); `GET` list (issue hidden: miss) and park; after adoption `GET` issue | lost response, and the new issue hidden from the list the adapter reads (stale index) |
+| 5 | Cancellation and takeover after the create is authorized: use held, late success recorded, operator adopts, approval exhausted | 1 | `GET` list; `POST` held before it leaves; worker B's claim (no requests); then the one `POST` (201) and `GET` issue | worker A paused before sending; its lease expired by the database clock |
+| 4 | Cancellation before dispatch: use returned after the witness check | 0 | `GET` list (held, then sent) | worker A paused at its lookup |
+| 6 | Unavailable credential | 0 | none | the secret file does not exist |
+
+Refusal runs, separately: `readonly` (token edited to Issues read-only) expects `GET` list then one refused `POST`
+(403) and a park; `revoked` (token deleted) expects one refused `GET` (401) and no `POST`.
+
+**Observed directly from GitHub:** create and its response, the issue list with `since` and whether it already shows a
+just-created issue (scenario 2 records which branch it took), reading an issue back, closing, the permission refusal
+and the revoked token. **Simulated locally:** the lost response, the stale index, the paused worker, the lease expiry,
+the missing secret file. No simulation sends a request of its own: a lost response discards the answer to the one
+request that was sent, and the stale index edits the list the adapter receives.
+
+**Timeouts and failures cannot send extra creates.** The platform never sends a second create for an operation once
+the first may have reached GitHub: the adapter declares no deduplication, so after an uncertain outcome the gate only
+looks up or parks (asserted in every scenario: one `POST`). A request the test holds is sent only when the test calls
+`send()`; if an assertion fails it is withdrawn, and if the 60-second wait passes it is withdrawn too. A withdrawn
+request is refused locally as a connection failure and never reaches GitHub. Every request, the platform's and the
+test's, may go only to `api.github.com`, and no redirect is followed (`tests/unit/test_github_issues_redirects.py`), so
+the token cannot be forwarded to another host. Creation is not exactly-once: the test checks the platform sends at
+most one create per operation.
+
+**What the secret checks cover, and what they do not.** Each test checks that the exact token string appears in no log
+record captured from the process and in no row it wrote to `job_events`, `action_executions` or `effect_intents`; the
+checks compare booleans and counts, so a failure does not print the token. The workflow searches the whole test log
+for the exact string before uploading it, and GitHub Actions masks registered secrets in the job's console log. These
+are exact-match checks only: they do not detect an encoded, split or partial copy, output written outside the
+captured log (a core dump, another process), or other tables. The recording transport keeps method, path and status;
+a refusal keeps GitHub's error message and the `x-accepted-github-permissions` header; issue bodies and other response
+content are not logged. A permanent refusal's error text (up to 300 characters of GitHub's JSON) is kept in the job's
+`last_error`, as for every adapter.
 
 ## Running it
 
-Two ways; both keep the token out of chat and out of this workspace.
+Two ways; both keep the token out of chat and out of this workspace. **The protected environment, its secret and its
+variable live in the Axiom repository (`bogdanticu88/Axiom`), which runs the workflow. The target repository
+(`bogdanticu88/axiom-integration-test`) needs no settings beyond being private with Issues enabled.**
 
-**A. GitHub Actions (recommended).** Needs this PR merged (the workflow must be on the default branch to be
-dispatched).
+**A. GitHub Actions (recommended).** The workflow must be on `main` to be dispatched, so this needs PR 10 merged.
 
-1. Make sure `bogdanticu88/axiom-integration-test` is **private**, has **Issues enabled**, no collaborators, and holds
-   nothing you want to keep.
-2. In `bogdanticu88/Axiom`: Settings, Environments, New environment `github-issues-integration`. Add yourself as a
-   **required reviewer**; under deployment branches allow `main` only.
-3. In that environment add the variable `AXIOM_TEST_GITHUB_REPO` = `bogdanticu88/axiom-integration-test`.
-4. Create the token (table above): Settings, Developer settings, Fine-grained tokens, Generate new token.
-5. Add it in that environment as the secret `AXIOM_TEST_GITHUB_TOKEN` (pasted into GitHub's form only).
-6. Actions, `github-issues-optin`, Run workflow, mode `normal`; approve the environment when asked.
-7. The log is attached to the run as an artifact.
+1. Target repository `bogdanticu88/axiom-integration-test`: make sure it is **private**, has **Issues enabled**, has no
+   collaborators, and holds nothing you want to keep. Change nothing else there.
+2. Axiom: Settings, Environments, New environment, name `github-issues-integration`.
+   * Deployment protection rules: tick **Required reviewers** and add yourself. **Leave "Prevent self-reviews"
+     unticked**: you will dispatch the run and approve it yourself, which that option would forbid. As the only
+     reviewer, approving is a deliberate second step; the run waits until you do.
+   * Deployment branches and tags: **Selected branches and tags**, add `main`.
+   * Environment variables: `AXIOM_TEST_GITHUB_REPO` = `bogdanticu88/axiom-integration-test`.
+3. Create the token (Settings of your account, Developer settings, Fine-grained tokens, Generate new token) with the
+   settings in the table above, expiring in 7 days.
+4. Axiom, the same environment, Environment secrets: add `AXIOM_TEST_GITHUB_TOKEN` and paste the token there (only
+   there).
+5. Axiom, Actions, `github-issues-optin`, Run workflow, branch `main`, with:
+   * `mode`: `normal`
+   * `approved_repo`: `bogdanticu88/axiom-integration-test`
+   * `expected_sha`: the full hash of the main commit you reviewed (`git rev-parse origin/main`).
 
-**B. Your own machine** (PostgreSQL 16 server binaries and `uv` installed; Linux or macOS):
+   The run fails before checkout if the branch, the commit or the repository differ.
+6. The run waits for review: open it, check the inputs, Review deployments, tick the environment, Approve.
+7. The log is attached to the run as an artifact (uploaded only if the token check passed).
+
+**B. Your own machine** (PostgreSQL 16 server binaries and `uv`; Linux or macOS):
 
 ```sh
-git clone https://github.com/bogdanticu88/Axiom.git && cd Axiom && git checkout <this PR's branch or main>
+git clone https://github.com/bogdanticu88/Axiom.git && cd Axiom && git checkout main
 uv sync --frozen && scripts/dev/test-db.sh start
 mkdir -p ~/.axiom-secrets && chmod 700 ~/.axiom-secrets
 ( umask 077; read -rs -p "token: " T && printf '%s' "$T" > ~/.axiom-secrets/github-test-token; unset T; echo )
 set -a && . ./.env.test && set +a
 AXIOM_TEST_GITHUB_ISSUES=1 AXIOM_TEST_GITHUB_REPO=bogdanticu88/axiom-integration-test \
+AXIOM_TEST_GITHUB_APPROVED_REPO=bogdanticu88/axiom-integration-test \
 AXIOM_TEST_GITHUB_TOKEN_FILE="$HOME/.axiom-secrets/github-test-token" AXIOM_TEST_GITHUB_MODE=normal \
   uv run --frozen pytest -rA -s -p no:cacheprovider tests/integration/test_github_issues_optin.py | tee optin.log
 ```
 
-`read -s` keeps the token off the screen and out of shell history.
+`read -s` keeps the token off the screen and out of shell history. The test leaves the file in place (the refusal
+runs need it); delete it at the end.
 
 **Then, optional refusal runs:** edit the token to Issues: Read-only and run mode `readonly`; then delete the token and
-run mode `revoked` (with option B, keep the file until that run, then delete it).
+run mode `revoked`.
 
-**Cleanup:** delete the 4 closed issues (or the whole repository), delete the token (Settings, Developer settings,
-Fine-grained tokens, Delete), delete the environment secret, and with option B remove `~/.axiom-secrets/`.
+**Cleanup:** delete the 4 closed issues (or the whole target repository), delete the token, delete the environment
+secret in Axiom, and with option B remove `~/.axiom-secrets/`.
 
-## Rehearsal
+## Workflow controls
 
-The test logic was rehearsed against the local GitHub fake with a scratch plugin that blocks real network access:
-normal 6 passed (4 fake issues, closed), readonly 1 passed, revoked 1 passed. That checks the test, not GitHub.
+* Trigger: `workflow_dispatch` only. No `push`, `pull_request` or `pull_request_target` trigger, so no pull request,
+  fork or branch push runs it, and dispatching needs write access to Axiom.
+* Revision: the job runs only on `refs/heads/main` and only if the run's commit equals `expected_sha`; it checks out
+  that commit. The environment also admits only `main`.
+* Secret: an environment secret, released to the job only after a required reviewer approves; written to a 0600 file
+  under the runner's temporary directory and removed by an always-run step, including when an earlier step failed.
+  GitHub-hosted runners are discarded after the job.
+* Token permissions: the workflow's `GITHUB_TOKEN` has `contents: read` only, and checkout does not persist it.
+* Pinned: actions by full commit hash (the same as `ci.yml`, verified by `scripts/ci/check-action-pins.sh`), uv by
+  version, Python packages by `uv.lock`. Not pinned: the Ubuntu `postgresql-16` package and the runner image, as in
+  `ci.yml`.
+* Concurrency: one group, not cancelled in progress, so two dispatches never run at once (GitHub keeps at most one
+  waiting and replaces an older waiting run). Each run's issues carry their own operation markers, and cleanup closes
+  only the issues that run created.
+
+## Rehearsal (part of ordinary CI)
+
+`tests/integration/test_github_optin_rehearsal.py` runs the opt-in module in child processes with
+`tests/integration/github_optin_rehearsal.py`, which replaces real HTTP before any fixture exists and points the test
+at the non-routable `api.github.test.invalid` and the example repository `example-owner/axiom-optin-rehearsal`:
+without opt-in all 8 tests skip and nothing is sent; normal, readonly and revoked pass with zero network attempts (4
+fake issues created and closed); an unapproved target is refused before any request; and a control that installs the
+fake too late, the mistake made during the first manual rehearsal (which sent 6 requests with a placeholder token to
+an unrelated repository on `api.github.com`), is caught by the network block. This checks the test and its isolation,
+not GitHub.
