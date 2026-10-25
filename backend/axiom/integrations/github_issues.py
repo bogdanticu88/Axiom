@@ -1,4 +1,6 @@
-"""GitHub Issues ticket integration. Support level: **fixture-tested** (local fake only).
+"""GitHub Issues ticket integration. Support level: **fixture-tested** (local fake only). An opt-in test against
+the real API is prepared (tests/integration/test_github_issues_optin.py, docs/integration-tests/github-issues.md) but
+has not been run.
 
 Shapes follow GitHub's public REST documentation (API version header ``2022-11-28``): ``POST
 /repos/{owner}/{repo}/issues`` (``title``, ``body``, ``labels``) returns 201 with ``number``, ``state``,
@@ -67,7 +69,11 @@ class GitHubIssueAdapter:
     def create(self, operation_key: str, request: dict[str, Any], fencing_token: int) -> str:
         body = f"{request.get('description', '')}\n\n{MARKER}{operation_key}".lstrip()
         try:
-            r = self.http.post(f"{self.api}/repos/{self.repo}/issues", headers=self._headers(),
+            headers = self._headers()
+        except Exception as exc:  # noqa: BLE001 - the credential could not be read, so no request was sent
+            raise DefinitelyNotApplied(f"credential unavailable: {type(exc).__name__}") from exc
+        try:
+            r = self.http.post(f"{self.api}/repos/{self.repo}/issues", headers=headers,
                                json={"title": request["summary"], "body": body, "labels": request.get("labels", [])})
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise DefinitelyNotApplied(f"{type(exc).__name__}: {exc}") from exc

@@ -153,3 +153,30 @@ def test_payload_must_fit_the_connection(wf):
     else:
         with pytest.raises(ValidationFailed):
             wf.propose({**wf.kind.payload, "project_key": "SEC"})
+
+
+def test_github_credential_unreadable_at_create_is_not_an_unknown_outcome(db, world, ctx_for, dbinfo, run, admin_conn):
+    """The lookup read the credential, then it could not be read for the create: no request was sent, so the attempt
+    is definitely not applied and retried, not recorded as an outcome an operator must reconcile."""
+    k = KINDS["github_issues"]
+    env = Env(db, world, ctx_for, dbinfo, run)
+    env.connection = SyncService(db, None, None).create_connection(
+        ctx_for("admin"), adapter=k.adapter, scope_id=world.a.project, display_name=k.adapter,
+        base_url=k.base_url, credential_ref="secretref:test/wf", config=k.config)
+    fake, reads = GitHubFake(), {"n": 0}
+
+    def token():
+        reads["n"] += 1
+        if reads["n"] == 2:                      # the create's read: the secret file is momentarily unreadable
+            from axiom.errors import ConfigurationError
+            raise ConfigurationError("secret reference did not resolve")
+        return "tok"
+    env.adapter = lambda *_: GitHubIssueAdapter("acme/payments", token, api=k.base_url, transport=fake.transport())
+    p = env.propose(k.payload)
+    e = env.execute(p, env.approve(p))
+    env.worker().run_once(only_tenants={world.a.id})
+    first = (env.job(e["job_id"])["state"], env.execution(e["id"])["intent"]["state"], fake.create_requests)
+    assert first == ("queued", "prepared", 0), f"an unsent request was recorded as an uncertain outcome: {first}"
+    job = env.drive(admin_conn, e["job_id"])
+    assert job["state"] == "succeeded" and fake.create_requests == 1 and len(fake.refs()) == 1
+

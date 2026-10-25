@@ -1219,3 +1219,17 @@ data directory rolled back, cluster started.
 * **Not covered:** in-place restores into a live database, restoring while workers run, proxies, failover and
   point-in-time recovery (ADR 0010 amendment of 2026-10-25, "Supported restore boundary").
 
+### Run 36: GitHub Issues opt-in test prepared; unreadable credential at create (2026-10-25)
+
+Local only; nothing contacted the target repository and no real credential was used.
+
+* **Confirmed on `main` (`fa25f6c`):** with the credential readable for the lookup and unreadable when the create was
+  built, no request was sent but the intent was recorded `unknown` (the job would then park for an operator).
+  `test_github_credential_unreadable_at_create_is_not_an_unknown_outcome` failed with `('queued', 'unknown', 0)`.
+* **Fix:** the adapter resolves the credential before sending and reports `DefinitelyNotApplied` when it cannot; the
+  test passes (the job retries and then creates one issue against the fake).
+* **Opt-in test** `tests/integration/test_github_issues_optin.py` and manual workflow
+  `.github/workflows/github-issues-optin.yml`: plan in `docs/integration-tests/github-issues.md`. Rehearsed against
+  the local GitHub fake with real network blocked: normal 6 passed (4 fake issues), readonly 1 passed, revoked 1
+  passed. Not yet run against GitHub; the adapter stays fixture-tested.
+
